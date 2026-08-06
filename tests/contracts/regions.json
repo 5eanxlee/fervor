@@ -1,0 +1,4 @@
+{
+  "schema": 1,
+  "regions": ["na_east", "na_west", "eu_west", "ap_southeast"]
+}

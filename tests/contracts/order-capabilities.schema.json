@@ -1,0 +1,329 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://fervor.xyz/schemas/order-capabilities.schema.json",
+  "title": "Order capabilities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "mode",
+    "status",
+    "provider",
+    "source",
+    "observedAt",
+    "expiresAt",
+    "auth",
+    "custody",
+    "orders",
+    "tokens",
+    "mutations"
+  ],
+  "properties": {
+    "schema": {
+      "const": 1
+    },
+    "mode": {
+      "enum": ["disabled", "fixture", "live"]
+    },
+    "status": {
+      "enum": ["disabled", "ready", "degraded"]
+    },
+    "provider": {
+      "enum": ["none", "fixture", "jupiter_trigger_v2"]
+    },
+    "source": {
+      "enum": ["adapter_static", "provider_probe", "fixture"]
+    },
+    "observedAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "methods", "session"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "methods": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["message", "transaction"] }
+        },
+        "session": {
+          "enum": ["none", "memory", "encrypted_opt_in"]
+        }
+      }
+    },
+    "custody": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "manager", "disclosure", "directBroadcast"],
+      "properties": {
+        "kind": {
+          "enum": ["none", "shared_provider_vault"]
+        },
+        "manager": {
+          "type": ["string", "null"],
+          "maxLength": 80
+        },
+        "disclosure": {
+          "type": ["string", "null"],
+          "maxLength": 240
+        },
+        "directBroadcast": {
+          "const": false
+        }
+      }
+    },
+    "orders": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["types", "features", "limits"],
+      "properties": {
+        "types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["single", "oco", "otoco", "time_dca", "band_dca"]
+          }
+        },
+        "features": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["trailing", "partialFills", "editPrice", "editDca", "twoStepCancel"],
+          "properties": {
+            "trailing": { "type": "boolean" },
+            "partialFills": { "type": "boolean" },
+            "editPrice": { "type": "boolean" },
+            "editDca": { "type": "boolean" },
+            "twoStepCancel": { "type": "boolean" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minOrderUsd", "minRoundUsd", "trailingBps"],
+          "properties": {
+            "minOrderUsd": {
+              "type": ["number", "null"],
+              "exclusiveMinimum": 0
+            },
+            "minRoundUsd": {
+              "type": ["number", "null"],
+              "exclusiveMinimum": 0
+            },
+            "trailingBps": {
+              "anyOf": [
+                { "type": "null" },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["min", "max"],
+                  "properties": {
+                    "min": { "type": "integer", "minimum": 0, "maximum": 10000 },
+                    "max": { "type": "integer", "minimum": 0, "maximum": 10000 }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["programs", "extensionPolicy", "allowedExtensions"],
+      "properties": {
+        "programs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["spl_token", "token_2022"] }
+        },
+        "extensionPolicy": {
+          "const": "deny_by_default"
+        },
+        "allowedExtensions": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        }
+      }
+    },
+    "mutations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["activate", "edit", "cancelInit", "cancelConfirm"],
+      "properties": {
+        "activate": { "$ref": "#/definitions/activate" },
+        "edit": { "$ref": "#/definitions/edit" },
+        "cancelInit": { "$ref": "#/definitions/cancelInit" },
+        "cancelConfirm": { "$ref": "#/definitions/cancelConfirm" }
+      }
+    }
+  },
+  "definitions": {
+    "mutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "retry"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "retry": {
+          "enum": ["none", "reconcile_first", "same_payload_valid"]
+        }
+      }
+    },
+    "activate": {
+      "allOf": [
+        { "$ref": "#/definitions/mutation" },
+        { "type": "object", "properties": { "retry": { "const": "none" } } }
+      ]
+    },
+    "edit": {
+      "allOf": [
+        { "$ref": "#/definitions/mutation" },
+        { "type": "object", "properties": { "retry": { "const": "reconcile_first" } } }
+      ]
+    },
+    "cancelInit": {
+      "allOf": [
+        { "$ref": "#/definitions/mutation" },
+        { "type": "object", "properties": { "retry": { "const": "reconcile_first" } } }
+      ]
+    },
+    "cancelConfirm": {
+      "allOf": [
+        { "$ref": "#/definitions/mutation" },
+        { "type": "object", "properties": { "retry": { "const": "same_payload_valid" } } }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "ready" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "observedAt": { "type": "string" },
+          "expiresAt": { "type": "string" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "custody": {
+            "type": "object",
+            "properties": { "kind": { "const": "shared_provider_vault" } }
+          }
+        },
+        "required": ["custody"]
+      },
+      "then": {
+        "properties": {
+          "custody": {
+            "type": "object",
+            "properties": {
+              "manager": { "type": "string", "minLength": 1 },
+              "disclosure": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "mode": { "const": "disabled" } },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "status": { "const": "disabled" },
+          "provider": { "const": "none" },
+          "orders": {
+            "type": "object",
+            "properties": { "types": { "type": "array", "maxItems": 0 } }
+          },
+          "mutations": {
+            "type": "object",
+            "properties": {
+              "activate": { "type": "object", "properties": { "enabled": { "const": false } } },
+              "edit": { "type": "object", "properties": { "enabled": { "const": false } } },
+              "cancelInit": { "type": "object", "properties": { "enabled": { "const": false } } },
+              "cancelConfirm": { "type": "object", "properties": { "enabled": { "const": false } } }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "ready" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "provider": { "enum": ["fixture", "jupiter_trigger_v2"] },
+          "orders": {
+            "type": "object",
+            "properties": { "types": { "type": "array", "minItems": 1 } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "provider": { "const": "jupiter_trigger_v2" } },
+        "required": ["provider"]
+      },
+      "then": {
+        "properties": {
+          "source": { "const": "provider_probe" },
+          "auth": {
+            "type": "object",
+            "properties": { "required": { "const": true } }
+          },
+          "custody": {
+            "type": "object",
+            "properties": { "kind": { "const": "shared_provider_vault" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "provider": { "const": "fixture" } },
+        "required": ["provider"]
+      },
+      "then": {
+        "properties": {
+          "source": { "const": "fixture" },
+          "auth": {
+            "type": "object",
+            "properties": { "required": { "const": false } }
+          },
+          "custody": {
+            "type": "object",
+            "properties": { "kind": { "const": "none" } }
+          }
+        }
+      }
+    }
+  ]
+}

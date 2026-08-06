@@ -1,0 +1,921 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://fervor.xyz/schemas/slo-contracts-v6.schema.json",
+  "title": "Fervor SLO contracts v6",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "window",
+    "domains",
+    "eligibility",
+    "proofs",
+    "pairs",
+    "results",
+    "qualifiers",
+    "cohorts",
+    "objectives",
+    "gates",
+    "recovery",
+    "safety",
+    "telemetry",
+    "burn",
+    "qualification"
+  ],
+  "properties": {
+    "schema": { "const": 6 },
+    "status": { "const": "qualification_target" },
+    "window": { "const": "28d" },
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/domain" }
+    },
+    "eligibility": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/partition" }
+    },
+    "proofs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/proofSet" }
+    },
+    "pairs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/pairSet" }
+    },
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/result" }
+    },
+    "qualifiers": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/qualifier" }
+    },
+    "cohorts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/cohort" }
+    },
+    "objectives": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/objective" }
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/gate" }
+    },
+    "recovery": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/recovery" }
+    },
+    "safety": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/safety" }
+    },
+    "telemetry": { "$ref": "#/definitions/telemetry" },
+    "burn": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/burn" }
+    },
+    "qualification": { "$ref": "#/definitions/qualification" }
+  },
+  "definitions": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+){0,2}$",
+      "maxLength": 48
+    },
+    "value": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+){0,3}$",
+      "maxLength": 64
+    },
+    "metric": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*_(?:total|seconds|bytes)$",
+      "maxLength": 96
+    },
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "values"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "values": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        }
+      }
+    },
+    "qualifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "phase", "maxAgeMs", "states", "healthy", "unhealthy", "unknown", "missing", "stale", "wrongPhase"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "phase": { "const": "before_start" },
+        "maxAgeMs": { "type": "integer", "minimum": 1, "maximum": 60000 },
+        "states": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        },
+        "healthy": { "$ref": "#/definitions/value" },
+        "unhealthy": { "const": "excluded" },
+        "unknown": { "const": "qualification_fault" },
+        "missing": { "const": "qualification_fault" },
+        "stale": { "const": "qualification_fault" },
+        "wrongPhase": { "const": "qualification_fault" }
+      }
+    },
+    "partition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "domain", "include", "exclude"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "domain": { "$ref": "#/definitions/id" },
+        "include": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        },
+        "exclude": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        }
+      }
+    },
+    "pairSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "admitDomain", "resultDomain", "rules"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "admitDomain": { "$ref": "#/definitions/id" },
+        "resultDomain": { "$ref": "#/definitions/id" },
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/pairRule" }
+        }
+      }
+    },
+    "pairRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["admission", "outcome", "grade", "proofRef"],
+      "properties": {
+        "admission": { "$ref": "#/definitions/value" },
+        "outcome": { "$ref": "#/definitions/value" },
+        "grade": { "enum": ["result", "bad"] },
+        "proofRef": { "$ref": "#/definitions/id" }
+      }
+    },
+    "proofSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fields"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/proofReq" }
+        }
+      }
+    },
+    "proofReq": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "claim", "source", "phase", "maxAgeMs"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "claim": { "$ref": "#/definitions/value" },
+        "source": { "$ref": "#/definitions/id" },
+        "phase": { "enum": ["before_start", "after_result"] },
+        "maxAgeMs": { "type": "integer", "minimum": 0, "maximum": 86400000 }
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "domain", "good", "bad"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "domain": { "$ref": "#/definitions/id" },
+        "good": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        },
+        "bad": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        }
+      }
+    },
+    "cohort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective", "registry", "observer", "mode", "key", "required", "complete", "focus", "effectField", "effectStore", "missing", "finalizeSec", "deadlineFrom", "gate"],
+      "properties": {
+        "objective": { "$ref": "#/definitions/id" },
+        "registry": { "$ref": "#/definitions/value" },
+        "observer": { "$ref": "#/definitions/value" },
+        "mode": { "enum": ["event_snapshot", "active_minute"] },
+        "key": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        },
+        "required": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        },
+        "complete": { "enum": ["counts_equal", "one_per_active"] },
+        "focus": { "enum": ["event_all", "one_key"] },
+        "effectField": {
+          "anyOf": [
+            { "$ref": "#/definitions/id" },
+            { "type": "null" }
+          ]
+        },
+        "effectStore": {
+          "anyOf": [
+            { "$ref": "#/definitions/id" },
+            { "type": "null" }
+          ]
+        },
+        "missing": { "const": "unknown_bad" },
+        "finalizeSec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "deadlineFrom": { "const": "objective_start" },
+        "gate": { "const": "telemetry_gap" }
+      }
+    },
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "owner",
+        "class",
+        "basis",
+        "sample",
+        "counter",
+        "histogram",
+        "start",
+        "stop",
+        "eligibilityRef",
+        "resultRef",
+        "qualifierRef",
+        "measure",
+        "thresholdMs",
+        "comparator",
+        "target",
+        "budget",
+        "sliceRef",
+        "slicePolicy",
+        "noData"
+      ],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "owner": {
+          "enum": ["api", "trading", "data", "alerts", "notify", "wallet", "realtime"]
+        },
+        "class": { "enum": ["journey", "component", "diagnostic"] },
+        "basis": { "enum": ["end_to_end", "fervor_overhead", "ex_ante_qualified"] },
+        "sample": { "enum": ["event", "minute"] },
+        "counter": { "const": "slo_events_v2" },
+        "histogram": { "const": "slo_duration_v2" },
+        "start": { "$ref": "#/definitions/value" },
+        "stop": { "$ref": "#/definitions/value" },
+        "eligibilityRef": { "$ref": "#/definitions/id" },
+        "resultRef": { "$ref": "#/definitions/id" },
+        "qualifierRef": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+){0,2}$"
+        },
+        "measure": { "enum": ["elapsed", "span_sum", "age"] },
+        "thresholdMs": { "type": "integer", "minimum": 1, "maximum": 86400000 },
+        "comparator": { "const": "le" },
+        "target": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+        "budget": { "type": "boolean" },
+        "sliceRef": {
+          "type": ["string", "null"],
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+){0,2}$"
+        },
+        "slicePolicy": { "enum": ["each", null] },
+        "noData": { "const": "fail_qualification" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "basis": { "const": "ex_ante_qualified" } }, "required": ["basis"] },
+          "then": { "properties": { "qualifierRef": { "type": "string" } } },
+          "else": { "properties": { "qualifierRef": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "sample": { "const": "minute" } }, "required": ["sample"] },
+          "then": { "properties": { "measure": { "const": "age" } } }
+        },
+        {
+          "if": { "properties": { "class": { "const": "journey" } }, "required": ["class"] },
+          "then": { "properties": { "budget": { "const": true } } },
+          "else": { "properties": { "budget": { "const": false } } }
+        },
+        {
+          "if": { "properties": { "sliceRef": { "type": "string" } }, "required": ["sliceRef"] },
+          "then": { "properties": { "slicePolicy": { "const": "each" } } },
+          "else": { "properties": { "slicePolicy": { "type": "null" } } }
+        }
+      ]
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "event", "metric", "signal", "eval", "limit", "scope", "actions", "rearm"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "event": { "$ref": "#/definitions/id" },
+        "metric": { "$ref": "#/definitions/metric" },
+        "signal": { "const": "durable_violation" },
+        "eval": { "const": "open_incident_count" },
+        "limit": { "const": 0 },
+        "scope": { "enum": ["global", "action", "order", "wallet_mint", "shard", "service"] },
+        "actions": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["page", "block_release", "freeze_scope", "freeze_global", "degrade_scope", "mark_stale"]
+          }
+        },
+        "rearm": { "$ref": "#/definitions/rearm" }
+      }
+    },
+    "rearm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "proofs", "ackRoles", "baseline"],
+      "properties": {
+        "mode": { "const": "all" },
+        "proofs": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        },
+        "ackRoles": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["owner", "sre", "security"] }
+        },
+        "baseline": { "const": "after_evidence" }
+      }
+    },
+    "rpo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targetSec", "maxSec", "bound", "lossScope", "ackGuard"],
+      "properties": {
+        "targetSec": { "type": ["integer", "null"], "minimum": 0 },
+        "maxSec": { "type": ["integer", "null"], "minimum": 0 },
+        "bound": { "enum": ["sync_replica", "async_wal", "replay_overlap", "rebuildable", "unbounded"] },
+        "lossScope": { "enum": ["all_acked_writes", "all_committed_events", "all_durable_state"] },
+        "ackGuard": { "enum": ["sync_required", "not_applicable"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "bound": { "const": "unbounded" } }, "required": ["bound"] },
+          "then": { "properties": { "targetSec": { "type": "null" }, "maxSec": { "type": "null" } } },
+          "else": {
+            "properties": {
+              "targetSec": { "type": "integer", "minimum": 0 },
+              "maxSec": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "bound": { "const": "sync_replica" } }, "required": ["bound"] },
+          "then": { "properties": { "ackGuard": { "const": "sync_required" } } },
+          "else": { "properties": { "ackGuard": { "const": "not_applicable" } } }
+        }
+      ]
+    },
+    "rto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "targetSec", "start", "stop"],
+      "properties": {
+        "mode": { "const": "time" },
+        "targetSec": { "type": "integer", "minimum": 1 },
+        "start": { "const": "fault_at" },
+        "stop": { "$ref": "#/definitions/value" }
+      }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "store", "fault", "detectSec", "dataRpo", "rto", "resume", "proofs"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "store": { "enum": ["core_pg", "market_pg", "redis"] },
+        "fault": { "enum": ["zone", "region", "loss"] },
+        "detectSec": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "dataRpo": { "$ref": "#/definitions/rpo" },
+        "rto": { "$ref": "#/definitions/rto" },
+        "resume": { "enum": ["full_fenced", "read_reconcile", "mutation_safe", "stale_read", "rebuild"] },
+        "proofs": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fault", "action", "proofs"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "fault": { "enum": ["authority", "egress", "epoch"] },
+        "action": { "const": "disable_mutation" },
+        "proofs": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        }
+      }
+    },
+    "label": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "maxValues", "source"],
+      "properties": {
+        "name": { "enum": ["slo", "grade", "basis", "region", "qualifier", "slice"] },
+        "maxValues": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "source": { "enum": ["contract", "fixed", "deploy_registry"] }
+      }
+    },
+    "instrument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "metric", "kind", "labels", "bucketsSec", "maxSeries"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "metric": { "$ref": "#/definitions/metric" },
+        "kind": { "enum": ["counter", "histogram"] },
+        "labels": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/label" }
+        },
+        "bucketsSec": {
+          "type": "array",
+          "minItems": 0,
+          "uniqueItems": true,
+          "items": { "type": "number", "exclusiveMinimum": 0 }
+        },
+        "maxSeries": { "type": "integer", "minimum": 1, "maximum": 100000 }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxSeries", "grades", "forbiddenLabels", "instruments"],
+      "properties": {
+        "maxSeries": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "grades": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["good", "bad", "excluded"] }
+        },
+        "forbiddenLabels": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/value" }
+        },
+        "instruments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/instrument" }
+        }
+      }
+    },
+    "burn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "long", "short", "rate"],
+      "properties": {
+        "severity": { "enum": ["page", "ticket"] },
+        "long": { "enum": ["1h", "6h", "3d"] },
+        "short": { "enum": ["5m", "30m", "6h"] },
+        "rate": { "type": "number", "minimum": 1, "maximum": 100 }
+      }
+    },
+    "caseSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "captures", "proofs", "effects", "cohorts", "cases"],
+      "properties": {
+        "schema": { "const": 6 },
+        "captures": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/caseCapture" }
+        },
+        "proofs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/caseProof" }
+        },
+        "effects": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/caseEffect" }
+        },
+        "cohorts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/caseCohort" }
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/case" }
+        }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "eventId", "requestHmac", "resultTxn", "startAtMs", "resultAtMs", "evaluatedAtMs", "objective", "admission", "outcome", "durationMs", "expected"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 96 },
+        "eventId": { "$ref": "#/definitions/id" },
+        "requestHmac": { "$ref": "#/definitions/value" },
+        "resultTxn": { "$ref": "#/definitions/value" },
+        "startAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "resultAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "evaluatedAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "objective": { "$ref": "#/definitions/id" },
+        "admission": { "$ref": "#/definitions/value" },
+        "outcome": { "$ref": "#/definitions/value" },
+        "durationMs": { "type": "number", "minimum": 0 },
+        "proofs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/proofRef" }
+        },
+        "qualifier": { "$ref": "#/definitions/caseQualifier" },
+        "cohortRef": { "$ref": "#/definitions/id" },
+        "gate": { "enum": ["telemetry_gap"] },
+        "expected": { "enum": ["good", "bad", "excluded", "qualification_fault", "invalid", "pending"] }
+      }
+    },
+    "caseCapture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "mac", "keyVersion", "eventId", "requestHmac", "resultTxn", "field", "claim", "source", "phase", "capturedAtMs", "payload"],
+      "properties": {
+        "digest": { "$ref": "#/definitions/caseWire" },
+        "mac": { "$ref": "#/definitions/caseWire" },
+        "keyVersion": { "$ref": "#/definitions/value" },
+        "eventId": { "$ref": "#/definitions/id" },
+        "requestHmac": { "$ref": "#/definitions/value" },
+        "resultTxn": {
+          "anyOf": [
+            { "$ref": "#/definitions/value" },
+            { "type": "null" }
+          ]
+        },
+        "field": { "$ref": "#/definitions/id" },
+        "claim": { "$ref": "#/definitions/value" },
+        "source": { "$ref": "#/definitions/id" },
+        "phase": { "enum": ["before_start", "after_result"] },
+        "capturedAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "payload": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "caseProof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "mac", "keyVersion", "issuer", "eventId", "requestHmac", "resultTxn", "objective", "admission", "outcome", "profile", "field", "captureDigest", "startAtMs", "resultAtMs", "evaluatedAtMs", "boundAtMs"],
+      "properties": {
+        "digest": { "$ref": "#/definitions/caseWire" },
+        "mac": { "$ref": "#/definitions/caseWire" },
+        "keyVersion": { "$ref": "#/definitions/value" },
+        "issuer": { "const": "slo_classifier" },
+        "eventId": { "$ref": "#/definitions/id" },
+        "requestHmac": { "$ref": "#/definitions/value" },
+        "resultTxn": { "$ref": "#/definitions/value" },
+        "objective": { "$ref": "#/definitions/id" },
+        "admission": { "$ref": "#/definitions/value" },
+        "outcome": { "$ref": "#/definitions/value" },
+        "profile": { "$ref": "#/definitions/id" },
+        "field": { "$ref": "#/definitions/id" },
+        "captureDigest": { "$ref": "#/definitions/caseWire" },
+        "startAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "resultAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "evaluatedAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "boundAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "proofRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "digest"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "digest": { "$ref": "#/definitions/caseWire" }
+      }
+    },
+    "caseEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "mac", "keyVersion", "source", "receiptId", "cohortId", "eventId", "requestHmac", "resultTxn", "ruleHmac", "committedAtMs"],
+      "properties": {
+        "digest": { "$ref": "#/definitions/caseWire" },
+        "mac": { "$ref": "#/definitions/caseWire" },
+        "keyVersion": { "$ref": "#/definitions/value" },
+        "source": { "const": "alert_effect_store" },
+        "receiptId": { "$ref": "#/definitions/caseToken" },
+        "cohortId": { "$ref": "#/definitions/id" },
+        "eventId": { "$ref": "#/definitions/id" },
+        "requestHmac": { "$ref": "#/definitions/value" },
+        "resultTxn": { "$ref": "#/definitions/value" },
+        "ruleHmac": { "$ref": "#/definitions/caseToken" },
+        "committedAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+      }
+    },
+    "caseCohort": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "objective", "registry", "terminal"],
+      "properties": {
+        "id": { "$ref": "#/definitions/id" },
+        "objective": { "$ref": "#/definitions/id" },
+        "registry": { "$ref": "#/definitions/caseRegistry" },
+        "terminal": { "$ref": "#/definitions/caseTerminal" }
+      }
+    },
+    "caseRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "mac", "keyVersion", "source", "eventId", "requestHmac", "snapshotAtMs", "version", "watermark", "rows"],
+      "properties": {
+        "digest": { "$ref": "#/definitions/caseWire" },
+        "mac": { "$ref": "#/definitions/caseWire" },
+        "keyVersion": { "$ref": "#/definitions/value" },
+        "source": { "$ref": "#/definitions/id" },
+        "eventId": { "$ref": "#/definitions/id" },
+        "requestHmac": { "$ref": "#/definitions/value" },
+        "snapshotAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "version": { "$ref": "#/definitions/value" },
+        "watermark": { "type": "boolean" },
+        "rows": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/caseRegistryRow" }
+        }
+      }
+    },
+    "caseTerminal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "mac", "keyVersion", "source", "registryDigest", "eventId", "requestHmac", "resultTxn", "startAtMs", "resultAtMs", "evaluatedAtMs", "finalizedAtMs", "focusKey", "rows"],
+      "properties": {
+        "digest": { "$ref": "#/definitions/caseWire" },
+        "mac": { "$ref": "#/definitions/caseWire" },
+        "keyVersion": { "$ref": "#/definitions/value" },
+        "source": { "$ref": "#/definitions/id" },
+        "registryDigest": { "$ref": "#/definitions/caseWire" },
+        "eventId": { "$ref": "#/definitions/id" },
+        "requestHmac": { "$ref": "#/definitions/value" },
+        "resultTxn": { "$ref": "#/definitions/value" },
+        "startAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "resultAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "evaluatedAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "finalizedAtMs": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "focusKey": {
+          "anyOf": [
+            { "$ref": "#/definitions/caseKey" },
+            { "type": "null" }
+          ]
+        },
+        "rows": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/caseTerminalRow" }
+        }
+      }
+    },
+    "caseRegistryRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key"],
+      "properties": {
+        "key": { "$ref": "#/definitions/caseKey" }
+      }
+    },
+    "caseTerminalRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "fields"],
+      "properties": {
+        "key": { "$ref": "#/definitions/caseKey" },
+        "fields": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/definitions/caseScalar" }
+        }
+      }
+    },
+    "caseKey": {
+      "type": "object",
+      "minProperties": 2,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      }
+    },
+    "caseScalar": {
+      "anyOf": [
+        { "type": "string", "minLength": 1, "maxLength": 96 },
+        { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        { "type": "boolean" },
+        { "type": "null" }
+      ]
+    },
+    "caseToken": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,95}$"
+    },
+    "caseWire": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,128}$"
+    },
+    "caseQualifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "phase", "ageMs"],
+      "properties": {
+        "state": { "$ref": "#/definitions/value" },
+        "phase": { "enum": ["before_start", "after_result"] },
+        "ageMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profiles", "reports", "run", "baseline", "ingest", "canary", "artifacts", "regression"],
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": { "enum": ["orders", "ingest", "alerts", "notify", "wallet", "gateway", "browser", "recovery"] }
+        },
+        "reports": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "items": {
+            "enum": ["commit", "image", "fixtures", "hardware", "topology", "config", "duration", "samples", "quantiles", "resources", "loss", "recovery", "telemetry", "artifacts", "baseline"]
+          }
+        },
+        "run": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["warmupSec", "measureSec", "minSamples", "minMinutes", "resourceSec", "generatorHeadroomPct"],
+          "properties": {
+            "warmupSec": { "type": "integer", "minimum": 60 },
+            "measureSec": { "type": "integer", "minimum": 300 },
+            "minSamples": { "type": "integer", "minimum": 1000 },
+            "minMinutes": { "type": "integer", "minimum": 60 },
+            "resourceSec": { "type": "integer", "minimum": 1 },
+            "generatorHeadroomPct": { "type": "number", "minimum": 1, "maximum": 90 }
+          }
+        },
+        "baseline": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minRuns", "maxAgeDays", "compare", "identity"],
+          "properties": {
+            "minRuns": { "type": "integer", "minimum": 2 },
+            "maxAgeDays": { "type": "integer", "minimum": 1 },
+            "compare": { "const": "median" },
+            "identity": {
+              "type": "array",
+              "uniqueItems": true,
+              "minItems": 5,
+              "items": { "enum": ["commit", "image", "fixtures", "hardware", "topology", "config"] }
+            }
+          }
+        },
+        "ingest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["traceDays", "rateWindowSec", "observedQuantile", "rateMultiplier", "rateFloor", "byteUnit", "byteMultiplier", "byteFloor", "peakSec", "soakSec", "soakMeanMultiplier"],
+          "properties": {
+            "traceDays": { "type": "integer", "minimum": 7 },
+            "rateWindowSec": { "type": "integer", "minimum": 1 },
+            "observedQuantile": { "const": 0.999 },
+            "rateMultiplier": { "type": "number", "minimum": 1 },
+            "rateFloor": { "type": "integer", "minimum": 1 },
+            "byteUnit": { "const": "bytes_per_second" },
+            "byteMultiplier": { "type": "number", "minimum": 1 },
+            "byteFloor": { "type": "integer", "minimum": 1 },
+            "peakSec": { "type": "integer", "minimum": 60 },
+            "soakSec": { "type": "integer", "minimum": 3600 },
+            "soakMeanMultiplier": { "type": "number", "minimum": 1 }
+          }
+        },
+        "canary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minSamples", "minMinutes", "minWallMin", "maxWallMin", "compare", "sampleScope", "assignUnit", "assignMethod", "assignKey", "matchKeys", "exclusions", "window", "observation", "holdbackPct", "stagesPct"],
+          "properties": {
+            "minSamples": { "type": "integer", "minimum": 1000 },
+            "minMinutes": { "type": "integer", "minimum": 60 },
+            "minWallMin": { "type": "integer", "minimum": 1 },
+            "maxWallMin": { "type": "integer", "minimum": 1 },
+            "compare": { "const": "matched_control" },
+            "sampleScope": { "const": "each_objective_slice_arm" },
+            "assignUnit": { "const": "subject_hmac" },
+            "assignMethod": { "const": "keyed_hmac_bucket" },
+            "assignKey": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "enum": ["release", "subject_hmac"] }
+            },
+            "matchKeys": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "enum": ["objective", "slice", "region", "traffic_class"] }
+            },
+            "exclusions": { "const": "symmetric_pre_assignment" },
+            "window": { "const": "stage_local" },
+            "observation": { "const": "concurrent" },
+            "holdbackPct": { "type": "integer", "minimum": 1, "maximum": 50 },
+            "stagesPct": {
+              "type": "array",
+              "minItems": 2,
+              "uniqueItems": true,
+              "items": { "type": "integer", "minimum": 1, "maximum": 100 }
+            }
+          }
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["retentionDays", "access", "identity", "keyRotateDays", "redaction"],
+          "properties": {
+            "retentionDays": { "type": "integer", "minimum": 1 },
+            "access": { "const": "sre_restricted" },
+            "identity": { "const": "rotating_hmac" },
+            "keyRotateDays": { "type": "integer", "minimum": 1 },
+            "redaction": { "const": "canary_scan" }
+          }
+        },
+        "regression": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["throughputDropPct", "p99RisePct", "canaryP95Pct", "poolWaitPct"],
+          "properties": {
+            "throughputDropPct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "p99RisePct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "canaryP95Pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "poolWaitPct": { "type": "number", "minimum": 0, "maximum": 100 }
+          }
+        }
+      }
+    }
+  }
+}

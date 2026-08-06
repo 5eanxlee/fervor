@@ -1,0 +1,52 @@
+services:
+  core-postgres:
+    image: postgres:16-alpine
+    container_name: fervor-core-postgres
+    environment:
+      POSTGRES_DB: fervor
+      POSTGRES_USER: fervor
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "55432:5432"
+    volumes:
+      - fervor-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fervor -d fervor"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  market-postgres:
+    image: postgres:16-alpine
+    container_name: fervor-market-postgres
+    environment:
+      POSTGRES_DB: fervor
+      POSTGRES_USER: fervor
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "55433:5432"
+    volumes:
+      - fervor-market-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fervor -d fervor"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: fervor-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - fervor-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  fervor-postgres-data:
+  fervor-market-postgres-data:
+  fervor-redis-data:

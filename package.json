@@ -1,0 +1,53 @@
+{
+    "name": "fervor",
+    "version": "1.0.0",
+    "description": "Self-custody Solana trading terminal and low-latency event platform",
+    "private": true,
+    "workspaces": [
+        "frontend",
+        "backend"
+    ],
+    "scripts": {
+        "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+        "dev:frontend": "cd frontend && npm run dev",
+        "dev:backend": "cd backend && npm run dev",
+        "build": "npm run build:frontend && npm run build:backend",
+        "build:frontend": "cd frontend && npm run build",
+        "build:backend": "cd backend && npm run build",
+        "lint": "cd frontend && npm run lint",
+        "test:frontend": "cd frontend && npm test",
+        "test:spec": "node tests/system/check-specs.mjs",
+        "test:migrations": "node tests/system/check-backend-migrations.mjs",
+        "test:migration-race": "node tests/system/test-migration-race.mjs",
+        "test:index-recovery": "node tests/system/test-index-recovery.mjs",
+        "test:order-schema": "node tests/system/test-order-schema.mjs",
+        "test:migration-legacy": "node tests/system/test-legacy-migration.mjs",
+        "test:migration-custody": "node tests/system/test-custody-upgrade.mjs",
+        "test:migration-split": "node tests/system/test-plane-split-live.mjs",
+        "test:compose": "node tests/system/check-compose.mjs",
+        "test": "cd backend && npm test",
+        "test:rust": "cd fervor-feed-rs && cargo test --all-targets",
+        "build:rust": "cd fervor-feed-rs && cargo build --release --bins",
+        "migrate": "node db/tools/run-migrations.mjs",
+        "migrate:core": "node db/tools/run-migrations.mjs --plane=core",
+        "migrate:market": "node db/tools/run-migrations.mjs --plane=market",
+        "migrate:validate": "node db/tools/run-migrations.mjs --validate-only",
+        "migrate:recover": "node db/tools/recover-indexes.mjs",
+        "migrate:inspect": "node db/tools/adopt-migrations.mjs --inspect",
+        "migrate:adopt": "node db/tools/adopt-migrations.mjs --apply",
+        "start": "concurrently \"npm run start:frontend\" \"npm run start:backend\"",
+        "start:frontend": "cd frontend && npm run start",
+        "start:backend": "cd backend && npm run start"
+    },
+    "dependencies": {
+        "pg": "^8.11.3"
+    },
+    "devDependencies": {
+        "ajv": "^8.20.0",
+        "ajv-formats": "^3.0.1",
+        "concurrently": "^8.2.2"
+    },
+    "overrides": {
+        "postcss": "8.5.25"
+    }
+}

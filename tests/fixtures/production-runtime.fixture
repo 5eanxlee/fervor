@@ -1,0 +1,3 @@
+CORE_DATABASE_URL=postgresql://core_runtime@core.example/fervor_core
+MARKET_DATABASE_URL=postgresql://market_runtime@market.example:5433/fervor_market
+DB_SSL_MODE=verify-full

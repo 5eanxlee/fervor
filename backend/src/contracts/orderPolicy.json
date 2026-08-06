@@ -1,0 +1,48 @@
+{
+    "version": 1,
+    "actions": [
+        "prepare", "activate", "edit", "cancel_init", "cancel_confirm",
+        "provider_sync", "chain_sync", "expire", "compensate"
+    ],
+    "httpClasses": [
+        "success", "client_error", "auth_error", "rate_limited", "conflict",
+        "server_error", "transport_error", "timeout"
+    ],
+    "dispatch": {
+        "prepare": { "methods": ["POST"], "body": true, "blob": false },
+        "activate": { "methods": ["POST"], "body": true, "blob": true },
+        "edit": { "methods": ["POST", "PATCH", "PUT"], "body": true, "blob": false },
+        "cancel_init": { "methods": ["POST", "DELETE"], "body": true, "blob": false },
+        "cancel_confirm": { "methods": ["POST"], "body": true, "blob": true },
+        "provider_sync": { "methods": ["GET"], "body": false, "blob": false },
+        "chain_sync": { "methods": ["GET"], "body": false, "blob": false },
+        "expire": { "methods": ["POST", "DELETE"], "body": true, "blob": false },
+        "compensate": { "methods": ["POST"], "body": true, "blob": true }
+    },
+    "evidence": {
+        "prepare": ["provider"],
+        "activate": ["provider", "chain"],
+        "edit": ["provider"],
+        "cancel_init": ["provider"],
+        "cancel_confirm": ["provider", "chain"],
+        "provider_sync": ["provider"],
+        "chain_sync": ["chain"],
+        "expire": ["provider"],
+        "compensate": ["provider", "chain"]
+    },
+    "proof": {
+        "providerAbsence": ["fixture"],
+        "providerAbsenceQuery": "found",
+        "chainAbsenceQuery": "expired_unseen"
+    },
+    "http": {
+        "success": { "ranges": [[200, 299]], "exclude": [] },
+        "client_error": { "ranges": [[400, 499]], "exclude": [401, 403, 409, 429] },
+        "auth_error": { "ranges": [[401, 401], [403, 403]], "exclude": [] },
+        "rate_limited": { "ranges": [[429, 429]], "exclude": [] },
+        "conflict": { "ranges": [[409, 409]], "exclude": [] },
+        "server_error": { "ranges": [[500, 599]], "exclude": [] },
+        "transport_error": { "ranges": [], "exclude": [] },
+        "timeout": { "ranges": [], "exclude": [] }
+    }
+}

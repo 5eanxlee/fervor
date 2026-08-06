@@ -1,0 +1,984 @@
+{
+  "schema": 6,
+  "status": "qualification_target",
+  "window": "28d",
+  "domains": [
+    {
+      "id": "api_admit",
+      "values": ["admitted", "edge_overload", "edge_timeout", "bad_syntax", "bad_route", "no_auth", "no_right", "over_quota", "body_too_large", "client_disconnect", "synthetic", "load_test", "operator_smoke"]
+    },
+    {
+      "id": "intent_admit",
+      "values": ["validated", "invalid_input", "expired_at_entry", "unsupported_version", "synthetic", "load_test"]
+    },
+    {
+      "id": "action_admit",
+      "values": ["durable", "expired", "unsupported", "synthetic", "load_test"]
+    },
+    {
+      "id": "event_admit",
+      "values": ["supported", "unsupported", "synthetic", "load_test"]
+    },
+    {
+      "id": "minute_admit",
+      "values": ["active", "inactive", "synthetic"]
+    },
+    {
+      "id": "notify_admit",
+      "values": ["within_capacity", "above_contract", "disabled_before_match", "synthetic", "load_test"]
+    },
+    {
+      "id": "stream_admit",
+      "values": ["subscribed", "unsubscribed", "precommit_drop", "synthetic", "load_test"]
+    },
+    {
+      "id": "order_op",
+      "values": ["activate", "edit", "cancel", "withdraw"]
+    },
+    {
+      "id": "notify_channel",
+      "values": ["telegram", "discord"]
+    },
+    {
+      "id": "api_result",
+      "values": ["success", "reject_invalid", "reject_conflict", "reject_not_found", "reject_expired", "reject_unsupported", "reject_auth", "reject_forbidden", "reject_quota", "reject_too_large", "reject_risk", "reject_balance", "reject_tx_guard", "noop_terminal", "idem_replay", "overload", "dependency_fail", "timeout", "disconnect", "post_admit_cancel", "service_error", "invalid_success", "unknown"]
+    },
+    {
+      "id": "commit_result",
+      "values": ["committed", "idem_replay", "reject", "expired_in_service", "unsupported_runtime", "post_admit_cancel", "partial", "timeout", "service_error", "unknown"]
+    },
+    {
+      "id": "resolve_result",
+      "values": ["present", "absent", "manual_review", "conflict", "timeout", "unknown"]
+    },
+    {
+      "id": "accept_result",
+      "values": ["accepted", "landed", "permanent_reject", "possible", "timeout", "service_error", "unknown"]
+    },
+    {
+      "id": "stage_result",
+      "values": ["completed", "failed", "timeout", "dropped", "unknown"]
+    },
+    {
+      "id": "match_result",
+      "values": ["matched", "no_match", "failed", "timeout", "dropped", "unknown"]
+    },
+    {
+      "id": "fresh_result",
+      "values": ["fresh", "stale", "gap", "unknown"]
+    },
+    {
+      "id": "settle_result",
+      "values": ["exact_confirmed", "exact_finalized", "chain_failed", "mismatch", "timeout", "gap", "unknown"]
+    },
+    {
+      "id": "notify_result",
+      "values": ["accepted", "delivered", "permanent_reject", "possible", "dead_letter", "timeout", "service_error", "unknown"]
+    },
+    {
+      "id": "stream_result",
+      "values": ["written", "explicit_disconnect", "backpressure_drop", "silent_drop", "timeout", "unknown"]
+    }
+  ],
+  "eligibility": [
+    {
+      "id": "api_eligible",
+      "domain": "api_admit",
+      "include": ["admitted", "edge_overload", "edge_timeout", "over_quota", "client_disconnect"],
+      "exclude": ["bad_syntax", "bad_route", "no_auth", "no_right", "body_too_large", "synthetic", "load_test", "operator_smoke"]
+    },
+    {
+      "id": "intent_eligible",
+      "domain": "intent_admit",
+      "include": ["validated"],
+      "exclude": ["invalid_input", "expired_at_entry", "unsupported_version", "synthetic", "load_test"]
+    },
+    {
+      "id": "action_eligible",
+      "domain": "action_admit",
+      "include": ["durable"],
+      "exclude": ["expired", "unsupported", "synthetic", "load_test"]
+    },
+    {
+      "id": "event_eligible",
+      "domain": "event_admit",
+      "include": ["supported"],
+      "exclude": ["unsupported", "synthetic", "load_test"]
+    },
+    {
+      "id": "minute_eligible",
+      "domain": "minute_admit",
+      "include": ["active"],
+      "exclude": ["inactive", "synthetic"]
+    },
+    {
+      "id": "notify_eligible",
+      "domain": "notify_admit",
+      "include": ["within_capacity"],
+      "exclude": ["above_contract", "disabled_before_match", "synthetic", "load_test"]
+    },
+    {
+      "id": "stream_eligible",
+      "domain": "stream_admit",
+      "include": ["subscribed"],
+      "exclude": ["unsubscribed", "precommit_drop", "synthetic", "load_test"]
+    }
+  ],
+  "proofs": [
+    { "id": "api_route", "fields": [
+      { "id": "route_id", "claim": "route_resolved", "source": "route_registry", "phase": "before_start", "maxAgeMs": 300000 }
+    ] },
+    { "id": "api_noop", "fields": [
+      { "id": "route_id", "claim": "route_resolved", "source": "route_registry", "phase": "before_start", "maxAgeMs": 300000 },
+      { "id": "no_effect", "claim": "effect_absent", "source": "action_ledger", "phase": "after_result", "maxAgeMs": 0 }
+    ] },
+    { "id": "api_idem", "fields": [
+      { "id": "route_id", "claim": "route_resolved", "source": "route_registry", "phase": "before_start", "maxAgeMs": 300000 },
+      { "id": "request_id", "claim": "identity_match", "source": "idem_ledger", "phase": "after_result", "maxAgeMs": 0 },
+      { "id": "result_match", "claim": "result_match", "source": "idem_ledger", "phase": "after_result", "maxAgeMs": 0 }
+    ] },
+    { "id": "edge_overload", "fields": [
+      { "id": "edge_class", "claim": "edge_overload", "source": "edge_proxy", "phase": "before_start", "maxAgeMs": 1000 }
+    ] },
+    { "id": "edge_timeout", "fields": [
+      { "id": "edge_class", "claim": "edge_timeout", "source": "edge_proxy", "phase": "before_start", "maxAgeMs": 1000 }
+    ] },
+    { "id": "syntax_reject", "fields": [
+      { "id": "parser_code", "claim": "syntax_invalid", "source": "edge_parser", "phase": "before_start", "maxAgeMs": 0 }
+    ] },
+    { "id": "route_reject", "fields": [
+      { "id": "route_lookup", "claim": "route_missing", "source": "route_registry", "phase": "before_start", "maxAgeMs": 300000 }
+    ] },
+    { "id": "auth_reject", "fields": [
+      { "id": "auth_state", "claim": "auth_missing", "source": "auth_gateway", "phase": "before_start", "maxAgeMs": 1000 }
+    ] },
+    { "id": "right_reject", "fields": [
+      { "id": "right_id", "claim": "right_missing", "source": "policy_store", "phase": "before_start", "maxAgeMs": 60000 }
+    ] },
+    { "id": "quota_reject", "fields": [
+      { "id": "quota_snapshot", "claim": "quota_exceeded", "source": "quota_ledger", "phase": "before_start", "maxAgeMs": 1000 },
+      { "id": "quota_version", "claim": "version_pinned", "source": "quota_ledger", "phase": "before_start", "maxAgeMs": 1000 },
+      { "id": "tenant_hmac", "claim": "tenant_bound", "source": "quota_ledger", "phase": "before_start", "maxAgeMs": 1000 }
+    ] },
+    { "id": "body_reject", "fields": [
+      { "id": "body_limit", "claim": "body_over_limit", "source": "edge_proxy", "phase": "before_start", "maxAgeMs": 0 }
+    ] },
+    { "id": "disconnect", "fields": [
+      { "id": "disconnect_source", "claim": "client_disconnect", "source": "edge_proxy", "phase": "after_result", "maxAgeMs": 0 }
+    ] },
+    { "id": "traffic_synth", "fields": [
+      { "id": "traffic_mark", "claim": "synthetic", "source": "traffic_registry", "phase": "before_start", "maxAgeMs": 300000 }
+    ] },
+    { "id": "traffic_load", "fields": [
+      { "id": "traffic_mark", "claim": "load_test", "source": "traffic_registry", "phase": "before_start", "maxAgeMs": 300000 }
+    ] },
+    { "id": "traffic_smoke", "fields": [
+      { "id": "traffic_mark", "claim": "operator_smoke", "source": "traffic_registry", "phase": "before_start", "maxAgeMs": 300000 }
+    ] }
+  ],
+  "pairs": [
+    {
+      "id": "api_pairs",
+      "admitDomain": "api_admit",
+      "resultDomain": "api_result",
+      "rules": [
+        { "admission": "admitted", "outcome": "success", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "reject_invalid", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "reject_conflict", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "reject_not_found", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "reject_expired", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "reject_unsupported", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "reject_risk", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "reject_balance", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "reject_tx_guard", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "noop_terminal", "grade": "result", "proofRef": "api_noop" },
+        { "admission": "admitted", "outcome": "idem_replay", "grade": "result", "proofRef": "api_idem" },
+        { "admission": "admitted", "outcome": "overload", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "dependency_fail", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "timeout", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "disconnect", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "post_admit_cancel", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "service_error", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "invalid_success", "grade": "result", "proofRef": "api_route" },
+        { "admission": "admitted", "outcome": "unknown", "grade": "result", "proofRef": "api_route" },
+        { "admission": "edge_overload", "outcome": "overload", "grade": "bad", "proofRef": "edge_overload" },
+        { "admission": "edge_timeout", "outcome": "timeout", "grade": "bad", "proofRef": "edge_timeout" },
+        { "admission": "bad_syntax", "outcome": "reject_invalid", "grade": "result", "proofRef": "syntax_reject" },
+        { "admission": "bad_route", "outcome": "reject_not_found", "grade": "result", "proofRef": "route_reject" },
+        { "admission": "no_auth", "outcome": "reject_auth", "grade": "result", "proofRef": "auth_reject" },
+        { "admission": "no_right", "outcome": "reject_forbidden", "grade": "result", "proofRef": "right_reject" },
+        { "admission": "over_quota", "outcome": "reject_quota", "grade": "bad", "proofRef": "quota_reject" },
+        { "admission": "body_too_large", "outcome": "reject_too_large", "grade": "result", "proofRef": "body_reject" },
+        { "admission": "client_disconnect", "outcome": "disconnect", "grade": "bad", "proofRef": "disconnect" },
+        { "admission": "synthetic", "outcome": "success", "grade": "result", "proofRef": "traffic_synth" },
+        { "admission": "load_test", "outcome": "success", "grade": "result", "proofRef": "traffic_load" },
+        { "admission": "operator_smoke", "outcome": "success", "grade": "result", "proofRef": "traffic_smoke" }
+      ]
+    }
+  ],
+  "results": [
+    {
+      "id": "api_success",
+      "domain": "api_result",
+      "good": ["success", "reject_invalid", "reject_conflict", "reject_not_found", "reject_expired", "reject_unsupported", "reject_auth", "reject_forbidden", "reject_too_large", "reject_risk", "reject_balance", "reject_tx_guard", "noop_terminal", "idem_replay"],
+      "bad": ["reject_quota", "overload", "dependency_fail", "timeout", "disconnect", "post_admit_cancel", "service_error", "invalid_success", "unknown"]
+    },
+    {
+      "id": "commit_success",
+      "domain": "commit_result",
+      "good": ["committed", "idem_replay"],
+      "bad": ["reject", "expired_in_service", "unsupported_runtime", "post_admit_cancel", "partial", "timeout", "service_error", "unknown"]
+    },
+    {
+      "id": "resolve_success",
+      "domain": "resolve_result",
+      "good": ["present", "absent"],
+      "bad": ["manual_review", "conflict", "timeout", "unknown"]
+    },
+    {
+      "id": "accept_success",
+      "domain": "accept_result",
+      "good": ["accepted", "landed"],
+      "bad": ["permanent_reject", "possible", "timeout", "service_error", "unknown"]
+    },
+    {
+      "id": "stage_success",
+      "domain": "stage_result",
+      "good": ["completed"],
+      "bad": ["failed", "timeout", "dropped", "unknown"]
+    },
+    {
+      "id": "match_success",
+      "domain": "match_result",
+      "good": ["matched", "no_match"],
+      "bad": ["failed", "timeout", "dropped", "unknown"]
+    },
+    {
+      "id": "fresh_success",
+      "domain": "fresh_result",
+      "good": ["fresh"],
+      "bad": ["stale", "gap", "unknown"]
+    },
+    {
+      "id": "settle_success",
+      "domain": "settle_result",
+      "good": ["exact_confirmed", "exact_finalized"],
+      "bad": ["chain_failed", "mismatch", "timeout", "gap", "unknown"]
+    },
+    {
+      "id": "notify_success",
+      "domain": "notify_result",
+      "good": ["accepted", "delivered"],
+      "bad": ["permanent_reject", "possible", "dead_letter", "timeout", "service_error", "unknown"]
+    },
+    {
+      "id": "stream_success",
+      "domain": "stream_result",
+      "good": ["written"],
+      "bad": ["explicit_disconnect", "backpressure_drop", "silent_drop", "timeout", "unknown"]
+    }
+  ],
+  "qualifiers": [
+    {
+      "id": "provider_chain",
+      "phase": "before_start",
+      "maxAgeMs": 5000,
+      "states": ["healthy", "unhealthy", "unknown"],
+      "healthy": "healthy",
+      "unhealthy": "excluded",
+      "unknown": "qualification_fault",
+      "missing": "qualification_fault",
+      "stale": "qualification_fault",
+      "wrongPhase": "qualification_fault"
+    },
+    {
+      "id": "market_source",
+      "phase": "before_start",
+      "maxAgeMs": 5000,
+      "states": ["healthy", "unhealthy", "unknown"],
+      "healthy": "healthy",
+      "unhealthy": "excluded",
+      "unknown": "qualification_fault",
+      "missing": "qualification_fault",
+      "stale": "qualification_fault",
+      "wrongPhase": "qualification_fault"
+    }
+  ],
+  "cohorts": [
+    { "objective": "alert_match", "registry": "alert_rule_registry", "observer": "alert_matcher", "mode": "event_snapshot", "key": ["source_hmac", "event_id", "snapshot_version", "rule_hmac"], "required": ["snapshot_version", "rule_count", "eval_count", "coverage_watermark", "result", "match_receipt"], "complete": "counts_equal", "focus": "event_all", "effectField": "match_receipt", "effectStore": "alert_effect_store", "missing": "unknown_bad", "finalizeSec": 60, "deadlineFrom": "objective_start", "gate": "telemetry_gap" },
+    { "objective": "order_fresh", "registry": "order_active_registry", "observer": "order_fresh_sampler", "mode": "active_minute", "key": ["object_hmac", "minute_start"], "required": ["registry_version", "watermark_at", "sample_at", "result"], "complete": "one_per_active", "focus": "one_key", "effectField": null, "effectStore": null, "missing": "unknown_bad", "finalizeSec": 120, "deadlineFrom": "objective_start", "gate": "telemetry_gap" },
+    { "objective": "exec_fresh", "registry": "execution_active_registry", "observer": "exec_fresh_sampler", "mode": "active_minute", "key": ["object_hmac", "minute_start"], "required": ["registry_version", "watermark_at", "sample_at", "result"], "complete": "one_per_active", "focus": "one_key", "effectField": null, "effectStore": null, "missing": "unknown_bad", "finalizeSec": 120, "deadlineFrom": "objective_start", "gate": "telemetry_gap" },
+    { "objective": "market_fresh", "registry": "market_shard_registry", "observer": "market_fresh_sampler", "mode": "active_minute", "key": ["object_hmac", "minute_start"], "required": ["registry_version", "watermark_at", "sample_at", "result"], "complete": "one_per_active", "focus": "one_key", "effectField": null, "effectStore": null, "missing": "unknown_bad", "finalizeSec": 120, "deadlineFrom": "objective_start", "gate": "telemetry_gap" },
+    { "objective": "wallet_fresh", "registry": "wallet_active_registry", "observer": "wallet_fresh_sampler", "mode": "active_minute", "key": ["object_hmac", "minute_start"], "required": ["registry_version", "watermark_at", "sample_at", "result"], "complete": "one_per_active", "focus": "one_key", "effectField": null, "effectStore": null, "missing": "unknown_bad", "finalizeSec": 120, "deadlineFrom": "objective_start", "gate": "telemetry_gap" }
+  ],
+  "objectives": [
+    {
+      "id": "api_good",
+      "owner": "api",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "edge_received_at",
+      "stop": "response_complete_at",
+      "eligibilityRef": "api_eligible",
+      "resultRef": "api_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 1000,
+      "comparator": "le",
+      "target": 0.999,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "core_accept",
+      "owner": "trading",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "intent_validated_at",
+      "stop": "intent_completed_at",
+      "eligibilityRef": "intent_eligible",
+      "resultRef": "commit_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 500,
+      "comparator": "le",
+      "target": 0.9995,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "action_resolve",
+      "owner": "trading",
+      "class": "diagnostic",
+      "basis": "ex_ante_qualified",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "attempt_started_at",
+      "stop": "resolution_committed_at",
+      "eligibilityRef": "action_eligible",
+      "resultRef": "resolve_success",
+      "qualifierRef": "provider_chain",
+      "measure": "elapsed",
+      "thresholdMs": 60000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "order_accept",
+      "owner": "trading",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": "order_op",
+      "slicePolicy": "each",
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "action_committed_at",
+      "stop": "provider_accept_at",
+      "eligibilityRef": "action_eligible",
+      "resultRef": "accept_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 5000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "reconcile_start",
+      "owner": "trading",
+      "class": "component",
+      "basis": "fervor_overhead",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "reconcile_due_at",
+      "stop": "reconcile_lease_at",
+      "eligibilityRef": "action_eligible",
+      "resultRef": "stage_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 2000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "quote_overhead",
+      "owner": "trading",
+      "class": "component",
+      "basis": "fervor_overhead",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "quote_admitted_at",
+      "stop": "quote_ready_at",
+      "eligibilityRef": "intent_eligible",
+      "resultRef": "stage_success",
+      "qualifierRef": null,
+      "measure": "span_sum",
+      "thresholdMs": 75,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "swap_dispatch",
+      "owner": "trading",
+      "class": "component",
+      "basis": "fervor_overhead",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "signed_received_at",
+      "stop": "gateway_dispatch_at",
+      "eligibilityRef": "action_eligible",
+      "resultRef": "stage_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 250,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "swap_accept",
+      "owner": "trading",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "signed_received_at",
+      "stop": "provider_accept_at",
+      "eligibilityRef": "action_eligible",
+      "resultRef": "accept_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 5000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "swap_settle",
+      "owner": "trading",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "signed_received_at",
+      "stop": "exact_settlement_at",
+      "eligibilityRef": "action_eligible",
+      "resultRef": "settle_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 30000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "order_fresh",
+      "owner": "trading",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "minute",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "order_watermark_at",
+      "stop": "sample_at",
+      "eligibilityRef": "minute_eligible",
+      "resultRef": "fresh_success",
+      "qualifierRef": null,
+      "measure": "age",
+      "thresholdMs": 10000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "chain_reflect",
+      "owner": "trading",
+      "class": "component",
+      "basis": "fervor_overhead",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "chain_observed_at",
+      "stop": "projection_ready_at",
+      "eligibilityRef": "event_eligible",
+      "resultRef": "stage_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 5000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "exec_fresh",
+      "owner": "trading",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "minute",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "chain_watermark_at",
+      "stop": "sample_at",
+      "eligibilityRef": "minute_eligible",
+      "resultRef": "fresh_success",
+      "qualifierRef": null,
+      "measure": "age",
+      "thresholdMs": 10000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "market_fresh",
+      "owner": "data",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "minute",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "market_watermark_at",
+      "stop": "sample_at",
+      "eligibilityRef": "minute_eligible",
+      "resultRef": "fresh_success",
+      "qualifierRef": null,
+      "measure": "age",
+      "thresholdMs": 10000,
+      "comparator": "le",
+      "target": 0.999,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "market_project",
+      "owner": "data",
+      "class": "diagnostic",
+      "basis": "ex_ante_qualified",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "journal_committed_at",
+      "stop": "projection_committed_at",
+      "eligibilityRef": "event_eligible",
+      "resultRef": "stage_success",
+      "qualifierRef": "market_source",
+      "measure": "elapsed",
+      "thresholdMs": 250,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "metric_apply",
+      "owner": "data",
+      "class": "component",
+      "basis": "fervor_overhead",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "shard_received_at",
+      "stop": "metric_applied_at",
+      "eligibilityRef": "event_eligible",
+      "resultRef": "stage_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 5,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "alert_match",
+      "owner": "alerts",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "journal_committed_at",
+      "stop": "match_completed_at",
+      "eligibilityRef": "event_eligible",
+      "resultRef": "match_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 1000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "alert_lookup",
+      "owner": "alerts",
+      "class": "component",
+      "basis": "fervor_overhead",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "lookup_started_at",
+      "stop": "lookup_done_at",
+      "eligibilityRef": "event_eligible",
+      "resultRef": "stage_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 10,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "alert_eval",
+      "owner": "alerts",
+      "class": "component",
+      "basis": "fervor_overhead",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "eval_started_at",
+      "stop": "eval_done_at",
+      "eligibilityRef": "event_eligible",
+      "resultRef": "stage_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 25,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "notify_accept",
+      "owner": "notify",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": "notify_channel",
+      "slicePolicy": "each",
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "delivery_committed_at",
+      "stop": "provider_accept_at",
+      "eligibilityRef": "notify_eligible",
+      "resultRef": "notify_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 30000,
+      "comparator": "le",
+      "target": 0.999,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "wallet_project",
+      "owner": "wallet",
+      "class": "component",
+      "basis": "fervor_overhead",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "wallet_event_at",
+      "stop": "wallet_projection_at",
+      "eligibilityRef": "event_eligible",
+      "resultRef": "stage_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 10000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "wallet_fresh",
+      "owner": "wallet",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "minute",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "wallet_watermark_at",
+      "stop": "sample_at",
+      "eligibilityRef": "minute_eligible",
+      "resultRef": "fresh_success",
+      "qualifierRef": null,
+      "measure": "age",
+      "thresholdMs": 30000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "stream_delivery",
+      "owner": "realtime",
+      "class": "journey",
+      "basis": "end_to_end",
+      "budget": true,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "lifecycle_committed_at",
+      "stop": "socket_written_at",
+      "eligibilityRef": "stream_eligible",
+      "resultRef": "stream_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 1000,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    },
+    {
+      "id": "stream_write",
+      "owner": "realtime",
+      "class": "component",
+      "basis": "fervor_overhead",
+      "budget": false,
+      "sliceRef": null,
+      "slicePolicy": null,
+      "sample": "event",
+      "counter": "slo_events_v2",
+      "histogram": "slo_duration_v2",
+      "start": "gateway_queued_at",
+      "stop": "socket_written_at",
+      "eligibilityRef": "stream_eligible",
+      "resultRef": "stream_success",
+      "qualifierRef": null,
+      "measure": "elapsed",
+      "thresholdMs": 250,
+      "comparator": "le",
+      "target": 0.99,
+      "noData": "fail_qualification"
+    }
+  ],
+  "gates": [
+    { "id": "duplicate_effect", "event": "duplicate_effect", "metric": "fervor_order_duplicate_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "action", "actions": ["page", "block_release", "freeze_scope"], "rearm": { "mode": "all", "proofs": ["duplicate_path_fixed", "effects_reconciled", "duplicate_scan_clean"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } },
+    { "id": "lost_intent", "event": "lost_intent", "metric": "fervor_order_lost_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "action", "actions": ["page", "block_release", "freeze_scope"], "rearm": { "mode": "all", "proofs": ["intake_path_fixed", "source_replayed", "loss_scan_clean"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } },
+    { "id": "invalid_tx", "event": "invalid_tx", "metric": "fervor_tx_invalid_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "action", "actions": ["page", "block_release", "freeze_scope"], "rearm": { "mode": "all", "proofs": ["validator_fixed", "action_reconciled", "adversarial_replay_clean"], "ackRoles": ["owner", "sre", "security"], "baseline": "after_evidence" } },
+    { "id": "excess_fill", "event": "excess_fill", "metric": "fervor_fill_excess_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "order", "actions": ["page", "block_release", "freeze_scope"], "rearm": { "mode": "all", "proofs": ["fill_path_fixed", "order_reconciled", "custody_conserved", "excess_scan_clean"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } },
+    { "id": "ledger_gap", "event": "ledger_gap", "metric": "fervor_ledger_gap_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "order", "actions": ["page", "block_release", "freeze_scope"], "rearm": { "mode": "all", "proofs": ["journal_path_fixed", "journal_replayed", "balances_conserved", "gap_scan_clean"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } },
+    { "id": "funds_gap", "event": "funds_gap", "metric": "fervor_funds_gap_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "wallet_mint", "actions": ["page", "block_release", "freeze_scope"], "rearm": { "mode": "all", "proofs": ["custody_path_fixed", "wallet_reconciled", "balances_conserved", "obligations_cleared"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } },
+    { "id": "silent_gap", "event": "silent_gap", "metric": "fervor_source_silent_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "shard", "actions": ["page", "block_release", "mark_stale", "freeze_scope"], "rearm": { "mode": "all", "proofs": ["source_path_fixed", "source_recovered", "overlap_replayed", "gap_scan_clean"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } },
+    { "id": "stale_epoch", "event": "stale_epoch", "metric": "fervor_epoch_stale_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "global", "actions": ["page", "block_release", "freeze_global"], "rearm": { "mode": "all", "proofs": ["epoch_path_fixed", "old_egress_denied", "stale_epoch_rejected", "active_epoch_proven"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } },
+    { "id": "secret_leak", "event": "secret_leak", "metric": "fervor_secret_leak_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "global", "actions": ["page", "block_release", "freeze_global"], "rearm": { "mode": "all", "proofs": ["credential_revoked", "credential_rotated", "exposure_reviewed", "leak_scan_clean"], "ackRoles": ["owner", "sre", "security"], "baseline": "after_evidence" } },
+    { "id": "action_overdue", "event": "action_overdue", "metric": "fervor_action_overdue_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "action", "actions": ["page", "block_release", "freeze_scope"], "rearm": { "mode": "all", "proofs": ["scheduler_fixed", "actions_reconciled", "backlog_bounded", "oldest_age_clean"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } },
+    { "id": "unbounded_state", "event": "unbounded_state", "metric": "fervor_state_unbounded_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "service", "actions": ["page", "block_release", "degrade_scope"], "rearm": { "mode": "all", "proofs": ["bound_fixed", "state_bounded", "resource_bake_clean"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } },
+    { "id": "telemetry_gap", "event": "telemetry_gap", "metric": "fervor_telemetry_gap_total", "signal": "durable_violation", "eval": "open_incident_count", "limit": 0, "scope": "service", "actions": ["page", "block_release", "degrade_scope"], "rearm": { "mode": "all", "proofs": ["export_path_fixed", "loss_window_bounded", "unknowns_finalized_bad", "export_soak_clean"], "ackRoles": ["owner", "sre"], "baseline": "after_evidence" } }
+  ],
+  "recovery": [
+    {
+      "id": "core_az",
+      "store": "core_pg",
+      "fault": "zone",
+      "detectSec": 30,
+      "dataRpo": { "targetSec": 0, "maxSec": 0, "bound": "sync_replica", "lossScope": "all_acked_writes", "ackGuard": "sync_required" },
+      "rto": { "mode": "time", "targetSec": 900, "start": "fault_at", "stop": "full_fenced_at" },
+      "resume": "full_fenced",
+      "proofs": ["replica_durable", "old_primary_fenced", "epoch_valid", "invariants_clean"]
+    },
+    {
+      "id": "core_region_read",
+      "store": "core_pg",
+      "fault": "region",
+      "detectSec": 60,
+      "dataRpo": { "targetSec": 120, "maxSec": 300, "bound": "async_wal", "lossScope": "all_acked_writes", "ackGuard": "not_applicable" },
+      "rto": { "mode": "time", "targetSec": 3600, "start": "fault_at", "stop": "read_reconcile_at" },
+      "resume": "read_reconcile",
+      "proofs": ["restore_verified", "loss_bound_verified", "reconcile_started"]
+    },
+    {
+      "id": "core_region_write",
+      "store": "core_pg",
+      "fault": "region",
+      "detectSec": 60,
+      "dataRpo": { "targetSec": 120, "maxSec": 300, "bound": "async_wal", "lossScope": "all_acked_writes", "ackGuard": "not_applicable" },
+      "rto": { "mode": "time", "targetSec": 3600, "start": "fault_at", "stop": "mutation_safe_at" },
+      "resume": "mutation_safe",
+      "proofs": ["restore_verified", "loss_bound_verified", "external_epoch_valid", "old_egress_denied", "stale_epoch_rejected", "inflight_wait_done", "actions_reconciled", "invariants_clean"]
+    },
+    {
+      "id": "market_restore",
+      "store": "market_pg",
+      "fault": "loss",
+      "detectSec": 60,
+      "dataRpo": { "targetSec": 0, "maxSec": 0, "bound": "replay_overlap", "lossScope": "all_committed_events", "ackGuard": "not_applicable" },
+      "rto": { "mode": "time", "targetSec": 3600, "start": "fault_at", "stop": "stale_read_at" },
+      "resume": "stale_read",
+      "proofs": ["checkpoint_loaded", "replay_window_216000", "overlap_1500_slots", "gap_scan_clean"]
+    },
+    {
+      "id": "redis_rebuild",
+      "store": "redis",
+      "fault": "loss",
+      "detectSec": 30,
+      "dataRpo": { "targetSec": 0, "maxSec": 0, "bound": "rebuildable", "lossScope": "all_durable_state", "ackGuard": "not_applicable" },
+      "rto": { "mode": "time", "targetSec": 600, "start": "fault_at", "stop": "redrive_ready_at" },
+      "resume": "rebuild",
+      "proofs": ["pg_redrive_ready", "pel_reconciled", "streams_bounded"]
+    }
+  ],
+  "safety": [
+    {
+      "id": "epoch_resume",
+      "fault": "authority",
+      "action": "disable_mutation",
+      "proofs": ["external_epoch_valid", "stale_epoch_rejected", "old_egress_denied", "inflight_wait_done"]
+    }
+  ],
+  "telemetry": {
+    "maxSeries": 50000,
+    "grades": ["good", "bad", "excluded"],
+    "forbiddenLabels": ["wallet", "user", "token", "order", "action", "signature", "request", "recipient", "error_text", "url", "trace_id", "release", "service"],
+    "instruments": [
+      {
+        "id": "slo_events_v2",
+        "metric": "fervor_slo_events_total",
+        "kind": "counter",
+        "labels": [
+          { "name": "slo", "maxValues": 23, "source": "contract" },
+          { "name": "grade", "maxValues": 3, "source": "fixed" },
+          { "name": "basis", "maxValues": 3, "source": "fixed" },
+          { "name": "region", "maxValues": 4, "source": "deploy_registry" },
+          { "name": "slice", "maxValues": 7, "source": "contract" }
+        ],
+        "bucketsSec": [],
+        "maxSeries": 5796
+      },
+      {
+        "id": "slo_duration_v2",
+        "metric": "fervor_slo_duration_seconds",
+        "kind": "histogram",
+        "labels": [
+          { "name": "slo", "maxValues": 23, "source": "contract" },
+          { "name": "basis", "maxValues": 3, "source": "fixed" },
+          { "name": "region", "maxValues": 4, "source": "deploy_registry" },
+          { "name": "slice", "maxValues": 7, "source": "contract" }
+        ],
+        "bucketsSec": [0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 120, 300, 900],
+        "maxSeries": 42504
+      },
+      {
+        "id": "qualifier_fault",
+        "metric": "fervor_slo_qualifier_total",
+        "kind": "counter",
+        "labels": [
+          { "name": "qualifier", "maxValues": 2, "source": "contract" },
+          { "name": "region", "maxValues": 4, "source": "deploy_registry" }
+        ],
+        "bucketsSec": [],
+        "maxSeries": 8
+      }
+    ]
+  },
+  "burn": [
+    { "severity": "page", "long": "1h", "short": "5m", "rate": 14.4 },
+    { "severity": "page", "long": "6h", "short": "30m", "rate": 6 },
+    { "severity": "ticket", "long": "3d", "short": "6h", "rate": 1 }
+  ],
+  "qualification": {
+    "profiles": ["orders", "ingest", "alerts", "notify", "wallet", "gateway", "browser", "recovery"],
+    "reports": ["commit", "image", "fixtures", "hardware", "topology", "config", "duration", "samples", "quantiles", "resources", "loss", "recovery", "telemetry", "artifacts", "baseline"],
+    "run": { "warmupSec": 900, "measureSec": 3600, "minSamples": 100000, "minMinutes": 1440, "resourceSec": 10, "generatorHeadroomPct": 20 },
+    "baseline": {
+      "minRuns": 3,
+      "maxAgeDays": 30,
+      "compare": "median",
+      "identity": ["commit", "image", "fixtures", "hardware", "topology", "config"]
+    },
+    "ingest": {
+      "traceDays": 7,
+      "rateWindowSec": 60,
+      "observedQuantile": 0.999,
+      "rateMultiplier": 2,
+      "rateFloor": 2000,
+      "byteUnit": "bytes_per_second",
+      "byteMultiplier": 2,
+      "byteFloor": 41943040,
+      "peakSec": 3600,
+      "soakSec": 86400,
+      "soakMeanMultiplier": 1.25
+    },
+    "canary": { "minSamples": 10000, "minMinutes": 360, "minWallMin": 30, "maxWallMin": 360, "compare": "matched_control", "sampleScope": "each_objective_slice_arm", "assignUnit": "subject_hmac", "assignMethod": "keyed_hmac_bucket", "assignKey": ["release", "subject_hmac"], "matchKeys": ["objective", "slice", "region", "traffic_class"], "exclusions": "symmetric_pre_assignment", "window": "stage_local", "observation": "concurrent", "holdbackPct": 5, "stagesPct": [1, 5, 25, 50, 95] },
+    "artifacts": {
+      "retentionDays": 30,
+      "access": "sre_restricted",
+      "identity": "rotating_hmac",
+      "keyRotateDays": 30,
+      "redaction": "canary_scan"
+    },
+    "regression": {
+      "throughputDropPct": 10,
+      "p99RisePct": 20,
+      "canaryP95Pct": 20,
+      "poolWaitPct": 1
+    }
+  }
+}

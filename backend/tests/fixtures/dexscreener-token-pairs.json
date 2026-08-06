@@ -1,0 +1,23 @@
+[
+  {
+    "chainId": "solana",
+    "dexId": "raydium",
+    "pairAddress": "fixture-raydium-pool",
+    "baseToken": {
+      "address": "So11111111111111111111111111111111111111112",
+      "name": "Wrapped SOL",
+      "symbol": "SOL"
+    },
+    "quoteToken": {
+      "address": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      "symbol": "USDC"
+    },
+    "priceUsd": "150.00",
+    "priceNative": "1",
+    "liquidity": {
+      "usd": 10000000
+    },
+    "fdv": 150000000,
+    "marketCap": 135000000
+  }
+]

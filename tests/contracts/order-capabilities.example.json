@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "mode": "live",
+  "status": "ready",
+  "provider": "jupiter_trigger_v2",
+  "source": "provider_probe",
+  "observedAt": "2026-08-03T20:00:00.000Z",
+  "expiresAt": "2026-08-03T20:05:00.000Z",
+  "auth": {
+    "required": true,
+    "methods": ["message", "transaction"],
+    "session": "memory"
+  },
+  "custody": {
+    "kind": "shared_provider_vault",
+    "manager": "Privy",
+    "disclosure": "Funds move into a Privy-managed custodial vault shared by this wallet's active Jupiter Trigger orders.",
+    "directBroadcast": false
+  },
+  "orders": {
+    "types": ["single", "oco", "otoco", "time_dca", "band_dca"],
+    "features": {
+      "trailing": true,
+      "partialFills": true,
+      "editPrice": true,
+      "editDca": false,
+      "twoStepCancel": true
+    },
+    "limits": {
+      "minOrderUsd": 10,
+      "minRoundUsd": 10,
+      "trailingBps": {
+        "min": 50,
+        "max": 9000
+      }
+    }
+  },
+  "tokens": {
+    "programs": ["spl_token", "token_2022"],
+    "extensionPolicy": "deny_by_default",
+    "allowedExtensions": ["immutable_owner"]
+  },
+  "mutations": {
+    "activate": {
+      "enabled": true,
+      "retry": "none"
+    },
+    "edit": {
+      "enabled": true,
+      "retry": "reconcile_first"
+    },
+    "cancelInit": {
+      "enabled": true,
+      "retry": "reconcile_first"
+    },
+    "cancelConfirm": {
+      "enabled": true,
+      "retry": "same_payload_valid"
+    }
+  }
+}

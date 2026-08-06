@@ -1,0 +1,321 @@
+x-runtime-env: &runtime-env
+  NODE_ENV: production
+  DB_COLOCATED: "false"
+
+x-backend: &backend
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  image: fervor-backend:local
+  env_file:
+    - ${FERVOR_ENV_FILE:-env.example}
+  environment: *runtime-env
+  depends_on:
+    verify-runtime:
+      condition: service_completed_successfully
+  restart: unless-stopped
+  stop_grace_period: 30s
+  networks:
+    - fervor
+
+x-rust-matcher: &rust-matcher
+  build:
+    context: .
+    dockerfile: fervor-feed-rs/Dockerfile
+  image: fervor-alert-matcher:local
+  env_file:
+    - ${FERVOR_ENV_FILE:-env.example}
+  environment: *runtime-env
+  depends_on:
+    verify-runtime:
+      condition: service_completed_successfully
+  restart: unless-stopped
+  stop_grace_period: 15s
+  networks:
+    - fervor
+
+x-flyway: &flyway
+  image: flyway/flyway:13.0.0@sha256:db6195c21e90872063ff257ec38edcb8d3c77259b25a7a8fee67189511079511
+  entrypoint: ["/bin/sh", "/flyway/bin/compose-flyway.sh"]
+  volumes:
+    - ./db:/flyway/db:ro
+    - ./db/tools/compose-flyway.sh:/flyway/bin/compose-flyway.sh:ro
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  networks:
+    - fervor
+  restart: "no"
+  profiles: ["tools"]
+
+services:
+  verify-runtime:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: fervor-backend:local
+    entrypoint: ["node", "/app/db/tools/compose-runtime-bind.mjs"]
+    env_file:
+      - ${FERVOR_ENV_FILE:-env.example}
+    environment:
+      CORE_DB_HOST: ${CORE_DB_HOST:-}
+      CORE_DB_PORT: ${CORE_DB_PORT:-}
+      CORE_DB_NAME: ${CORE_DB_NAME:-}
+      MARKET_DB_HOST: ${MARKET_DB_HOST:-}
+      MARKET_DB_PORT: ${MARKET_DB_PORT:-}
+      MARKET_DB_NAME: ${MARKET_DB_NAME:-}
+    networks:
+      - fervor
+    restart: "no"
+
+  validate-core:
+    <<: *flyway
+    environment:
+      CORE_DB_HOST: ${CORE_DB_HOST:-}
+      CORE_DB_PORT: ${CORE_DB_PORT:-}
+      CORE_DB_NAME: ${CORE_DB_NAME:-}
+      CORE_DB_USER: ${CORE_DB_USER:-}
+      MIGRATION_TIMEOUT_SEC: ${MIGRATION_TIMEOUT_SEC:-3600}
+    secrets:
+      - core_db_password
+      - core_db_ca
+    command: ["core", "validate"]
+
+  validate-market:
+    <<: *flyway
+    environment:
+      MARKET_DB_HOST: ${MARKET_DB_HOST:-}
+      MARKET_DB_PORT: ${MARKET_DB_PORT:-}
+      MARKET_DB_NAME: ${MARKET_DB_NAME:-}
+      MARKET_DB_USER: ${MARKET_DB_USER:-}
+      MIGRATION_TIMEOUT_SEC: ${MIGRATION_TIMEOUT_SEC:-3600}
+    secrets:
+      - market_db_password
+      - market_db_ca
+    command: ["market", "validate"]
+
+  verify-split:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: fervor-backend:local
+    entrypoint: ["node", "/app/db/tools/compose-plane-split.mjs"]
+    environment:
+      CORE_DB_HOST: ${CORE_DB_HOST:-}
+      CORE_DB_PORT: ${CORE_DB_PORT:-}
+      CORE_DB_NAME: ${CORE_DB_NAME:-}
+      CORE_DB_USER: ${CORE_DB_USER:-}
+      MARKET_DB_HOST: ${MARKET_DB_HOST:-}
+      MARKET_DB_PORT: ${MARKET_DB_PORT:-}
+      MARKET_DB_NAME: ${MARKET_DB_NAME:-}
+      MARKET_DB_USER: ${MARKET_DB_USER:-}
+      MIGRATION_TIMEOUT_SEC: ${MIGRATION_TIMEOUT_SEC:-3600}
+    secrets:
+      - core_db_password
+      - core_db_ca
+      - market_db_password
+      - market_db_ca
+    depends_on:
+      validate-core:
+        condition: service_completed_successfully
+      validate-market:
+        condition: service_completed_successfully
+      verify-runtime:
+        condition: service_completed_successfully
+    networks:
+      - fervor
+    restart: "no"
+    profiles: ["tools"]
+
+  migrate-core:
+    <<: *flyway
+    environment:
+      CORE_DB_HOST: ${CORE_DB_HOST:-}
+      CORE_DB_PORT: ${CORE_DB_PORT:-}
+      CORE_DB_NAME: ${CORE_DB_NAME:-}
+      CORE_DB_USER: ${CORE_DB_USER:-}
+      MIGRATION_TIMEOUT_SEC: ${MIGRATION_TIMEOUT_SEC:-3600}
+    secrets:
+      - core_db_password
+      - core_db_ca
+    depends_on:
+      verify-split:
+        condition: service_completed_successfully
+    command: ["core", "migrate"]
+
+  migrate-market:
+    <<: *flyway
+    environment:
+      MARKET_DB_HOST: ${MARKET_DB_HOST:-}
+      MARKET_DB_PORT: ${MARKET_DB_PORT:-}
+      MARKET_DB_NAME: ${MARKET_DB_NAME:-}
+      MARKET_DB_USER: ${MARKET_DB_USER:-}
+      MIGRATION_TIMEOUT_SEC: ${MIGRATION_TIMEOUT_SEC:-3600}
+    secrets:
+      - market_db_password
+      - market_db_ca
+    depends_on:
+      migrate-core:
+        condition: service_completed_successfully
+      verify-split:
+        condition: service_completed_successfully
+    command: ["market", "migrate"]
+
+  api:
+    <<: *backend
+    environment:
+      <<: *runtime-env
+      BOT_GATEWAY_ENABLED: "false"
+    ports:
+      - "3010:3010"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3010/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  feed:
+    <<: *backend
+    command: ["node", "dist/feed-engine.js"]
+
+  candles:
+    <<: *backend
+    command: ["node", "dist/candle-worker.js"]
+
+  trade-enricher:
+    <<: *backend
+    command: ["node", "dist/market-trade-worker.js"]
+
+  market-metrics:
+    <<: *backend
+    command: ["node", "dist/market-metric-worker.js"]
+
+  matcher:
+    <<: *rust-matcher
+
+  indexer:
+    <<: *rust-matcher
+    command: ["fervor-market-indexer"]
+    profiles: ["rust-indexer"]
+
+  matcher-ts:
+    <<: *backend
+    command: ["node", "dist/alert-matcher-worker.js"]
+    profiles: ["typescript-fallback"]
+
+  alert-writer:
+    <<: *backend
+    command: ["node", "dist/alert-candidate-worker.js"]
+
+  notifications:
+    <<: *backend
+    command: ["node", "dist/notification-worker.js"]
+
+  outbox:
+    <<: *backend
+    command: ["node", "dist/outbox-worker.js"]
+
+  wallets:
+    <<: *backend
+    command: ["node", "dist/wallet-indexer.js"]
+
+  executions:
+    <<: *backend
+    command: ["node", "dist/execution-reconciler.js"]
+
+  egress-recovery:
+    <<: *backend
+    command: ["node", "dist/egress-recovery.js"]
+    environment:
+      <<: *runtime-env
+      EGRESS_HEALTH_PORT: "9465"
+    expose:
+      - "9465"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9465/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 3
+      start_period: 10s
+
+  blob-retention:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: fervor-backend:local
+    command: ["node", "dist/blob-retention.js"]
+    environment:
+      NODE_ENV: production
+      MAINT_DB_HOST: ${CORE_DB_HOST:-}
+      MAINT_DB_PORT: ${CORE_DB_PORT:-}
+      MAINT_DB_NAME: ${CORE_DB_NAME:-}
+      MAINT_DB_USER: ${MAINT_DB_USER:-}
+      MAINT_DB_PASSWORD_FILE: /run/secrets/maint_db_password
+      MAINT_DB_CA_FILE: /run/secrets/maint_db_ca
+      MAINT_DB_SSL_MODE: verify-full
+      RETENTION_BATCH: ${RETENTION_BATCH:-256}
+      RETENTION_BATCH_MS: ${RETENTION_BATCH_MS:-15000}
+      RETENTION_INTERVAL_MS: ${RETENTION_INTERVAL_MS:-30000}
+      RETENTION_HEALTH_PORT: "9466"
+      RETENTION_MAX_ERRORS: ${RETENTION_MAX_ERRORS:-5}
+    secrets:
+      - source: maint_db_password
+        target: maint_db_password
+      - source: core_db_ca
+        target: maint_db_ca
+    depends_on:
+      verify-runtime:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    stop_grace_period: 30s
+    networks:
+      - fervor
+    expose:
+      - "9466"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9466/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  integrations:
+    <<: *backend
+    command: ["node", "dist/integration-worker.js"]
+    environment:
+      <<: *runtime-env
+      BOT_GATEWAY_ENABLED: "true"
+    profiles: ["bots"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3010/api}
+        NEXT_PUBLIC_SOLANA_NETWORK: ${NEXT_PUBLIC_SOLANA_NETWORK:-mainnet-beta}
+    image: fervor-frontend:local
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    networks:
+      - fervor
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  fervor:
+    driver: bridge
+
+secrets:
+  core_db_password:
+    file: ${CORE_DB_PASSWORD_FILE:-/dev/null}
+  core_db_ca:
+    file: ${CORE_DB_CA_FILE:-/dev/null}
+  market_db_password:
+    file: ${MARKET_DB_PASSWORD_FILE:-/dev/null}
+  market_db_ca:
+    file: ${MARKET_DB_CA_FILE:-/dev/null}
+  maint_db_password:
+    file: ${MAINT_DB_PASSWORD_FILE:-/dev/null}
