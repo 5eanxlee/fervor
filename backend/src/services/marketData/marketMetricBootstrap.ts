@@ -1,7 +1,7 @@
 import { coreDb, marketDb, type Database } from '../../config/database';
 import { env } from '../../config/env';
 import { NormalizedTradeEvent, safeSlot } from '../../types';
-import type { MarketDataProviderName } from '../../types';
+import type { MarketSource } from '../../types';
 import { MarketMetricService } from './marketMetricService';
 
 interface Lease {
@@ -44,7 +44,7 @@ const tradeFromRow = (row: Record<string, any>): NormalizedTradeEvent => ({
     quoteKind: row.quote_kind || undefined,
     decodeVersion: row.decode_version || undefined,
     computeUnits: row.compute_units === null ? undefined : Number(row.compute_units),
-    source: String(row.source) as MarketDataProviderName,
+    source: String(row.source) as MarketSource,
     sourceEventId: String(row.source_event_id),
     observedAt: iso(row.observed_at),
     receivedAt: iso(row.received_at),

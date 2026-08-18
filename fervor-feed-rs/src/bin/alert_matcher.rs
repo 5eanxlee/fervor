@@ -203,8 +203,14 @@ async fn tick_loop(
             let raw = match payload(&entry) {
                 Ok(raw) => raw,
                 Err(error) => {
-                    bus.dead_letter(&stream, &entry.id, "", &error.to_string())
-                        .await?;
+                    bus.dead_letter(
+                        "rust-alert-matcher",
+                        &stream,
+                        &entry.id,
+                        "",
+                        &error.to_string(),
+                    )
+                    .await?;
                     bus.ack(&stream, &group, &entry.id).await?;
                     stats.failures.fetch_add(1, Ordering::Relaxed);
                     continue;
@@ -213,8 +219,14 @@ async fn tick_loop(
             let tick: FeedTick = match serde_json::from_str(&raw) {
                 Ok(tick) => tick,
                 Err(error) => {
-                    bus.dead_letter(&stream, &entry.id, &raw, &error.to_string())
-                        .await?;
+                    bus.dead_letter(
+                        "rust-alert-matcher",
+                        &stream,
+                        &entry.id,
+                        &raw,
+                        &error.to_string(),
+                    )
+                    .await?;
                     bus.ack(&stream, &group, &entry.id).await?;
                     stats.failures.fetch_add(1, Ordering::Relaxed);
                     continue;

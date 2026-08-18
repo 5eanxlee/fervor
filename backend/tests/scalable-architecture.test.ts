@@ -10,12 +10,10 @@ vi.mock('../src/config/database', () => ({
 
 vi.mock('../src/services/redisStreamService', () => ({
     STREAMS: {
-        providerRawEvents: 'provider.raw_events',
         marketTrades: 'market.trades',
         marketPoolEvents: 'market.pool_events',
         marketStates: 'market.states',
         marketCandles: 'market.candles',
-        ticksRaw: 'ticks.raw',
         ticksNormalized: 'ticks.normalized',
         alertCandidates: 'alerts.candidates',
         alertsTriggered: 'alerts.triggered',

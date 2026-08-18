@@ -4,13 +4,11 @@ import { env } from '../config/env';
 import { metrics } from './metrics';
 
 export const STREAMS = {
-    providerRawEvents: 'provider.raw_events',
     decodedTrades: 'market.trades.decoded',
     marketTrades: 'market.trades',
     marketPoolEvents: 'market.pool_events',
     marketStates: 'market.states',
     marketCandles: 'market.candles',
-    ticksRaw: 'ticks.raw',
     ticksNormalized: 'ticks.normalized',
     alertCandidates: 'alerts.candidates',
     alertsTriggered: 'alerts.triggered',
@@ -269,11 +267,10 @@ export class RedisStreamService {
     }
 
     private maxLenFor(stream: StreamName): number {
-        if (stream === STREAMS.providerRawEvents) return env.REDIS_STREAM_MAXLEN_PROVIDER_RAW;
         if (stream === STREAMS.decodedTrades || stream === STREAMS.marketTrades || stream === STREAMS.marketStates || stream === STREAMS.marketPoolEvents || stream === STREAMS.marketCandles) {
             return env.REDIS_STREAM_MAXLEN_MARKET_EVENTS;
         }
-        if (stream === STREAMS.ticksRaw || stream.startsWith(STREAMS.ticksNormalized)) {
+        if (stream.startsWith(STREAMS.ticksNormalized)) {
             return env.REDIS_STREAM_MAXLEN_TICKS;
         }
         if (stream === STREAMS.notificationsPending) return env.REDIS_STREAM_MAXLEN_NOTIFICATIONS;

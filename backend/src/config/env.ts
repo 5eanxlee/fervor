@@ -128,13 +128,7 @@ const EnvSchema = z.object({
     FRONTEND_URL: z.string().url().default('http://localhost:3002'),
     HELIUS_API_KEY: optionalProviderSecret,
     HELIUS_API_URL: z.string().url().default('https://mainnet.helius-rpc.com'),
-    HELIUS_LASERSTREAM_ENDPOINT: z.string().url().default('https://laserstream-mainnet-ewr.helius-rpc.com'),
-    HELIUS_LASERSTREAM_REGION: z.string().trim().min(1).default('ewr'),
-    LASERSTREAM_REPLAY_ENABLED: booleanFromEnv.default(true),
-    MARKET_DATA_PROVIDER: z.literal('helius_laserstream').default('helius_laserstream'),
     LATENCY_SAMPLE_RATE: z.coerce.number().min(0).max(1).optional(),
-    MARKET_DATA_COMMITMENT: z.enum(['processed', 'confirmed', 'finalized']).default('confirmed'),
-    MARKET_DATA_REPLAY_WINDOW_SLOTS: z.coerce.number().int().positive().default(216000),
     JUPITER_API_KEY: optionalProviderSecret,
     JUPITER_API_URL: z.string().url().default('https://api.jup.ag'),
     JUPITER_RATE_PER_MIN: z.coerce.number().int().min(1).max(1000000).default(60),
@@ -208,15 +202,12 @@ const EnvSchema = z.object({
     NOTIFICATION_MAX_RETRY_BACKLOG: z.coerce.number().int().positive().default(100000),
     ENABLE_TELEGRAM_NOTIFICATIONS: booleanFromEnv.default(false),
     ENABLE_DISCORD_NOTIFICATIONS: booleanFromEnv.default(false),
-    ENABLE_MARKET_FEED: booleanFromEnv.default(false),
+    MARKET_DATA_REQUIRED: booleanFromEnv.default(false),
     RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900000),
     RATE_LIMIT_MAX_REQUESTS: z.coerce.number().int().positive().default(100),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(0),
     FEED_SHARD_ID: z.coerce.number().int().min(0).default(0),
     FEED_SHARD_COUNT: z.coerce.number().int().positive().default(1),
-    FEED_MAX_TOKENS_PER_CONNECTION: z.coerce.number().int().positive().default(100),
-    FEED_RECONNECT_BASE_MS: z.coerce.number().int().positive().default(1000),
-    FEED_RECONNECT_MAX_MS: z.coerce.number().int().positive().default(30000),
     REDIS_STREAM_BLOCK_MS: z.coerce.number().int().positive().default(5000),
     REDIS_STREAM_BATCH_SIZE: z.coerce.number().int().positive().default(100),
     REDIS_STREAM_STALE_MS: z.coerce.number().int().positive().default(60000),
@@ -225,7 +216,6 @@ const EnvSchema = z.object({
     MARKET_METRIC_BOOTSTRAP_BATCH: z.coerce.number().int().min(1).max(5000).default(1000),
     MARKET_METRIC_BOOTSTRAP_LEASE_MS: z.coerce.number().int().min(5000).max(600000).default(60000),
     MARKET_METRIC_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(14),
-    REDIS_STREAM_MAXLEN_PROVIDER_RAW: z.coerce.number().int().positive().default(1000000),
     REDIS_STREAM_MAXLEN_MARKET_EVENTS: z.coerce.number().int().positive().default(1000000),
     REDIS_STREAM_MAXLEN_TICKS: z.coerce.number().int().positive().default(500000),
     REDIS_STREAM_MAXLEN_NOTIFICATIONS: z.coerce.number().int().positive().default(2000000),
@@ -428,8 +418,3 @@ export const env = parseEnv(process.env);
 export const isProduction = env.NODE_ENV === 'production';
 
 export const latencySampleRate = env.LATENCY_SAMPLE_RATE ?? (isProduction ? 0.01 : 1);
-
-export const isMarketDataProviderConfigured = (provider: string = env.MARKET_DATA_PROVIDER): boolean => {
-    if (provider === 'helius_laserstream') return !!env.HELIUS_API_KEY;
-    return false;
-};

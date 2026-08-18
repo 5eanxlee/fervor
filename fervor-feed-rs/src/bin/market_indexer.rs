@@ -1,16 +1,19 @@
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use clap::Parser;
-use fervor_feed_rs::market_decoder::{decode_swap, DecodedSwap, QuoteKind, Side, Venue};
-use fervor_feed_rs::market_journal::{MarketJournal, RawRecord};
+use fervor_feed_rs::fervor_tx::{Commitment, Network, RawEnvelope, SourceAdapter, SourceCap};
+use fervor_feed_rs::market_decoder::{decode_swap, QuoteKind, Side, Venue};
+use fervor_feed_rs::market_journal::MarketJournal;
 use fervor_feed_rs::postgres::DbTls;
-use fervor_feed_rs::stream_bus::{StreamBus, RAW_STREAM, TRADE_STREAM};
+use fervor_feed_rs::stream_bus::{StreamBus, RAW_SOURCE, TRADE_STREAM};
+use fervor_feed_rs::yellowstone::{YellowstoneAdapter, WIRE_FORMAT, WIRE_VERSION};
 use futures_util::StreamExt;
 use prost::Message;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 use tokio::time::{interval, sleep, MissedTickBehavior};
+use url::Url;
 use yellowstone_grpc_client::GeyserGrpcClient;
 use yellowstone_grpc_proto::prelude::{
     subscribe_update::UpdateOneof, CommitmentLevel, SubscribeRequest,
@@ -33,12 +36,18 @@ const REPLAY_SLOTS: u64 = 2;
 #[derive(Parser, Debug)]
 #[command(name = "fervor-market-indexer")]
 struct Args {
+    #[arg(long, env = "MARKET_SOURCE", default_value = "")]
+    source: String,
+    #[arg(long, env = "SOLANA_NETWORK", default_value = "mainnet-beta")]
+    network: String,
     #[arg(long, env = "YELLOWSTONE_ENDPOINTS", value_delimiter = ',')]
     endpoints: Vec<String>,
     #[arg(long, env = "HELIUS_LASERSTREAM_ENDPOINT")]
     helius_endpoint: Option<String>,
+    #[arg(long, env = "YELLOWSTONE_X_TOKEN")]
+    x_token: Option<String>,
     #[arg(long, env = "HELIUS_API_KEY")]
-    api_key: Option<String>,
+    helius_key: Option<String>,
     #[arg(long, env = "REDIS_URL", default_value = "redis://localhost:6379")]
     redis_url: String,
     #[arg(long, env = "MARKET_DATABASE_URL")]
@@ -53,42 +62,20 @@ struct Args {
     commitment: String,
     #[arg(long = "program-id")]
     program_ids: Vec<String>,
-    #[arg(long, env = "INDEXER_RAW_EVENTS", default_value_t = true)]
-    publish_raw: bool,
     #[arg(long, env = "INDEXER_RECONNECT_MAX_MS", default_value_t = 30_000)]
     reconnect_max_ms: u64,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RawEvent<'a> {
-    source: &'static str,
-    provider: &'static str,
-    source_event_id: &'a str,
-    #[serde(rename = "type")]
-    event_type: &'static str,
-    token_mint: &'a str,
-    pool_address: Option<&'a str>,
-    program_id: &'a str,
-    signature: &'a str,
-    slot: u64,
-    received_at: &'a str,
-    observed_at: &'a str,
-    confidence: f64,
-    stale: bool,
-    commitment: &'a str,
-    payload: &'a DecodedSwap,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 struct TradeEvent<'a> {
-    source: &'static str,
+    source: &'a str,
     source_event_id: &'a str,
     kind: &'static str,
     idempotency_key: String,
     token_mint: &'a str,
     quote_mint: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pool_address: Option<&'a str>,
     protocol: Venue,
     program_id: &'a str,
@@ -100,9 +87,14 @@ struct TradeEvent<'a> {
     quote_amount_raw: &'a str,
     token_decimals: u32,
     quote_decimals: u32,
+    price_quote: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     sol_amount: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     usd_amount: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     price_sol: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     price_usd: Option<f64>,
     quote_kind: QuoteKind,
     route: &'a [Venue],
@@ -116,6 +108,7 @@ struct TradeEvent<'a> {
     stale: bool,
     commitment: &'a str,
     decode_version: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
     compute_units: Option<u64>,
 }
 
@@ -128,6 +121,7 @@ struct Health<'a> {
     decoded: u64,
     skipped: u64,
     duplicates: u64,
+    quarantined: u64,
     reconnects: u64,
     updated_at: String,
 }
@@ -141,17 +135,27 @@ fn commitment(value: &str) -> Result<CommitmentLevel> {
     }
 }
 
-fn event_key(signature: &str, instruction_index: u32, event_index: u32) -> String {
+fn event_key(
+    network: Network,
+    signature: &str,
+    instruction_index: u32,
+    event_index: u32,
+) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(format!("{signature}:{instruction_index}:{event_index}"));
+    hasher.update(format!(
+        "{}:{signature}:{instruction_index}:{event_index}",
+        network.as_str()
+    ));
     hex::encode(hasher.finalize())
 }
 
-fn subscription_id(commitment: &str, programs: &[String]) -> String {
+fn subscription_id(network: Network, commitment: &str, programs: &[String]) -> String {
     let mut programs = programs.to_vec();
     programs.sort_unstable();
     programs.dedup();
     let mut hasher = Sha256::new();
+    hasher.update(network.as_str().as_bytes());
+    hasher.update([0]);
     hasher.update(commitment.as_bytes());
     for program in programs {
         hasher.update([0]);
@@ -160,8 +164,17 @@ fn subscription_id(commitment: &str, programs: &[String]) -> String {
     hex::encode(hasher.finalize())
 }
 
-fn source_id(commitment: &str, slot: u64, signature: &str) -> String {
-    format!("yellowstone:{commitment}:{slot}:{signature}")
+fn source_id(
+    source: &str,
+    network: Network,
+    commitment: &str,
+    slot: u64,
+    signature: &str,
+) -> String {
+    format!(
+        "{source}:{}:{commitment}:{slot}:{signature}",
+        network.as_str()
+    )
 }
 
 fn resume_from(slot: u64) -> u64 {
@@ -194,13 +207,43 @@ fn database_tls(node_env: &str, value: &str) -> Result<DbTls> {
     Ok(tls)
 }
 
-fn event_time(created_at: Option<prost_types::Timestamp>) -> DateTime<Utc> {
+fn validate_endpoint(value: &str, production: bool) -> Result<()> {
+    let endpoint = Url::parse(value).context("Yellowstone endpoint is not a valid URL")?;
+    if !matches!(endpoint.scheme(), "http" | "https")
+        || !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+        || endpoint.query().is_some()
+        || endpoint.fragment().is_some()
+    {
+        return Err(anyhow!(
+            "Yellowstone endpoint must be an HTTP(S) URL without embedded credentials, query, or fragment"
+        ));
+    }
+    if production && endpoint.scheme() != "https" {
+        return Err(anyhow!("production Yellowstone endpoints require HTTPS"));
+    }
+    Ok(())
+}
+
+fn event_time(
+    created_at: Option<prost_types::Timestamp>,
+    fallback: DateTime<Utc>,
+) -> DateTime<Utc> {
     created_at
         .and_then(|value| DateTime::from_timestamp(value.seconds, value.nanos as u32))
-        .unwrap_or_else(Utc::now)
+        .unwrap_or(fallback)
 }
 
 async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) -> Result<()> {
+    let network: Network = args.network.parse()?;
+    let source_commitment: Commitment = args.commitment.parse()?;
+    let adapter = YellowstoneAdapter::new(args.source.clone(), network)?;
+    adapter.caps().require(&[
+        SourceCap::Transactions,
+        SourceCap::RawPayload,
+        SourceCap::TxIndex,
+        source_commitment.cap(),
+    ])?;
     let mut bus = StreamBus::connect(&args.redis_url)
         .await
         .context("failed to connect to the market stream bus")?;
@@ -209,8 +252,8 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
             .await
             .context("failed to connect to the market journal")?;
     let mut builder = GeyserGrpcClient::build_from_shared(endpoint.to_string())?;
-    if let Some(api_key) = args.api_key.clone() {
-        builder = builder.x_token(Some(api_key))?;
+    if let Some(token) = args.x_token.clone() {
+        builder = builder.x_token(Some(token))?;
     }
     let mut client = builder
         .connect()
@@ -222,9 +265,9 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
         args.program_ids.clone()
     };
     let commitment_name = args.commitment.to_ascii_lowercase();
-    let subscription_id = subscription_id(&commitment_name, &programs);
+    let subscription_id = subscription_id(network, &commitment_name, &programs);
     let from_slot = journal
-        .resume_slot(&subscription_id, &commitment_name)
+        .resume_slot(&args.source, &subscription_id, &commitment_name)
         .await?
         .map(resume_from);
     let mut request = SubscribeRequest {
@@ -246,6 +289,7 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
     let mut skipped = 0_u64;
     let mut last_slot = 0_u64;
     let mut duplicates = 0_u64;
+    let mut quarantined = 0_u64;
     let mut heartbeat = interval(Duration::from_secs(5));
     heartbeat.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
@@ -262,6 +306,7 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
                         decoded,
                         skipped,
                         duplicates,
+                        quarantined,
                         reconnects,
                         updated_at: Utc::now().to_rfc3339(),
                     },
@@ -270,44 +315,90 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
             }
             update = stream.next() => {
                 let update = update.ok_or_else(|| anyhow!("Yellowstone stream closed"))??;
-                let observed = event_time(update.created_at).to_rfc3339();
+                let received = Utc::now();
+                let observed = event_time(update.created_at, received).to_rfc3339();
+                let received = received.to_rfc3339();
                 let filters = update.filters;
                 let Some(UpdateOneof::Transaction(transaction)) = update.update_oneof else {
                     continue;
                 };
                 let signature = transaction_signature(&transaction)?;
-                let raw_source_id = source_id(&commitment_name, transaction.slot, &signature);
+                let raw_source_id = source_id(
+                    &args.source,
+                    network,
+                    &commitment_name,
+                    transaction.slot,
+                    &signature,
+                );
                 let payload = transaction.encode_to_vec();
-                let slot = i64::try_from(transaction.slot)
-                    .context("Yellowstone slot exceeds the PostgreSQL bigint domain")?;
-                let inserted = journal.accept(&RawRecord {
-                    commitment: &commitment_name,
-                    source_id: &raw_source_id,
-                    subscription_id: &subscription_id,
-                    slot,
-                    signature: &signature,
-                    filters: &filters,
-                    payload: &payload,
-                    observed_at: &observed,
-                }).await?;
+                let raw = RawEnvelope::new(
+                    args.source.clone(),
+                    WIRE_FORMAT.to_string(),
+                    WIRE_VERSION,
+                    raw_source_id,
+                    subscription_id.clone(),
+                    network,
+                    source_commitment,
+                    transaction.slot,
+                    signature,
+                    filters,
+                    observed.clone(),
+                    payload,
+                )?;
+                let inserted = journal.accept(&raw).await?;
                 if !inserted {
                     duplicates += 1;
                 }
                 last_slot = transaction.slot;
-                let Some(swap) = decode_swap(&transaction) else {
-                    skipped += 1;
-                    continue;
+                let tx = match adapter.adapt(raw, &transaction) {
+                    Ok(tx) => tx,
+                    Err(item) => {
+                        quarantined += 1;
+                        bus.dead_letter(
+                            "rust-market-indexer",
+                            RAW_SOURCE,
+                            &item.source_event_id,
+                            &serde_json::to_string(&item)?,
+                            "source adapter quarantined transaction",
+                        ).await?;
+                        continue;
+                    }
+                };
+                let swap = match decode_swap(&tx) {
+                    Ok(Some(swap)) => swap,
+                    Ok(None) => {
+                        skipped += 1;
+                        continue;
+                    }
+                    Err(item) => {
+                        quarantined += 1;
+                        bus.dead_letter(
+                            "rust-market-indexer",
+                            RAW_SOURCE,
+                            &item.source_event_id,
+                            &serde_json::to_string(&item)?,
+                            "FervorTx decoder quarantined transaction",
+                        ).await?;
+                        continue;
+                    }
                 };
                 decoded += 1;
                 let source_id = format!(
-                    "laserstream:{}:{}:{}:{}",
+                    "{}:{}:{}:{}:{}:{}",
+                    args.source,
+                    network.as_str(),
                     swap.slot, swap.signature, swap.instruction_index, swap.event_index
                 );
                 let trade = TradeEvent {
-                    source: "helius_laserstream",
+                    source: &args.source,
                     source_event_id: &source_id,
                     kind: "trade",
-                    idempotency_key: event_key(&swap.signature, swap.instruction_index, swap.event_index),
+                    idempotency_key: event_key(
+                        network,
+                        &swap.signature,
+                        swap.instruction_index,
+                        swap.event_index,
+                    ),
                     token_mint: &swap.token_mint,
                     quote_mint: &swap.quote_mint,
                     pool_address: swap.pool_address.as_deref(),
@@ -321,6 +412,7 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
                     quote_amount_raw: &swap.quote_amount_raw,
                     token_decimals: swap.token_decimals,
                     quote_decimals: swap.quote_decimals,
+                    price_quote: swap.price_quote,
                     sol_amount: swap.sol_amount,
                     usd_amount: swap.usd_amount,
                     price_sol: swap.price_sol,
@@ -331,7 +423,7 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
                     event_index: swap.event_index,
                     slot: swap.slot,
                     signature: &swap.signature,
-                    received_at: &observed,
+                    received_at: &received,
                     observed_at: &observed,
                     confidence: swap.confidence,
                     stale: false,
@@ -340,26 +432,6 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
                     compute_units: swap.compute_units,
                 };
                 bus.publish(TRADE_STREAM, &trade).await?;
-                if args.publish_raw {
-                    let raw = RawEvent {
-                        source: "helius_laserstream",
-                        provider: "helius_laserstream",
-                        source_event_id: &source_id,
-                        event_type: "transaction",
-                        token_mint: &swap.token_mint,
-                        pool_address: swap.pool_address.as_deref(),
-                        program_id: &swap.program_id,
-                        signature: &swap.signature,
-                        slot: swap.slot,
-                        received_at: &observed,
-                        observed_at: &observed,
-                        confidence: swap.confidence,
-                        stale: false,
-                        commitment: &commitment_name,
-                        payload: &swap,
-                    };
-                    bus.publish(RAW_STREAM, &raw).await?;
-                }
             }
         }
     }
@@ -371,12 +443,26 @@ async fn main() -> Result<()> {
     if args.endpoints.is_empty() {
         if let Some(endpoint) = args.helius_endpoint.clone() {
             args.endpoints.push(endpoint);
+            if args.source.is_empty() {
+                args.source = "helius_laserstream".to_string();
+            }
+            if args.x_token.is_none() {
+                args.x_token = args.helius_key.clone();
+            }
         }
     }
     if args.endpoints.is_empty() {
         return Err(anyhow!(
             "set YELLOWSTONE_ENDPOINTS or HELIUS_LASERSTREAM_ENDPOINT"
         ));
+    }
+    if args.source.trim().is_empty() {
+        return Err(anyhow!(
+            "set MARKET_SOURCE when using explicit Yellowstone endpoints"
+        ));
+    }
+    for endpoint in &args.endpoints {
+        validate_endpoint(endpoint, args.node_env == "production")?;
     }
     let tls = database_tls(&args.node_env, &args.db_ssl_mode)?;
 
@@ -408,13 +494,70 @@ mod tests {
         let first = vec!["program-b".to_string(), "program-a".to_string()];
         let second = vec!["program-a".to_string(), "program-b".to_string()];
         assert_eq!(
-            subscription_id("confirmed", &first),
-            subscription_id("confirmed", &second)
+            subscription_id(Network::MainnetBeta, "confirmed", &first),
+            subscription_id(Network::MainnetBeta, "confirmed", &second)
         );
         assert_ne!(
-            subscription_id("confirmed", &first),
-            subscription_id("finalized", &first)
+            subscription_id(Network::MainnetBeta, "confirmed", &first),
+            subscription_id(Network::MainnetBeta, "finalized", &first)
         );
+        assert_ne!(
+            subscription_id(Network::MainnetBeta, "confirmed", &first),
+            subscription_id(Network::Devnet, "confirmed", &first)
+        );
+        assert_ne!(
+            event_key(Network::MainnetBeta, "signature", 0, 0),
+            event_key(Network::Devnet, "signature", 0, 0)
+        );
+    }
+
+    #[test]
+    fn decoded_trade_matches_the_shared_backend_contract() {
+        let signature = "BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA";
+        let source_id = format!("helius_laserstream:mainnet-beta:42:{signature}:0:0");
+        let route = [Venue::PumpFun];
+        let trade = TradeEvent {
+            source: "helius_laserstream",
+            source_event_id: &source_id,
+            kind: "trade",
+            idempotency_key: event_key(Network::MainnetBeta, signature, 0, 0),
+            token_mint: "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+            quote_mint: "So11111111111111111111111111111111111111112",
+            pool_address: Some("CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"),
+            protocol: Venue::PumpFun,
+            program_id: Venue::PumpFun.program_id(),
+            maker: "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+            side: Side::Buy,
+            token_amount: 2.0,
+            quote_amount: 4.0,
+            token_amount_raw: "2000000",
+            quote_amount_raw: "4000000000",
+            token_decimals: 6,
+            quote_decimals: 9,
+            price_quote: 2.0,
+            sol_amount: Some(4.0),
+            usd_amount: None,
+            price_sol: Some(2.0),
+            price_usd: None,
+            quote_kind: QuoteKind::Wsol,
+            route: &route,
+            instruction_index: 0,
+            event_index: 0,
+            slot: 42,
+            signature,
+            received_at: "2024-11-19T00:00:00Z",
+            observed_at: "2024-11-19T00:00:00Z",
+            confidence: 0.94,
+            stale: false,
+            commitment: "confirmed",
+            decode_version: "balance-delta-v1",
+            compute_units: Some(88_000),
+        };
+        let expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../tests/contracts/decoded-trade-v1.json"
+        ))
+        .unwrap();
+        assert_eq!(serde_json::to_value(trade).unwrap(), expected);
     }
 
     #[test]
@@ -425,6 +568,10 @@ mod tests {
         );
         assert!(database_tls("production", "disable").is_err());
         assert_eq!(database_tls("test", "disable").unwrap(), DbTls::Disable);
+        assert!(validate_endpoint("https://geyser.example", true).is_ok());
+        assert!(validate_endpoint("http://127.0.0.1:10000", false).is_ok());
+        assert!(validate_endpoint("http://geyser.example", true).is_err());
+        assert!(validate_endpoint("https://token@geyser.example", false).is_err());
     }
 
     #[test]

@@ -1,10 +1,7 @@
+use crate::fervor_tx::{FervorTx, Quarantine, QuarantineReason, TokenBalance, TxIx};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use yellowstone_grpc_proto::prelude::{
-    CompiledInstruction, InnerInstruction, SubscribeUpdateTransaction, TokenBalance,
-    TransactionStatusMeta,
-};
 
 pub const WSOL_MINT: &str = "So11111111111111111111111111111111111111112";
 pub const USDC_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -125,14 +122,6 @@ struct Delta {
     decimals: u32,
 }
 
-#[derive(Clone, Copy)]
-struct Ix<'a> {
-    outer: u32,
-    program_index: u32,
-    accounts: &'a [u8],
-    data: &'a [u8],
-}
-
 #[derive(Clone)]
 struct SwapIx {
     outer: u32,
@@ -140,20 +129,33 @@ struct SwapIx {
     pool: Option<String>,
 }
 
-pub fn decode_swap(update: &SubscribeUpdateTransaction) -> Option<DecodedSwap> {
-    let info = update.transaction.as_ref()?;
-    let transaction = info.transaction.as_ref()?;
-    let message = transaction.message.as_ref()?;
-    let meta = info.meta.as_ref()?;
-    if meta.err.is_some() || message.account_keys.is_empty() {
+pub type DecodeResult = Result<Option<DecodedSwap>, Quarantine>;
+
+pub fn decode_swap(tx: &FervorTx) -> DecodeResult {
+    if let Err(error) = tx.validate() {
+        return Err(Quarantine::from_tx(
+            tx,
+            if tx.version == crate::fervor_tx::FERVOR_TX_VERSION {
+                QuarantineReason::InvalidIdentity
+            } else {
+                QuarantineReason::UnsupportedContract
+            },
+            error.to_string(),
+        ));
+    }
+    Ok(decode_v1(tx))
+}
+
+fn decode_v1(tx: &FervorTx) -> Option<DecodedSwap> {
+    if tx.error.is_some() || tx.static_keys.is_empty() {
         return None;
     }
 
-    let keys = resolve_keys(&message.account_keys, meta);
-    let trader = encode_key(message.account_keys.first()?)?;
-    let swaps = swap_instructions(message.instructions.as_slice(), meta, &keys);
+    let keys = resolve_keys(tx);
+    let trader = tx.static_keys.first()?.clone();
+    let swaps = swap_instructions(&tx.instructions, &keys);
     let primary = swaps.first()?;
-    let deltas = token_deltas(meta)?;
+    let deltas = token_deltas(&tx.pre_tokens, &tx.post_tokens)?;
     let base = deltas
         .iter()
         .filter(|delta| {
@@ -177,7 +179,7 @@ pub fn decode_swap(update: &SubscribeUpdateTransaction) -> Option<DecodedSwap> {
             )
         })
         .or_else(|| {
-            native_sol_delta(meta)
+            native_sol_delta(tx)
                 .map(|raw| (WSOL_MINT.to_string(), raw, 9, QuoteKind::NativeSol, 0.82))
         })?;
 
@@ -194,7 +196,7 @@ pub fn decode_swap(update: &SubscribeUpdateTransaction) -> Option<DecodedSwap> {
         return None;
     }
 
-    let signature = bs58::encode(&info.signature).into_string();
+    let signature = tx.signed_id.signature.clone();
     let mut route = Vec::new();
     for swap in &swaps {
         if !route.contains(&swap.venue) {
@@ -208,7 +210,7 @@ pub fn decode_swap(update: &SubscribeUpdateTransaction) -> Option<DecodedSwap> {
 
     Some(DecodedSwap {
         signature,
-        slot: update.slot,
+        slot: tx.occurrence.slot,
         instruction_index: primary.outer,
         event_index: 0,
         trader,
@@ -233,78 +235,30 @@ pub fn decode_swap(update: &SubscribeUpdateTransaction) -> Option<DecodedSwap> {
         quote_kind: kind,
         confidence,
         decode_version: "balance-delta-v1",
-        compute_units: meta.compute_units_consumed,
+        compute_units: tx.compute_units,
     })
 }
 
-fn resolve_keys(static_keys: &[Vec<u8>], meta: &TransactionStatusMeta) -> Vec<String> {
-    static_keys
+fn resolve_keys(tx: &FervorTx) -> Vec<String> {
+    tx.static_keys
         .iter()
-        .chain(meta.loaded_writable_addresses.iter())
-        .chain(meta.loaded_readonly_addresses.iter())
-        .map(|key| encode_key(key).unwrap_or_default())
+        .chain(&tx.loaded_writable)
+        .chain(&tx.loaded_readonly)
+        .cloned()
         .collect()
 }
 
-fn encode_key(key: &[u8]) -> Option<String> {
-    (key.len() == 32).then(|| bs58::encode(key).into_string())
-}
-
-fn all_instructions<'a>(
-    outer: &'a [CompiledInstruction],
-    meta: &'a TransactionStatusMeta,
-) -> Vec<Ix<'a>> {
-    let mut instructions = Vec::with_capacity(
-        outer.len()
-            + meta
-                .inner_instructions
-                .iter()
-                .map(|item| item.instructions.len())
-                .sum::<usize>(),
-    );
-    for (index, instruction) in outer.iter().enumerate() {
-        instructions.push(Ix {
-            outer: index as u32,
-            program_index: instruction.program_id_index,
-            accounts: &instruction.accounts,
-            data: &instruction.data,
-        });
-        if let Some(inner) = meta
-            .inner_instructions
-            .iter()
-            .find(|inner| inner.index as usize == index)
-        {
-            instructions.extend(
-                inner
-                    .instructions
-                    .iter()
-                    .map(|instruction: &InnerInstruction| Ix {
-                        outer: index as u32,
-                        program_index: instruction.program_id_index,
-                        accounts: &instruction.accounts,
-                        data: &instruction.data,
-                    }),
-            );
-        }
-    }
+fn swap_instructions(instructions: &[TxIx], keys: &[String]) -> Vec<SwapIx> {
     instructions
-}
-
-fn swap_instructions(
-    outer: &[CompiledInstruction],
-    meta: &TransactionStatusMeta,
-    keys: &[String],
-) -> Vec<SwapIx> {
-    all_instructions(outer, meta)
-        .into_iter()
+        .iter()
         .filter_map(|instruction| {
             let program = keys.get(instruction.program_index as usize)?;
             let venue = Venue::from_program(program)?;
-            let pool_position = swap_pool_position(venue, instruction.data)?;
+            let pool_position = swap_pool_position(venue, &instruction.data)?;
             Some(SwapIx {
-                outer: instruction.outer,
+                outer: instruction.outer_index,
                 venue,
-                pool: pool_address(pool_position, instruction.accounts, keys),
+                pool: pool_address(pool_position, &instruction.accounts, keys),
             })
         })
         .collect()
@@ -380,7 +334,7 @@ fn anchor_discriminator(name: &str) -> [u8; 8] {
         .expect("sha256 prefix has eight bytes")
 }
 
-fn pool_address(position: usize, accounts: &[u8], keys: &[String]) -> Option<String> {
+fn pool_address(position: usize, accounts: &[u32], keys: &[String]) -> Option<String> {
     accounts
         .get(position)
         .and_then(|index| keys.get(*index as usize))
@@ -388,33 +342,25 @@ fn pool_address(position: usize, accounts: &[u8], keys: &[String]) -> Option<Str
         .cloned()
 }
 
-fn token_deltas(meta: &TransactionStatusMeta) -> Option<Vec<Delta>> {
+fn token_deltas(pre: &[TokenBalance], post: &[TokenBalance]) -> Option<Vec<Delta>> {
     let mut snapshots: HashMap<u32, (Option<&TokenBalance>, Option<&TokenBalance>)> =
         HashMap::new();
-    for balance in &meta.pre_token_balances {
+    for balance in pre {
         snapshots.entry(balance.account_index).or_default().0 = Some(balance);
     }
-    for balance in &meta.post_token_balances {
+    for balance in post {
         snapshots.entry(balance.account_index).or_default().1 = Some(balance);
     }
 
     let mut aggregate: HashMap<(String, String, u32), i128> = HashMap::new();
     for (_index, (pre, post)) in snapshots {
         let sample = post.or(pre).expect("snapshot contains a balance");
-        let mint = post
-            .filter(|balance| !balance.mint.is_empty())
-            .or(pre)
-            .map(|balance| balance.mint.clone())
-            .unwrap_or_default();
+        let mint = sample.mint.clone();
         let owner = post
-            .filter(|balance| !balance.owner.is_empty())
-            .or(pre)
-            .map(|balance| balance.owner.clone())
+            .and_then(|balance| balance.owner.clone())
+            .or_else(|| pre.and_then(|balance| balance.owner.clone()))
             .unwrap_or_default();
-        let decimals = sample
-            .ui_token_amount
-            .as_ref()
-            .map_or(0, |amount| amount.decimals);
+        let decimals = sample.decimals;
         let before = snapshot_amount(pre)?;
         let after = snapshot_amount(post)?;
         if mint.is_empty() || owner.is_empty() {
@@ -440,17 +386,17 @@ fn token_deltas(meta: &TransactionStatusMeta) -> Option<Vec<Delta>> {
 }
 
 fn raw_amount(balance: Option<&TokenBalance>) -> Option<u64> {
-    balance?.ui_token_amount.as_ref()?.amount.parse().ok()
+    balance?.raw_amount.parse().ok()
 }
 
 fn snapshot_amount(balance: Option<&TokenBalance>) -> Option<u64> {
     balance.map_or(Some(0), |value| raw_amount(Some(value)))
 }
 
-fn native_sol_delta(meta: &TransactionStatusMeta) -> Option<i128> {
-    let before = *meta.pre_balances.first()? as i128;
-    let after = *meta.post_balances.first()? as i128;
-    let economic = after - before + meta.fee as i128;
+fn native_sol_delta(tx: &FervorTx) -> Option<i128> {
+    let before = *tx.pre_balances.first()? as i128;
+    let after = *tx.post_balances.first()? as i128;
+    let economic = after - before + tx.fee as i128;
     (economic != 0).then_some(economic)
 }
 
@@ -474,97 +420,110 @@ fn scaled(raw: u128, decimals: u32) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use yellowstone_grpc_proto::prelude::{
-        Message, MessageHeader, SubscribeUpdateTransactionInfo, Transaction, UiTokenAmount,
+    use crate::fervor_tx::{
+        ChainOccurrence, Commitment, Network, ProviderObservation, SignedTxId, FERVOR_TX_VERSION,
     };
 
-    fn key(seed: u8) -> Vec<u8> {
-        vec![seed; 32]
+    fn key(seed: u8) -> String {
+        bs58::encode([seed; 32]).into_string()
     }
 
     fn balance(index: u32, mint: &str, owner: &str, raw: &str, decimals: u32) -> TokenBalance {
         TokenBalance {
             account_index: index,
             mint: mint.to_string(),
-            ui_token_amount: Some(UiTokenAmount {
-                amount: raw.to_string(),
-                decimals,
-                ..Default::default()
-            }),
-            owner: owner.to_string(),
-            ..Default::default()
+            owner: Some(owner.to_string()),
+            program_id: None,
+            raw_amount: raw.to_string(),
+            decimals,
         }
     }
 
-    fn fixture(venue: Venue, data: Vec<u8>, native_sol: bool) -> SubscribeUpdateTransaction {
-        let trader_key = key(1);
-        let trader = bs58::encode(&trader_key).into_string();
-        let program_key = bs58::decode(venue.program_id()).into_vec().unwrap();
-        let token_mint = bs58::encode(key(8)).into_string();
+    fn sample_tx(venue: Venue, data: Vec<u8>, native_sol: bool) -> FervorTx {
+        let trader = key(1);
+        let token_mint = key(8);
         let mut pre = vec![balance(2, &token_mint, &trader, "1000000", 6)];
         let mut post = vec![balance(2, &token_mint, &trader, "3000000", 6)];
         if !native_sol {
             pre.push(balance(3, USDC_MINT, &trader, "10000000", 6));
             post.push(balance(3, USDC_MINT, &trader, "6000000", 6));
         }
-        SubscribeUpdateTransaction {
-            slot: 42,
-            transaction: Some(SubscribeUpdateTransactionInfo {
-                signature: vec![9; 64],
-                transaction: Some(Transaction {
-                    message: Some(Message {
-                        header: Some(MessageHeader {
-                            num_required_signatures: 1,
-                            ..Default::default()
-                        }),
-                        account_keys: vec![trader_key, program_key, key(2), key(3), key(4), key(5)],
-                        instructions: vec![CompiledInstruction {
-                            program_id_index: 1,
-                            accounts: vec![2, 3, 4, 5, 0],
-                            data,
-                        }],
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                }),
-                meta: Some(TransactionStatusMeta {
-                    fee: 5_000,
-                    pre_balances: vec![10_000_000_000, 0, 0, 0, 0, 0],
-                    post_balances: vec![
-                        if native_sol {
-                            7_999_995_000
-                        } else {
-                            9_999_995_000
-                        },
-                        0,
-                        0,
-                        0,
-                        0,
-                        0,
-                    ],
-                    pre_token_balances: pre,
-                    post_token_balances: post,
-                    compute_units_consumed: Some(88_000),
-                    ..Default::default()
-                }),
-                ..Default::default()
-            }),
+        let signature = bs58::encode([9_u8; 64]).into_string();
+        FervorTx {
+            version: FERVOR_TX_VERSION,
+            signed_id: SignedTxId {
+                network: Network::MainnetBeta,
+                signature,
+            },
+            occurrence: ChainOccurrence {
+                network: Network::MainnetBeta,
+                slot: 42,
+                block_id: None,
+                parent_slot: None,
+                tx_index: Some(0),
+            },
+            observation: ProviderObservation {
+                provider: "test_source".to_string(),
+                source_event_id: "event-42".to_string(),
+                wire_format: "test-wire".to_string(),
+                wire_version: 1,
+                raw_hash: "a".repeat(64),
+            },
+            commitment: Commitment::Finalized,
+            observed_at: "2024-11-19T00:00:00Z".to_string(),
+            error: None,
+            static_keys: vec![
+                trader,
+                venue.program_id().to_string(),
+                key(2),
+                key(3),
+                key(4),
+                key(5),
+            ],
+            loaded_writable: Vec::new(),
+            loaded_readonly: Vec::new(),
+            instructions: vec![TxIx {
+                outer_index: 0,
+                inner_index: None,
+                stack_height: None,
+                program_index: 1,
+                accounts: vec![2, 3, 4, 5, 0],
+                data,
+            }],
+            pre_balances: vec![10_000_000_000, 0, 0, 0, 0, 0],
+            post_balances: vec![
+                if native_sol {
+                    7_999_995_000
+                } else {
+                    9_999_995_000
+                },
+                0,
+                0,
+                0,
+                0,
+                0,
+            ],
+            pre_tokens: pre,
+            post_tokens: post,
+            fee: 5_000,
+            compute_units: Some(88_000),
+            block_time: None,
+            signed_tx: None,
         }
     }
 
-    fn meta(update: &mut SubscribeUpdateTransaction) -> &mut TransactionStatusMeta {
-        update
-            .transaction
-            .as_mut()
-            .and_then(|info| info.meta.as_mut())
-            .expect("fixture meta")
+    fn decoded(tx: &FervorTx) -> DecodedSwap {
+        match decode_swap(tx) {
+            Ok(Some(swap)) => swap,
+            other => panic!("expected decoded swap, got {other:?}"),
+        }
     }
 
     #[test]
     fn decodes_anchor_swap_with_exact_raw_amounts() {
         let mut data = anchor_discriminator("buy").to_vec();
         data.extend_from_slice(&[0; 16]);
-        let swap = decode_swap(&fixture(Venue::PumpFun, data, false)).unwrap();
+        let swap = decoded(&sample_tx(Venue::PumpFun, data, false));
 
         assert_eq!(swap.protocol, Venue::PumpFun);
         assert_eq!(swap.side, Side::Buy);
@@ -579,7 +538,7 @@ mod tests {
     fn derives_native_sol_after_removing_network_fee() {
         let mut data = anchor_discriminator("swap").to_vec();
         data.extend_from_slice(&[0; 16]);
-        let swap = decode_swap(&fixture(Venue::OrcaWhirlpool, data, true)).unwrap();
+        let swap = decoded(&sample_tx(Venue::OrcaWhirlpool, data, true));
 
         assert_eq!(swap.quote_kind, QuoteKind::NativeSol);
         assert_eq!(swap.quote_amount_raw, "2000000000");
@@ -591,21 +550,11 @@ mod tests {
     fn accepts_the_full_u64_raw_amount_domain() {
         let mut data = anchor_discriminator("buy").to_vec();
         data.extend_from_slice(&[0; 16]);
-        let mut update = fixture(Venue::PumpFun, data, false);
-        let before = meta(&mut update)
-            .pre_token_balances
-            .first_mut()
-            .and_then(|balance| balance.ui_token_amount.as_mut())
-            .expect("token amount");
-        before.amount = "0".to_string();
-        let token = meta(&mut update)
-            .post_token_balances
-            .first_mut()
-            .and_then(|balance| balance.ui_token_amount.as_mut())
-            .expect("token amount");
-        token.amount = u64::MAX.to_string();
+        let mut tx = sample_tx(Venue::PumpFun, data, false);
+        tx.pre_tokens[0].raw_amount = "0".to_string();
+        tx.post_tokens[0].raw_amount = u64::MAX.to_string();
 
-        let swap = decode_swap(&update).expect("u64 max is valid");
+        let swap = decoded(&tx);
         assert_eq!(swap.token_amount_raw, u64::MAX.to_string());
     }
 
@@ -614,34 +563,35 @@ mod tests {
         let mut data = anchor_discriminator("buy").to_vec();
         data.extend_from_slice(&[0; 16]);
 
-        let mut malformed = fixture(Venue::PumpFun, data.clone(), false);
-        meta(&mut malformed).pre_token_balances[0]
-            .ui_token_amount
-            .as_mut()
-            .expect("token amount")
-            .amount = (u128::from(u64::MAX) + 1).to_string();
-        assert!(decode_swap(&malformed).is_none());
-
-        let mut aggregate = fixture(Venue::PumpFun, data, false);
-        let token = meta(&mut aggregate).post_token_balances[0].mint.clone();
-        let trader = meta(&mut aggregate).post_token_balances[0].owner.clone();
-        meta(&mut aggregate)
-            .pre_token_balances
-            .push(balance(4, &token, &trader, "0", 6));
-        meta(&mut aggregate).post_token_balances.push(balance(
-            4,
-            &token,
-            &trader,
-            &u64::MAX.to_string(),
-            6,
+        let mut malformed = sample_tx(Venue::PumpFun, data.clone(), false);
+        malformed.pre_tokens[0].raw_amount = (u128::from(u64::MAX) + 1).to_string();
+        assert!(matches!(
+            decode_swap(&malformed),
+            Err(Quarantine {
+                reason: QuarantineReason::InvalidIdentity,
+                ..
+            })
         ));
-        assert!(decode_swap(&aggregate).is_none());
+
+        let mut aggregate = sample_tx(Venue::PumpFun, data, false);
+        let token = aggregate.post_tokens[0].mint.clone();
+        let trader = aggregate.post_tokens[0].owner.clone().unwrap();
+        aggregate
+            .pre_tokens
+            .push(balance(4, &token, &trader, "0", 6));
+        aggregate
+            .post_tokens
+            .push(balance(4, &token, &trader, &u64::MAX.to_string(), 6));
+        assert_eq!(decode_swap(&aggregate), Ok(None));
     }
 
     #[test]
     fn rejects_non_swap_instructions() {
         let data = anchor_discriminator("add_liquidity").to_vec();
-        assert!(decode_swap(&fixture(Venue::RaydiumCpmm, data, false)).is_none());
+        assert_eq!(
+            decode_swap(&sample_tx(Venue::RaydiumCpmm, data, false)),
+            Ok(None)
+        );
     }
 
     #[test]
@@ -669,13 +619,33 @@ mod tests {
 
     #[test]
     fn resolves_loaded_address_table_keys() {
-        let meta = TransactionStatusMeta {
-            loaded_writable_addresses: vec![key(2)],
-            loaded_readonly_addresses: vec![key(3)],
-            ..Default::default()
-        };
-        let resolved = resolve_keys(&[key(1)], &meta);
-        assert_eq!(resolved.len(), 3);
-        assert_eq!(resolved[2], bs58::encode(key(3)).into_string());
+        let mut tx = sample_tx(Venue::PumpFun, vec![0; 8], false);
+        tx.static_keys = vec![key(1)];
+        tx.loaded_writable = vec![key(2)];
+        tx.loaded_readonly = vec![key(3)];
+        assert_eq!(resolve_keys(&tx), vec![key(1), key(2), key(3)]);
+    }
+
+    #[test]
+    fn serialized_contract_preserves_decoder_output() {
+        let mut data = anchor_discriminator("buy").to_vec();
+        data.extend_from_slice(&[0; 16]);
+        let tx = sample_tx(Venue::PumpFun, data, false);
+        let bytes = serde_json::to_vec(&tx).unwrap();
+        let restored: FervorTx = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(decode_swap(&restored), decode_swap(&tx));
+    }
+
+    #[test]
+    fn unsupported_contract_is_quarantined() {
+        let mut tx = sample_tx(Venue::PumpFun, vec![0; 8], false);
+        tx.version += 1;
+        assert!(matches!(
+            decode_swap(&tx),
+            Err(Quarantine {
+                reason: QuarantineReason::UnsupportedContract,
+                ..
+            })
+        ));
     }
 }

@@ -5,7 +5,6 @@
     "main": "dist/index.js",
     "scripts": {
         "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-        "dev:feed": "ts-node-dev --respawn --transpile-only src/feed-engine.ts",
         "dev:matcher": "ts-node-dev --respawn --transpile-only src/alert-matcher-worker.ts",
         "dev:matcher:rust": "cargo run --manifest-path ../fervor-feed-rs/Cargo.toml --bin fervor-alert-matcher",
         "dev:indexer:rust": "cargo run --manifest-path ../fervor-feed-rs/Cargo.toml --bin fervor-market-indexer",
@@ -23,7 +22,6 @@
         "build": "tsc",
         "test": "vitest run",
         "start": "node dist/index.js",
-        "start:feed": "node dist/feed-engine.js",
         "start:matcher": "node dist/alert-matcher-worker.js",
         "start:candidates": "node dist/alert-candidate-worker.js",
         "start:notifications": "node dist/notification-worker.js",
@@ -51,7 +49,6 @@
         "discord.js": "^14.21.0",
         "dotenv": "^16.3.1",
         "express": "^4.18.2",
-        "helius-laserstream": "^0.3.1",
         "helmet": "^7.1.0",
         "ioredis": "^5.3.2",
         "jsonwebtoken": "^9.0.2",

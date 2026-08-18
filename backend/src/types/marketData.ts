@@ -1,4 +1,4 @@
-export type MarketDataProviderName = 'helius_laserstream';
+export type MarketSource = string;
 
 export type FervorSupplyPolicy = 'fervor_mint_supply_v1';
 
@@ -10,7 +10,7 @@ export type NormalizedEventKind =
     | 'market_state';
 
 export interface SourceProvenance {
-    source: MarketDataProviderName;
+    source: MarketSource;
     sourceEventId: string;
     slot?: number;
     signature?: string;
@@ -28,22 +28,6 @@ export interface MetricQuality {
     stale: boolean;
     estimated: boolean;
     commitment?: 'processed' | 'confirmed' | 'finalized';
-}
-
-export interface ProviderRawEvent extends SourceProvenance {
-    provider: MarketDataProviderName;
-    type:
-        | 'transaction'
-        | 'account'
-        | 'pool'
-        | 'token'
-        | 'market_state'
-        | 'unknown';
-    subscriptionId?: string;
-    tokenMint?: string;
-    poolAddress?: string;
-    programId?: string;
-    payload: unknown;
 }
 
 export interface NormalizedTradeEvent extends SourceProvenance {
@@ -123,7 +107,7 @@ export interface NormalizedMarketState extends Omit<SourceProvenance, 'source'> 
     kind: 'market_state';
     idempotencyKey: string;
     source: 'fervor_engine';
-    observationSource: MarketDataProviderName;
+    observationSource: MarketSource;
     inputContract: 'fervor-market-input-v1';
     metricSource: 'fervor_engine';
     metricVersion: string;
@@ -160,15 +144,6 @@ export type NormalizedMarketEvent =
     | NormalizedLiquidityEvent
     | NormalizedMarketState;
 
-export interface ProviderCheckpoint {
-    provider: MarketDataProviderName;
-    subscriptionId: string;
-    region?: string;
-    commitment: 'processed' | 'confirmed' | 'finalized';
-    lastProcessedSlot: number;
-    updatedAt: string;
-}
-
 export interface TokenMarketStateView {
     tokenMint: string;
     priceUsd?: number;
@@ -178,7 +153,7 @@ export interface TokenMarketStateView {
     liquidityUsd?: number;
     totalSupply?: number;
     circulatingSupply?: number;
-    source: MarketDataProviderName | 'fervor_engine';
+    source: MarketSource;
     observedAt: string;
     stale: boolean;
     confidence: number;

@@ -6,7 +6,7 @@ use serde::Serialize;
 pub const INDEX_STREAM: &str = "alerts.index_updates";
 pub const CANDIDATE_STREAM: &str = "alerts.candidates";
 pub const DEAD_LETTER_STREAM: &str = "pipeline.dead_letters";
-pub const RAW_STREAM: &str = "provider.raw_events";
+pub const RAW_SOURCE: &str = "market.raw_journal";
 pub const TRADE_STREAM: &str = "market.trades.decoded";
 
 pub fn tick_stream(shard_id: u32, shard_count: u32) -> String {
@@ -144,6 +144,7 @@ impl StreamBus {
 
     pub async fn dead_letter(
         &mut self,
+        worker: &str,
         source_stream: &str,
         source_id: &str,
         payload: &str,
@@ -155,7 +156,7 @@ impl StreamBus {
             "payload": payload,
             "error": error,
             "failedAt": chrono::Utc::now().to_rfc3339(),
-            "worker": "rust-alert-matcher"
+            "worker": worker
         });
         self.publish(DEAD_LETTER_STREAM, &value).await?;
         Ok(())

@@ -78,7 +78,7 @@ if (result.code !== 0) throw new Error(`Compose rendering failed: ${result.stder
 
 const compose = JSON.parse(result.stdout);
 const runtimeServices = [
-    'api', 'feed', 'candles', 'trade-enricher', 'market-metrics', 'matcher',
+    'api', 'candles', 'trade-enricher', 'market-metrics', 'matcher',
     'indexer', 'matcher-ts', 'alert-writer', 'notifications', 'outbox',
     'wallets', 'executions', 'egress-recovery', 'integrations',
 ];

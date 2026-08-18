@@ -1,9 +1,15 @@
 import axios, { AxiosInstance } from 'axios';
 import { env } from '../config/env';
-import { toFiniteNumber } from './marketData/normalization';
 import { jupiterRate, rateHeader } from './jupiterRateService';
 
 export const SOL_MINT = 'So11111111111111111111111111111111111111112';
+
+const finiteNumber = (value: unknown): number | undefined => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value !== 'string' || value.trim() === '') return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+};
 
 export interface RefPrice {
     mint: string;
@@ -57,14 +63,14 @@ export class ReferencePriceService {
                 header: (name) => rateHeader(response.headers, name),
             });
             const data = response.data?.[mint];
-            const usdPrice = toFiniteNumber(data?.usdPrice);
+            const usdPrice = finiteNumber(data?.usdPrice);
             if (usdPrice === undefined || usdPrice <= 0) return this.staleValue(cached);
 
             const fetchedMs = Date.now();
             const value: RefPrice = {
                 mint,
                 usdPrice,
-                blockId: toFiniteNumber(data?.blockId),
+                blockId: finiteNumber(data?.blockId),
                 fetchedAt: new Date(fetchedMs).toISOString(),
                 stale: false,
                 source: 'jupiter_price_v3',

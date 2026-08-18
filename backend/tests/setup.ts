@@ -7,6 +7,5 @@ process.env.JWT_SECRET = '0123456789abcdef0123456789abcdef0123456789abcdef012345
 process.env.FRONTEND_URL = 'http://localhost:3002';
 process.env.ENABLE_TELEGRAM_NOTIFICATIONS = 'false';
 process.env.ENABLE_DISCORD_NOTIFICATIONS = 'false';
-process.env.ENABLE_MARKET_FEED = 'false';
-process.env.MARKET_DATA_PROVIDER = 'helius_laserstream';
+process.env.MARKET_DATA_REQUIRED = 'false';
 process.env.JUPITER_API_KEY = 'test-jupiter-api-key';

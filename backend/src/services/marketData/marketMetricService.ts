@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { FeedTick, MetricQuality, NormalizedMarketState, NormalizedTradeEvent } from '../../types';
 import { MarketEventStorageService } from './marketEventStorageService';
 import { MarketMetricRepository, MetricBase } from './marketMetricRepository';
-import { stableHash } from './normalization';
+import { stableHash } from './hash';
 import { RollingMetricBook } from './rollingMetricBook';
 import { redisStreams, STREAMS, tickStream } from '../redisStreamService';
 import { env } from '../../config/env';

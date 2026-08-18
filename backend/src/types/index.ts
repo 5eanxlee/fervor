@@ -59,7 +59,7 @@ export interface FeedTick {
     baseAmount?: string;
     swapType?: 'buy' | 'sell';
     sourceExchange?: string;
-    observationSource?: import('./marketData').MarketDataProviderName;
+    observationSource?: import('./marketData').MarketSource;
     inputContract?: 'fervor-market-input-v1';
     receivedAt: string;
     sourceEventId?: string;

@@ -1,5 +1,5 @@
 import { NormalizedMarketState, NormalizedTradeEvent } from '../../types';
-import { stableHash } from './normalization';
+import { stableHash } from './hash';
 
 export const ROLLING_WINDOWS_MS = {
     '1m': 60_000,

@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "signedId": {
+    "network": "mainnet-beta",
+    "signature": "BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA"
+  },
+  "occurrence": {
+    "network": "mainnet-beta",
+    "slot": "42",
+    "blockId": null,
+    "parentSlot": null,
+    "txIndex": "0"
+  },
+  "observation": {
+    "provider": "helius_laserstream",
+    "sourceEventId": "event:BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA",
+    "wireFormat": "yellowstone-protobuf-v12",
+    "wireVersion": 12,
+    "rawHash": "1e1acfca53df7bf7a06118989a02132dba4f8341862d44242b72cdd3bf1ff24e"
+  },
+  "commitment": "confirmed",
+  "observedAt": "2024-11-19T00:00:00Z",
+  "error": null,
+  "staticKeys": [
+    "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+    "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR"
+  ],
+  "loadedWritable": [],
+  "loadedReadonly": [],
+  "instructions": [
+    {
+      "outerIndex": 0,
+      "innerIndex": null,
+      "stackHeight": null,
+      "programIndex": 1,
+      "accounts": [0],
+      "data": [3]
+    }
+  ],
+  "preBalances": ["10", "0"],
+  "postBalances": ["9", "0"],
+  "preTokens": [
+    {
+      "accountIndex": 0,
+      "mint": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+      "owner": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "programId": "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx",
+      "rawAmount": "1",
+      "decimals": 0
+    }
+  ],
+  "postTokens": [
+    {
+      "accountIndex": 0,
+      "mint": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+      "owner": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
+      "programId": "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx",
+      "rawAmount": "2",
+      "decimals": 0
+    }
+  ],
+  "fee": "0",
+  "computeUnits": null,
+  "blockTime": null,
+  "signedTx": null
+}

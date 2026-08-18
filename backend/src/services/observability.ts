@@ -1,5 +1,5 @@
 import { DbQuery, poolStats, query } from '../config/database';
-import { env, isMarketDataProviderConfigured } from '../config/env';
+import { env } from '../config/env';
 import { redisStreams } from './redisStreamService';
 import { metrics } from './metrics';
 
@@ -9,7 +9,6 @@ export interface ReadinessStatus {
     checks: {
         database: boolean;
         redis: boolean;
-        marketDataProvider: boolean;
         executionProvider: boolean;
         solanaRpc: boolean;
         orderProvider: boolean;
@@ -23,7 +22,6 @@ export interface ReadinessStatus {
         marketFresh: boolean;
     };
     backlog: OpsBacklog;
-    provider: string;
 }
 
 export interface OpsBacklog {
@@ -271,7 +269,6 @@ export const getReadiness = async (
     const checks = {
         database: false,
         redis: false,
-        marketDataProvider: false,
         executionProvider: true,
         solanaRpc: true,
         orderProvider: true,
@@ -282,7 +279,7 @@ export const getReadiness = async (
         notificationBacklog: false,
         executionBacklog: false,
         orderBacklog: false,
-        marketFresh: !env.ENABLE_MARKET_FEED,
+        marketFresh: !env.MARKET_DATA_REQUIRED,
     };
     const sample = collector.snapshot();
     const backlog = sample.backlog;
@@ -293,13 +290,11 @@ export const getReadiness = async (
         checks.notificationBacklog = backlog.notifications <= env.NOTIFICATION_MAX_RETRY_BACKLOG;
         checks.executionBacklog = backlog.executions === 0;
         checks.orderBacklog = backlog.orders === 0;
-        checks.marketFresh = !env.ENABLE_MARKET_FEED
+        checks.marketFresh = !env.MARKET_DATA_REQUIRED
             || (backlog.marketAgeMs !== null && backlog.marketAgeMs <= env.MARKET_MAX_STALE_MS);
     }
 
     checks.redis = await ping();
-    checks.marketDataProvider = !env.ENABLE_MARKET_FEED
-        || isMarketDataProviderConfigured();
     checks.executionProvider = env.TRADING_MODE === 'disabled';
     checks.orderProvider = env.ORDER_MODE === 'disabled';
     checks.walletProvider = env.WALLET_TRACKING_MODE !== 'live' || !!env.HELIUS_API_KEY;
@@ -308,7 +303,6 @@ export const getReadiness = async (
 
     const ready = checks.database
         && checks.redis
-        && checks.marketDataProvider
         && checks.executionProvider
         && checks.solanaRpc
         && checks.orderProvider
@@ -324,7 +318,6 @@ export const getReadiness = async (
     return {
         ready,
         degraded,
-        provider: env.MARKET_DATA_PROVIDER,
         checks,
         backlog,
     };

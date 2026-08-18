@@ -1,21 +1,7 @@
+use crate::fervor_tx::RawEnvelope;
 use crate::postgres::{connect, DbTls};
-use anyhow::{bail, Result};
-use sha2::{Digest, Sha256};
+use anyhow::{bail, Context, Result};
 use tokio_postgres::{Client, Statement};
-
-const PROVIDER: &str = "yellowstone_grpc";
-const WIRE_FORMAT: &str = "yellowstone-protobuf-v12";
-
-pub struct RawRecord<'a> {
-    pub commitment: &'a str,
-    pub source_id: &'a str,
-    pub subscription_id: &'a str,
-    pub slot: i64,
-    pub signature: &'a str,
-    pub filters: &'a [String],
-    pub payload: &'a [u8],
-    pub observed_at: &'a str,
-}
 
 pub struct MarketJournal {
     client: Client,
@@ -77,12 +63,13 @@ impl MarketJournal {
 
     pub async fn resume_slot(
         &self,
+        provider: &str,
         subscription_id: &str,
         commitment: &str,
     ) -> Result<Option<u64>> {
         let row = self
             .client
-            .query_opt(&self.resume, &[&PROVIDER, &subscription_id, &commitment])
+            .query_opt(&self.resume, &[&provider, &subscription_id, &commitment])
             .await?;
         row.map(|row| {
             let slot = row.get::<_, i64>(0);
@@ -91,21 +78,25 @@ impl MarketJournal {
         .transpose()
     }
 
-    pub async fn accept(&mut self, raw: &RawRecord<'_>) -> Result<bool> {
-        let hash = Sha256::digest(raw.payload).to_vec();
+    pub async fn accept(&mut self, raw: &RawEnvelope) -> Result<bool> {
+        raw.validate().context("raw envelope is invalid")?;
+        let slot =
+            i64::try_from(raw.slot).context("source slot exceeds the PostgreSQL bigint domain")?;
+        let hash = hex::decode(&raw.raw_hash).context("raw envelope hash is invalid")?;
+        let commitment = raw.commitment.as_str();
         let tx = self.client.transaction().await?;
         let inserted = tx
             .execute(
                 &self.insert,
                 &[
-                    &PROVIDER,
-                    &raw.commitment,
-                    &raw.source_id,
+                    &raw.provider,
+                    &commitment,
+                    &raw.source_event_id,
                     &raw.subscription_id,
-                    &raw.slot,
+                    &slot,
                     &raw.signature,
                     &raw.filters,
-                    &WIRE_FORMAT,
+                    &raw.wire_format,
                     &raw.payload,
                     &hash,
                     &raw.observed_at,
@@ -118,13 +109,13 @@ impl MarketJournal {
             let stored = tx
                 .query_one(
                     &self.existing,
-                    &[&PROVIDER, &raw.commitment, &raw.source_id],
+                    &[&raw.provider, &commitment, &raw.source_event_id],
                 )
                 .await?;
             if stored.get::<_, Vec<u8>>(0) != hash || stored.get::<_, Vec<u8>>(1) != raw.payload {
                 bail!(
-                    "Yellowstone replay changed bytes for source event {}",
-                    raw.source_id
+                    "source replay changed bytes for event {}",
+                    raw.source_event_id
                 );
             }
         }
@@ -133,11 +124,11 @@ impl MarketJournal {
             .execute(
                 &self.checkpoint,
                 &[
-                    &PROVIDER,
+                    &raw.provider,
                     &raw.subscription_id,
-                    &raw.commitment,
-                    &raw.slot,
-                    &raw.source_id,
+                    &commitment,
+                    &slot,
+                    &raw.source_event_id,
                 ],
             )
             .await?;
@@ -152,25 +143,33 @@ impl MarketJournal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fervor_tx::{Commitment, Network};
     use futures_util::future::join_all;
     use sha2::{Digest, Sha256};
 
-    fn test_input<'a>(
-        source_id: &'a str,
-        subscription_id: &'a str,
-        signature: &'a str,
-        payload: &'a [u8],
-    ) -> RawRecord<'a> {
-        RawRecord {
-            commitment: "confirmed",
-            source_id,
-            subscription_id,
-            slot: 42,
-            signature,
-            filters: &[],
-            payload,
-            observed_at: "2026-08-05T00:00:00Z",
-        }
+    const PROVIDER: &str = "test_source";
+
+    fn test_input(
+        source_id: &str,
+        subscription_id: &str,
+        signature: &str,
+        payload: &[u8],
+    ) -> RawEnvelope {
+        RawEnvelope::new(
+            PROVIDER.to_string(),
+            "test-wire".to_string(),
+            1,
+            source_id.to_string(),
+            subscription_id.to_string(),
+            Network::MainnetBeta,
+            Commitment::Confirmed,
+            42,
+            signature.to_string(),
+            Vec::new(),
+            "2026-08-05T00:00:00Z".to_string(),
+            payload.to_vec(),
+        )
+        .unwrap()
     }
 
     #[tokio::test]
@@ -218,7 +217,9 @@ mod tests {
 
         let mut journal = MarketJournal::connect(&url, tls, ca.as_deref()).await?;
         assert_eq!(
-            journal.resume_slot(&subscription_id, "confirmed").await?,
+            journal
+                .resume_slot(PROVIDER, &subscription_id, "confirmed")
+                .await?,
             Some(42)
         );
         let changed = b"changed-payload";
@@ -235,7 +236,7 @@ mod tests {
         let other_source = format!("{source_id}:other");
         let mut wrong_commitment =
             test_input(&other_source, &subscription_id, &signature, &payload);
-        wrong_commitment.commitment = "finalized";
+        wrong_commitment.commitment = Commitment::Finalized;
         assert!(journal.accept(&wrong_commitment).await.is_err());
         let rolled_back: i64 = journal
             .client
