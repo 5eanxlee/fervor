@@ -11,10 +11,12 @@ clap = { version = "4", features = ["derive", "env"] }
 hex = "0.4"
 hdrhistogram = "7"
 futures-util = "0.3"
+fs2 = "0.4"
 native-tls = "0.2"
 postgres-native-tls = "0.5"
 prost = "0.14"
 redis = { version = "0.27", features = ["tokio-comp"] }
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "stream"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -28,6 +30,7 @@ yellowstone-grpc-proto = { version = "12.2.0", default-features = false, feature
 [dev-dependencies]
 rcgen = "0.13"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tempfile = "3"
 
 [[bin]]
 name = "fervor-alert-matcher"
@@ -36,6 +39,10 @@ path = "src/bin/alert_matcher.rs"
 [[bin]]
 name = "fervor-market-indexer"
 path = "src/bin/market_indexer.rs"
+
+[[bin]]
+name = "fervor-corpus"
+path = "src/bin/corpus.rs"
 
 [profile.release]
 codegen-units = 1

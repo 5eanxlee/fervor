@@ -33,6 +33,33 @@ Additive optional fields may remain v1. Any semantic, identity, integer encoding
 
 `HELIUS_LASERSTREAM_ENDPOINT` implies `MARKET_SOURCE=helius_laserstream` and uses `HELIUS_API_KEY`. When `YELLOWSTONE_ENDPOINTS` is set directly, `MARKET_SOURCE` is required and only `YELLOWSTONE_X_TOKEN` is sent, so a Helius credential cannot leak to another endpoint. `SOLANA_NETWORK` defaults to `mainnet-beta`.
 
+## Historical extracts
+
+`fervor-corpus` creates bounded Old Faithful extracts for deterministic replay. `inspect` downloads only the fixed-width slot index and small provenance files. It computes the exact selected CAR byte range, checks both declared ceilings and free disk, and performs no CAR `GET`. `extract` refetches and hashes the index, requires exact `206 Content-Range` responses, resumes truncated streams without duplicating bytes, and publishes only an atomically completed directory. `verify` rechecks the stored index, range accounting, CAR header, file set, lengths, and SHA-256 hashes.
+
+```bash
+cargo run --release --bin fervor-corpus -- inspect \
+  --epoch 700 \
+  --start-slot 302459600 \
+  --end-slot 302461200 \
+  --mint 3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump \
+  --max-download 10GiB \
+  --max-workspace 40GiB \
+  --workspace /path/with/free/space \
+  --plan /path/to/extract-plan.json
+
+cargo run --release --bin fervor-corpus -- extract \
+  --plan /path/to/extract-plan.json \
+  --out /path/to/quant-2024-11-19
+
+cargo run --release --bin fervor-corpus -- verify \
+  --dir /path/to/quant-2024-11-19
+```
+
+Ranges are half-open: `start-slot` is included and `end-slot` is excluded. The pilot currently accepts one mainnet epoch and the HTTPS host `files.old-faithful.net`; a different HTTPS mirror requires an explicit `--allow-host`. Credentials, query strings, fragments, silent source fallback, whole-epoch mirroring, and non-range CAR responses are rejected.
+
+The format implementation is grounded in [Jetstreamer 0.7.0](https://github.com/anza-xyz/jetstreamer/tree/cffaf3d891b3cbe45a46dd963d6d3571b2aa1a24), licensed MIT or Apache-2.0. The recorded archive implementation is [Yellowstone Old Faithful v0.7.25](https://github.com/rpcpool/yellowstone-faithful/tree/a69a0d2e189006608e3b73b7659a957b00b3567e). Its repository is predominantly AGPL-3.0-only, so Fervor does not copy that implementation. Official OF1 documentation offers archive downloads; no standalone service-terms page was found during the 2026-08-18 review. Extracts remain internal until redistribution is separately approved.
+
 ## Verification
 
 ```bash

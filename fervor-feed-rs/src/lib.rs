@@ -1,5 +1,6 @@
 pub mod alert_engine;
 pub mod alert_store;
+pub mod archive;
 pub mod contracts;
 pub mod fervor_tx;
 pub mod market_decoder;
