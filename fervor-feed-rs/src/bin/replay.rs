@@ -122,16 +122,16 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         blocks = checked_count(blocks, "block")?;
         for record in block.records {
             transactions = checked_count(transactions, "transaction")?;
-            let references_mint = record.references(mint);
+            // Old Faithful cannot filter remotely; off-mint records are archive scan noise.
+            if !record.references(mint) {
+                continue;
+            }
             let tx = adapter.adapt_record(&record, mint).map_err(|quarantine| {
                 anyhow!(
                     "archive transaction was quarantined: {}",
                     serde_json::to_string(&quarantine).unwrap_or(quarantine.detail)
                 )
             })?;
-            if !references_mint {
-                continue;
-            }
             matched = checked_count(matched, "matched transaction")?;
             tx_out.write_json(&tx)?;
             if let Some(swap) = decode_swap(&tx).map_err(|quarantine| {
