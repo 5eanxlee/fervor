@@ -1,4 +1,7 @@
-use crate::fervor_tx::{FervorTx, Quarantine, QuarantineReason, TokenBalance, TxIx};
+use crate::{
+    fervor_tx::{FervorTx, Quarantine, QuarantineReason, TokenBalance, TxIx},
+    pump::PUMP_PROGRAM,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -7,7 +10,6 @@ pub const WSOL_MINT: &str = "So11111111111111111111111111111111111111112";
 pub const USDC_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 pub const USDT_MINT: &str = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 
-const PUMP_FUN: &str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 const PUMP_SWAP: &str = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
 const RAYDIUM_AMM_V4: &str = "675kPX9MHTjS2zt1qfr1NYJSCfn6wUCwBK6n2UZMfw";
 const RAYDIUM_CLMM: &str = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
@@ -41,7 +43,7 @@ pub enum Venue {
 impl Venue {
     pub fn program_id(self) -> &'static str {
         match self {
-            Self::PumpFun => PUMP_FUN,
+            Self::PumpFun => PUMP_PROGRAM,
             Self::PumpSwap => PUMP_SWAP,
             Self::RaydiumAmmV4 => RAYDIUM_AMM_V4,
             Self::RaydiumClmm => RAYDIUM_CLMM,
@@ -55,7 +57,7 @@ impl Venue {
 
     fn from_program(program_id: &str) -> Option<Self> {
         match program_id {
-            PUMP_FUN => Some(Self::PumpFun),
+            PUMP_PROGRAM => Some(Self::PumpFun),
             PUMP_SWAP => Some(Self::PumpSwap),
             RAYDIUM_AMM_V4 => Some(Self::RaydiumAmmV4),
             RAYDIUM_CLMM => Some(Self::RaydiumClmm),

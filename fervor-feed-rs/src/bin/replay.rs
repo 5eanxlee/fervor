@@ -2,9 +2,10 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 use fervor_feed_rs::{
     archive::{verify_extract, ExtractManifest},
-    fervor_tx::Network,
+    fervor_tx::{Network, Quarantine},
     market_decoder::decode_swap,
     old_faithful::{ArchiveReader, OldFaithfulAdapter},
+    pump::{decode_pump_events, PumpEvent, PumpState, PUMP_IDL_REV, PUMP_LAYOUT},
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -14,9 +15,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SCHEMA: &str = "fervor-replay-v1";
+const SCHEMA: &str = "fervor-replay-v2";
 const TX_FILE: &str = "transactions.ndjson";
 const SWAP_FILE: &str = "swaps.ndjson";
+const PUMP_FILE: &str = "pump-events.ndjson";
+const STATE_FILE: &str = "pump-state.json";
 
 #[derive(Debug, Parser)]
 #[command(name = "fervor-replay")]
@@ -51,6 +54,13 @@ struct ReplayManifest {
     transaction_sha256: String,
     swap_file: &'static str,
     swap_sha256: String,
+    pump_layout: &'static str,
+    pump_idl_revision: &'static str,
+    pump_events: u64,
+    pump_event_file: &'static str,
+    pump_event_sha256: String,
+    pump_state_file: &'static str,
+    pump_state_sha256: String,
     replay_sha256: String,
 }
 
@@ -109,10 +119,13 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     )?;
     let mut tx_out = Output::new(&out.join(TX_FILE))?;
     let mut swap_out = Output::new(&out.join(SWAP_FILE))?;
+    let mut pump_out = Output::new(&out.join(PUMP_FILE))?;
     let mut blocks = 0_u64;
     let mut transactions = 0_u64;
     let mut matched = 0_u64;
     let mut swaps = 0_u64;
+    let mut pump_count = 0_u64;
+    let mut pump_events = Vec::<PumpEvent>::new();
     let mut first_slot = None;
     let mut last_slot = None;
 
@@ -126,20 +139,23 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
             if !record.references(mint) {
                 continue;
             }
-            let tx = adapter.adapt_record(&record, mint).map_err(|quarantine| {
-                anyhow!(
-                    "archive transaction was quarantined: {}",
-                    serde_json::to_string(&quarantine).unwrap_or(quarantine.detail)
-                )
-            })?;
+            let tx = adapter
+                .adapt_record(&record, mint)
+                .map_err(|error| quarantine_error("archive transaction", error))?;
             matched = checked_count(matched, "matched transaction")?;
             tx_out.write_json(&tx)?;
-            if let Some(swap) = decode_swap(&tx).map_err(|quarantine| {
-                anyhow!(
-                    "matched transaction was quarantined: {}",
-                    serde_json::to_string(&quarantine).unwrap_or(quarantine.detail)
-                )
-            })? {
+            for event in decode_pump_events(&tx)
+                .map_err(|error| quarantine_error("Pump event", error))?
+                .into_iter()
+                .filter(|event| event.mint() == mint)
+            {
+                pump_count = checked_count(pump_count, "Pump event")?;
+                pump_out.write_json(&event)?;
+                pump_events.push(event);
+            }
+            if let Some(swap) =
+                decode_swap(&tx).map_err(|error| quarantine_error("matched transaction", error))?
+            {
                 if swap.token_mint == *mint || swap.quote_mint == *mint {
                     swaps = checked_count(swaps, "swap")?;
                     swap_out.write_json(&swap)?;
@@ -159,10 +175,21 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     if matched == 0 {
         bail!("replay found no transactions for mint {mint}");
     }
+    if pump_count == 0 {
+        bail!("replay found no Pump lifecycle events for mint {mint}");
+    }
 
+    let pump_state = PumpState::reconstruct(mint, &pump_events)?;
     let transaction_sha256 = tx_out.finish()?;
     let swap_sha256 = swap_out.finish()?;
-    let replay_sha256 = replay_hash(&transaction_sha256, &swap_sha256);
+    let pump_event_sha256 = pump_out.finish()?;
+    let pump_state_sha256 = write_json(&out.join(STATE_FILE), &pump_state)?;
+    let replay_sha256 = replay_hash(&[
+        &transaction_sha256,
+        &swap_sha256,
+        &pump_event_sha256,
+        &pump_state_sha256,
+    ]);
     let manifest = ReplayManifest {
         schema: SCHEMA,
         network: source.plan.network.clone(),
@@ -184,6 +211,13 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         transaction_sha256,
         swap_file: SWAP_FILE,
         swap_sha256,
+        pump_layout: PUMP_LAYOUT,
+        pump_idl_revision: PUMP_IDL_REV,
+        pump_events: pump_count,
+        pump_event_file: PUMP_FILE,
+        pump_event_sha256,
+        pump_state_file: STATE_FILE,
+        pump_state_sha256,
         replay_sha256,
     };
     let mut bytes = serde_json::to_vec_pretty(&manifest)?;
@@ -191,6 +225,11 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     write_file(&out.join("manifest.json"), &bytes)?;
     File::open(out)?.sync_all()?;
     Ok(())
+}
+
+fn quarantine_error(context: &str, error: Quarantine) -> anyhow::Error {
+    let detail = serde_json::to_string(&error).unwrap_or(error.detail);
+    anyhow!("{context} was quarantined: {detail}")
 }
 
 fn read_manifest(corpus: &Path) -> Result<ExtractManifest> {
@@ -208,13 +247,13 @@ fn checked_count(value: u64, name: &str) -> Result<u64> {
         .ok_or_else(|| anyhow!("{name} count overflow"))
 }
 
-fn replay_hash(tx_hash: &str, swap_hash: &str) -> String {
+fn replay_hash(hashes: &[&str]) -> String {
     let mut digest = Sha256::new();
     digest.update(SCHEMA.as_bytes());
-    digest.update([0]);
-    digest.update(tx_hash.as_bytes());
-    digest.update([0]);
-    digest.update(swap_hash.as_bytes());
+    for hash in hashes {
+        digest.update([0]);
+        digest.update(hash.as_bytes());
+    }
     hex::encode(digest.finalize())
 }
 
@@ -259,15 +298,26 @@ fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn write_json(path: &Path, value: &impl Serialize) -> Result<String> {
+    let mut bytes = serde_json::to_vec_pretty(value)?;
+    bytes.push(b'\n');
+    write_file(path, &bytes)?;
+    Ok(hex::encode(Sha256::digest(bytes)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn replay_digest_is_domain_separated_and_stable() {
-        let hash = replay_hash(&"a".repeat(64), &"b".repeat(64));
+        let a = "a".repeat(64);
+        let b = "b".repeat(64);
+        let c = "c".repeat(64);
+        let hash = replay_hash(&[&a, &b, &c]);
         assert_eq!(hash.len(), 64);
-        assert_eq!(hash, replay_hash(&"a".repeat(64), &"b".repeat(64)));
-        assert_ne!(hash, replay_hash(&"b".repeat(64), &"a".repeat(64)));
+        assert_eq!(hash, replay_hash(&[&a, &b, &c]));
+        assert_ne!(hash, replay_hash(&[&b, &a, &c]));
+        assert_ne!(hash, replay_hash(&[&a, &b]));
     }
 }

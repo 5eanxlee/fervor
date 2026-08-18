@@ -5,7 +5,7 @@ use std::{collections::HashSet, error::Error, fmt, str::FromStr};
 
 pub const FERVOR_TX_VERSION: u16 = 1;
 
-mod u64_text {
+pub(crate) mod u64_text {
     use serde::{de::Error, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(value: &u64, serializer: S) -> Result<S::Ok, S::Error> {
@@ -19,7 +19,7 @@ mod u64_text {
     }
 }
 
-mod opt_u64_text {
+pub(crate) mod opt_u64_text {
     use serde::{de::Error, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S: Serializer>(value: &Option<u64>, serializer: S) -> Result<S::Ok, S::Error> {

@@ -8,5 +8,6 @@ pub mod market_journal;
 #[cfg(feature = "archive-replay")]
 pub mod old_faithful;
 pub mod postgres;
+pub mod pump;
 pub mod stream_bus;
 pub mod yellowstone;
