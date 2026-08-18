@@ -54,9 +54,15 @@ cargo run --release --bin fervor-corpus -- extract \
 
 cargo run --release --bin fervor-corpus -- verify \
   --dir /path/to/quant-2024-11-19
+
+cargo run --release --features archive-replay --bin fervor-replay -- \
+  --corpus /path/to/quant-2024-11-19 \
+  --out /path/to/quant-2024-11-19-replay
 ```
 
 Ranges are half-open: `start-slot` is included and `end-slot` is excluded. The pilot currently accepts one mainnet epoch and the HTTPS host `files.old-faithful.net`; a different HTTPS mirror requires an explicit `--allow-host`. Credentials, query strings, fragments, silent source fallback, whole-epoch mirroring, and non-range CAR responses are rejected.
+
+`fervor-replay` verifies the extract before reading it and performs no network requests. Old Faithful cannot filter records remotely, so the reader validates every selected block while only transactions referencing the manifest mint enter `RawEnvelope`, `FervorTx`, and the market decoder. The command publishes `transactions.ndjson`, `swaps.ndjson`, and `manifest.json` with an atomic directory rename. The manifest records full scan and matched counts plus SHA-256 hashes for both output streams and a domain-separated replay hash. Repeating a pinned extract on the same code must produce byte-identical files. Rayon uses the host's available parallelism by default; set `RAYON_NUM_THREADS` to enforce a benchmark or container CPU budget.
 
 The format implementation is grounded in [Jetstreamer 0.7.0](https://github.com/anza-xyz/jetstreamer/tree/cffaf3d891b3cbe45a46dd963d6d3571b2aa1a24), licensed MIT or Apache-2.0. The recorded archive implementation is [Yellowstone Old Faithful v0.7.25](https://github.com/rpcpool/yellowstone-faithful/tree/a69a0d2e189006608e3b73b7659a957b00b3567e). Its repository is predominantly AGPL-3.0-only, so Fervor does not copy that implementation. Official OF1 documentation offers archive downloads; no standalone service-terms page was found during the 2026-08-18 review. Extracts remain internal until redistribution is separately approved.
 
@@ -64,6 +70,6 @@ The format implementation is grounded in [Jetstreamer 0.7.0](https://github.com/
 
 ```bash
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test --all-targets
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --all-targets --all-features
 ```
