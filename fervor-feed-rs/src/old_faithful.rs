@@ -15,6 +15,7 @@ use cid::Cid;
 use crc::{Crc, CRC_64_GO_ISO};
 use fnv::FnvHasher;
 use prost::Message;
+use rayon::prelude::*;
 use serde_cbor::Value;
 use sha2::{Digest, Sha256};
 use solana_transaction::versioned::VersionedTransaction;
@@ -423,7 +424,7 @@ fn build_block(raw_nodes: Vec<RawNode>) -> Result<ArchiveBlock> {
         .ok_or_else(|| anyhow!("block time is outside the supported range"))?
         .to_rfc3339_opts(SecondsFormat::Secs, true);
 
-    let mut records = Vec::new();
+    let mut jobs = Vec::new();
     let mut entries = HashSet::new();
     let mut transactions = HashSet::new();
     let mut next_index = 0_u64;
@@ -452,19 +453,7 @@ fn build_block(raw_nodes: Vec<RawNode>) -> Result<ArchiveBlock> {
                     next_index
                 );
             }
-            records.push(build_record(
-                tx,
-                *tx_cid,
-                *entry_cid,
-                block_node.cid,
-                block,
-                &block_id,
-                block_time,
-                &observed_at,
-                &nodes,
-                &raw_nodes,
-                &positions,
-            )?);
+            jobs.push((tx, *tx_cid, *entry_cid));
             next_index = next_index
                 .checked_add(1)
                 .ok_or_else(|| anyhow!("transaction index overflow"))?;
@@ -482,9 +471,27 @@ fn build_block(raw_nodes: Vec<RawNode>) -> Result<ArchiveBlock> {
         .iter()
         .filter(|raw| matches!(raw.node, Node::Transaction(_)))
         .count();
-    if tx_nodes != records.len() {
+    if tx_nodes != jobs.len() {
         bail!("block contains unreferenced transaction nodes");
     }
+    let records = jobs
+        .par_iter()
+        .map(|(tx, tx_cid, entry_cid)| {
+            build_record(
+                tx,
+                *tx_cid,
+                *entry_cid,
+                block_node.cid,
+                block,
+                &block_id,
+                block_time,
+                &observed_at,
+                &nodes,
+                &raw_nodes,
+                &positions,
+            )
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(ArchiveBlock {
         slot: block.slot,
