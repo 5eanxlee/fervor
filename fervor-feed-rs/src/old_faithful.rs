@@ -375,7 +375,7 @@ enum Node {
     Transaction(ArchiveTx),
     Entry(Entry),
     Block(Block),
-    Rewards(Frame),
+    Rewards(ArchiveRewards),
     DataFrame(Frame),
     Other(u64),
 }
@@ -405,6 +405,12 @@ struct ArchiveTx {
 struct Entry {
     hash: Vec<u8>,
     transactions: Vec<Cid>,
+}
+
+#[derive(Clone, Debug)]
+struct ArchiveRewards {
+    slot: u64,
+    data: Frame,
 }
 
 #[derive(Clone, Debug)]
@@ -457,7 +463,8 @@ fn build_block(raw_nodes: Vec<RawNode>) -> Result<ArchiveBlock> {
         nodes.insert(raw.cid, &raw.node);
     }
     let rewards = match nodes.get(&block.rewards) {
-        Some(Node::Rewards(rewards)) => rewards,
+        Some(Node::Rewards(rewards)) if rewards.slot == block.slot => &rewards.data,
+        Some(Node::Rewards(_)) => bail!("block rewards slot differs from its block"),
         Some(_) => bail!("block rewards CID is not a rewards node"),
         None => bail!("block references missing rewards {}", block.rewards),
     };
@@ -1041,11 +1048,14 @@ fn parse_block(array: &[Value]) -> Result<Block> {
     })
 }
 
-fn parse_rewards(array: &[Value]) -> Result<Frame> {
-    if array.len() != 2 {
+fn parse_rewards(array: &[Value]) -> Result<ArchiveRewards> {
+    if array.len() != 3 {
         bail!("rewards node shape is invalid");
     }
-    parse_frame(value_array(&array[1], "rewards data")?)
+    Ok(ArchiveRewards {
+        slot: value_u64(&array[1], "rewards slot")?,
+        data: parse_frame(value_array(&array[2], "rewards data")?)?,
+    })
 }
 
 fn parse_frame(array: &[Value]) -> Result<Frame> {
@@ -1313,5 +1323,18 @@ mod tests {
         assert!(node_kind(&[0x9f, 6, 0xff]).is_err());
         assert!(node_kind(&[0xa1, 6]).is_err());
         assert!(node_kind(&[0x81, 7]).is_err());
+    }
+
+    #[test]
+    fn parses_pinned_rewards_shape() {
+        let bytes = [
+            131, 5, 26, 1, 1, 20, 132, 133, 6, 246, 246, 246, 85, 40, 181, 47, 253, 4, 0, 65, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 187, 27, 219, 202,
+        ];
+        let Node::Rewards(rewards) = parse_node(&bytes).unwrap() else {
+            panic!("expected rewards node");
+        };
+        assert_eq!(rewards.slot, 16_848_004);
+        assert_eq!(rewards.data.data.len(), 21);
     }
 }
