@@ -266,17 +266,18 @@ impl ArchiveReader {
     }
 
     pub fn next_block(&mut self) -> Result<Option<ArchiveBlock>> {
-        let mut raw_nodes = Vec::new();
+        let mut sections = Vec::new();
         loop {
             let Some(raw) = self.reader.next()? else {
-                if raw_nodes.is_empty() {
+                if sections.is_empty() {
                     return Ok(None);
                 }
                 bail!("Old Faithful CAR ended inside a block");
             };
-            let is_block = matches!(raw.node, Node::Block(_));
-            raw_nodes.push(raw);
+            let is_block = raw.kind == 2;
+            sections.push(raw);
             if is_block {
+                let raw_nodes = parse_sections(sections)?;
                 let block = build_block(raw_nodes)?;
                 if !self.slots.contains(&block.slot) {
                     bail!(
@@ -315,7 +316,7 @@ impl<R: Read> CarReader<R> {
         Ok(Self { reader })
     }
 
-    fn next(&mut self) -> Result<Option<RawNode>> {
+    fn next(&mut self) -> Result<Option<RawSection>> {
         let Some(section_len) = read_uvarint(&mut self.reader)? else {
             return Ok(None);
         };
@@ -333,10 +334,33 @@ impl<R: Read> CarReader<R> {
             bail!("CAR section has no DAG-CBOR payload");
         }
         let data = section[data_at..].to_vec();
-        validate_cid(&cid, &data)?;
-        let node = parse_node(&data)?;
-        Ok(Some(RawNode { cid, data, node }))
+        let kind = node_kind(&data)?;
+        Ok(Some(RawSection { cid, data, kind }))
     }
+}
+
+struct RawSection {
+    cid: Cid,
+    data: Vec<u8>,
+    kind: u64,
+}
+
+fn parse_sections(sections: Vec<RawSection>) -> Result<Vec<RawNode>> {
+    sections
+        .into_par_iter()
+        .map(|section| {
+            validate_cid(&section.cid, &section.data)?;
+            let node = parse_node(&section.data)?;
+            if node.kind() != section.kind {
+                bail!("Old Faithful node kind changed during parsing");
+            }
+            Ok(RawNode {
+                cid: section.cid,
+                data: section.data,
+                node,
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -351,8 +375,22 @@ enum Node {
     Transaction(ArchiveTx),
     Entry(Entry),
     Block(Block),
+    Rewards(Frame),
     DataFrame(Frame),
     Other(u64),
+}
+
+impl Node {
+    const fn kind(&self) -> u64 {
+        match self {
+            Self::Transaction(_) => 0,
+            Self::Entry(_) => 1,
+            Self::Block(_) => 2,
+            Self::Rewards(_) => 5,
+            Self::Other(kind) => *kind,
+            Self::DataFrame(_) => 6,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -375,6 +413,7 @@ struct Block {
     entries: Vec<Cid>,
     parent_slot: u64,
     block_time: u64,
+    rewards: Cid,
 }
 
 #[derive(Clone, Debug)]
@@ -401,7 +440,7 @@ fn build_block(raw_nodes: Vec<RawNode>) -> Result<ArchiveBlock> {
     }
     if raw_nodes
         .iter()
-        .any(|raw| matches!(raw.node, Node::Other(kind) if kind != 5))
+        .any(|raw| matches!(raw.node, Node::Other(_)))
     {
         bail!("archive slot contains an epoch-level node");
     }
@@ -416,6 +455,20 @@ fn build_block(raw_nodes: Vec<RawNode>) -> Result<ArchiveBlock> {
             bail!("archive block contains duplicate CID {}", raw.cid);
         }
         nodes.insert(raw.cid, &raw.node);
+    }
+    let rewards = match nodes.get(&block.rewards) {
+        Some(Node::Rewards(rewards)) => rewards,
+        Some(_) => bail!("block rewards CID is not a rewards node"),
+        None => bail!("block references missing rewards {}", block.rewards),
+    };
+    assemble_frame(rewards, &nodes).context("invalid block rewards frame")?;
+    if raw_nodes
+        .iter()
+        .filter(|raw| matches!(raw.node, Node::Rewards(_)))
+        .count()
+        != 1
+    {
+        bail!("block does not contain exactly one rewards node");
     }
 
     let block_id = block_hash(block, &nodes)?;
@@ -908,6 +961,19 @@ fn validate_cid(cid: &Cid, data: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn node_kind(bytes: &[u8]) -> Result<u64> {
+    let [array, kind, ..] = bytes else {
+        bail!("DAG-CBOR node is too short");
+    };
+    if !(0x81..=0x97).contains(array) {
+        bail!("DAG-CBOR node is not a definite non-empty array");
+    }
+    if *kind > 6 {
+        bail!("unsupported Old Faithful node kind {kind}");
+    }
+    Ok(u64::from(*kind))
+}
+
 fn parse_node(bytes: &[u8]) -> Result<Node> {
     let value: Value = serde_cbor::from_slice(bytes).context("invalid DAG-CBOR node")?;
     let array = value_array(&value, "node")?;
@@ -919,7 +985,8 @@ fn parse_node(bytes: &[u8]) -> Result<Node> {
         0 => parse_transaction(array).map(Node::Transaction),
         1 => parse_entry(array).map(Node::Entry),
         2 => parse_block(array).map(Node::Block),
-        3..=5 => Ok(Node::Other(kind)),
+        3..=4 => Ok(Node::Other(kind)),
+        5 => parse_rewards(array).map(Node::Rewards),
         6 => parse_frame(array).map(Node::DataFrame),
         _ => bail!("unsupported Old Faithful node kind {kind}"),
     }
@@ -960,7 +1027,7 @@ fn parse_block(array: &[Value]) -> Result<Block> {
         bail!("block node shape is invalid");
     }
     value_array(&array[2], "block shredding")?;
-    parse_link(&array[5]).context("block rewards link is invalid")?;
+    let rewards = parse_link(&array[5]).context("block rewards link is invalid")?;
     let meta = value_array(&array[4], "block metadata")?;
     if !(2..=3).contains(&meta.len()) {
         bail!("block metadata shape is invalid");
@@ -970,7 +1037,15 @@ fn parse_block(array: &[Value]) -> Result<Block> {
         entries: parse_links(&array[3], "block entries")?,
         parent_slot: value_u64(&meta[0], "block parent slot")?,
         block_time: value_u64(&meta[1], "block time")?,
+        rewards,
     })
+}
+
+fn parse_rewards(array: &[Value]) -> Result<Frame> {
+    if array.len() != 2 {
+        bail!("rewards node shape is invalid");
+    }
+    parse_frame(value_array(&array[1], "rewards data")?)
 }
 
 fn parse_frame(array: &[Value]) -> Result<Frame> {
@@ -1131,6 +1206,12 @@ mod tests {
         Cid::new_v1(DAG_CBOR_CODEC, hash)
     }
 
+    fn data_cid(data: &[u8]) -> Cid {
+        let digest = Sha256::digest(data);
+        let hash = cid::multihash::Multihash::wrap(SHA2_256_CODE, &digest).unwrap();
+        Cid::new_v1(DAG_CBOR_CODEC, hash)
+    }
+
     #[test]
     fn capabilities_are_honest_about_finalized_history() {
         let adapter = OldFaithfulAdapter::new("a".repeat(64), Network::MainnetBeta).unwrap();
@@ -1158,12 +1239,12 @@ mod tests {
             RawNode {
                 cid: cid_a,
                 data: vec![1, 2],
-                node: Node::Other(5),
+                node: Node::Other(3),
             },
             RawNode {
                 cid: cid_b,
                 data: vec![3, 4],
-                node: Node::Other(5),
+                node: Node::Other(3),
             },
         ];
         let positions = HashMap::from([(cid_a, 0), (cid_b, 1)]);
@@ -1201,5 +1282,36 @@ mod tests {
     #[test]
     fn rejects_noncanonical_cid_content() {
         assert!(validate_cid(&cid(1), &[2]).is_err());
+    }
+
+    #[test]
+    fn parallel_section_parse_preserves_car_order() {
+        let first = vec![0x85, 6, 0xf6, 0xf6, 0xf6, 0x41, 1];
+        let second = vec![0x85, 6, 0xf6, 0xf6, 0xf6, 0x41, 2];
+        let first_cid = data_cid(&first);
+        let second_cid = data_cid(&second);
+        let parsed = parse_sections(vec![
+            RawSection {
+                cid: first_cid,
+                data: first,
+                kind: 6,
+            },
+            RawSection {
+                cid: second_cid,
+                data: second,
+                kind: 6,
+            },
+        ])
+        .unwrap();
+        assert_eq!(parsed[0].cid, first_cid);
+        assert_eq!(parsed[1].cid, second_cid);
+    }
+
+    #[test]
+    fn node_kind_rejects_noncanonical_prefixes() {
+        assert_eq!(node_kind(&[0x81, 6]).unwrap(), 6);
+        assert!(node_kind(&[0x9f, 6, 0xff]).is_err());
+        assert!(node_kind(&[0xa1, 6]).is_err());
+        assert!(node_kind(&[0x81, 7]).is_err());
     }
 }
