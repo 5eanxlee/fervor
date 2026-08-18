@@ -69,6 +69,8 @@ export interface ProofPolicy {
     permits(action: OrderAction, observation: ObserveAction): boolean;
 }
 
+const absenceProviders = new Set<string>(orderPolicy.proof.providerAbsence);
+
 export const strictProofPolicy: ProofPolicy = {
     permits(action, item) {
         if (item.verdict !== 'absence') return true;
@@ -76,7 +78,7 @@ export const strictProofPolicy: ProofPolicy = {
             return item.queryKind === orderPolicy.proof.chainAbsenceQuery;
         }
         return item.queryKind === orderPolicy.proof.providerAbsenceQuery
-            && orderPolicy.proof.providerAbsence.includes(action.provider);
+            && absenceProviders.has(action.provider);
     },
 };
 

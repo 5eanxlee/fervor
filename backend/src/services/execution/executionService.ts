@@ -25,7 +25,6 @@ import {
     verifySolanaSignature,
     verifySolanaSignerAt,
 } from '../solanaTransaction';
-import { createSwapProvider } from './providerFactory';
 import { abortable } from '../providerCall';
 import { ExecutionProviderError, SwapProvider } from './provider';
 import {
@@ -120,21 +119,6 @@ const decodeTransaction = (value: string): Buffer => {
     return decoded;
 };
 
-const decodeProviderTransaction = (value: string): Buffer => {
-    try {
-        const normalized = value.replace(/\s/g, '');
-        const decoded = Buffer.from(normalized, 'base64');
-        const roundTrip = decoded.toString('base64').replace(/=+$/, '');
-        if (!decoded.length || decoded.length > env.MAX_TRANSACTION_BYTES
-            || roundTrip !== normalized.replace(/=+$/, '')) {
-            throw new Error('invalid base64');
-        }
-        return decoded;
-    } catch {
-        throw new ExecutionError('provider_contract_error', 'Provider returned an invalid transaction', 502);
-    }
-};
-
 const parseProviderTransaction = (
     value: string,
     expectedSigner: string,
@@ -169,10 +153,10 @@ const parseSignedTransaction = (value: Buffer): SolanaTransaction => {
 };
 
 const matchesProviderSignature = (
-    transaction: SolanaTransaction | null,
+    transaction: SolanaTransaction,
     local: string | undefined,
     provided: string | undefined
-): boolean => !provided || !transaction || (local
+): boolean => !provided || (local
     ? provided === local
     : verifySolanaSignature(transaction, transaction.feePayer, provided));
 
@@ -221,9 +205,7 @@ export class ExecutionService {
         private readonly tx: TxFn = transaction,
         private readonly txStore = new ExecutionTxStore()
     ) {
-        this.provider = provider === undefined
-            ? this.safeProvider()
-            : provider;
+        this.provider = provider ?? null;
     }
 
     capabilities(): ExecutionCapabilities {
@@ -268,17 +250,18 @@ export class ExecutionService {
             const now = new Date();
             const expiresAt = new Date(now.getTime() + env.QUOTE_TTL_MS);
             const id = crypto.randomUUID();
-            const transactionBytes = decodeProviderTransaction(providerQuote.transaction);
-            const parsedTransaction = provider.name === 'fixture'
-                ? null
-                : parseProviderTransaction(providerQuote.transaction, request.taker, providerQuote.feePayer);
+            const parsedTransaction = parseProviderTransaction(
+                providerQuote.transaction,
+                request.taker,
+                providerQuote.feePayer
+            );
             const baseQuote: Omit<SwapQuote, 'integrityDigest'> = {
                 id,
                 ...providerQuote,
                 inputMint: request.inputMint,
                 outputMint: request.outputMint,
-                transactionDigest: parsedTransaction?.messageDigest || sha256(transactionBytes),
-                requiresSignature: provider.name !== 'fixture',
+                transactionDigest: parsedTransaction.messageDigest,
+                requiresSignature: true,
                 createdAt: now.toISOString(),
                 expiresAt: expiresAt.toISOString(),
             };
@@ -322,10 +305,8 @@ export class ExecutionService {
         const provider = this.requireProvider();
         const signedBytes = decodeTransaction(request.signedTransaction);
         const signedDigest = sha256(signedBytes);
-        const parsedSigned = provider.name === 'fixture'
-            ? null
-            : parseSignedTransaction(signedBytes);
-        if (parsedSigned?.signatures.some((signature, index) =>
+        const parsedSigned = parseSignedTransaction(signedBytes);
+        if (parsedSigned.signatures.some((signature, index) =>
             signature.some((byte) => byte !== 0)
             && !verifySolanaSignerAt(parsedSigned, index))) {
             throw new ExecutionError(
@@ -334,7 +315,7 @@ export class ExecutionService {
                 400
             );
         }
-        const localSignature = parsedSigned ? transactionSignature(parsedSigned) : undefined;
+        const localSignature = transactionSignature(parsedSigned);
         const executionId = crypto.randomUUID();
         const sealed = await this.prepareBlob(
             userId,
@@ -384,18 +365,16 @@ export class ExecutionService {
                 }
                 throw new ExecutionError('quote_consumed', 'Quote has already been submitted', 409);
             }
-            if (parsedSigned) {
-                try {
-                    validateSignedContract(quote, parsedSigned);
-                } catch (error) {
-                    throw new ExecutionError(
-                        'transaction_mismatch',
-                        error instanceof Error ? error.message : 'Signed transaction failed intent validation',
-                        400
-                    );
-                }
+            try {
+                validateSignedContract(quote, parsedSigned);
+            } catch (error) {
+                throw new ExecutionError(
+                    'transaction_mismatch',
+                    error instanceof Error ? error.message : 'Signed transaction failed intent validation',
+                    400
+                );
             }
-            if (env.TRADING_MODE === 'live' && parsedSigned && !sealed) {
+            if (env.TRADING_MODE === 'live' && !sealed) {
                 throw new ExecutionError(
                     'execution_state_conflict',
                     'Execution changed before its encrypted transaction was prepared',
@@ -518,7 +497,7 @@ export class ExecutionService {
         signedTransaction: string,
         traceId: string,
         provider: SwapProvider,
-        signed: SolanaTransaction | null
+        signed: SolanaTransaction
     ): Promise<TradeExecution> {
         const executionId = String(execution.id);
         const quoteResult = await this.db('SELECT provider_quote_id FROM trade_quotes WHERE id = $1', [execution.quote_id]);
@@ -562,7 +541,7 @@ export class ExecutionService {
         signedTransaction: string,
         traceId: string,
         provider: SwapProvider,
-        signed: SolanaTransaction | null,
+        signed: SolanaTransaction,
         recovery = false
     ): Promise<TradeExecution> {
         const active = await this.startBroadcast(executionId, opToken, traceId);
@@ -948,9 +927,9 @@ export class ExecutionService {
         signedDigest: string,
         executionId: string,
         provider: SwapProvider,
-        signed: SolanaTransaction | null
+        signed: SolanaTransaction
     ): Promise<SealedExecutionTx | undefined> {
-        if (env.TRADING_MODE !== 'live' || !signed) return undefined;
+        if (env.TRADING_MODE !== 'live') return undefined;
 
         const existing = await this.db(
             `SELECT quote_id, signed_tx_digest
@@ -1009,13 +988,5 @@ export class ExecutionService {
     private requireProvider(): SwapProvider {
         if (!this.provider) throw new ExecutionError('trading_disabled', 'Trading is disabled', 503);
         return this.provider;
-    }
-
-    private safeProvider(): SwapProvider | null {
-        try {
-            return createSwapProvider();
-        } catch {
-            return null;
-        }
     }
 }

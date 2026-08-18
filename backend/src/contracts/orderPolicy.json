@@ -31,7 +31,7 @@
         "compensate": ["provider", "chain"]
     },
     "proof": {
-        "providerAbsence": ["fixture"],
+        "providerAbsence": [],
         "providerAbsenceQuery": "found",
         "chainAbsenceQuery": "expired_unseen"
     },

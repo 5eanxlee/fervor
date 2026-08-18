@@ -20,7 +20,7 @@ suite('order ambiguity infrastructure', () => {
     let OrderService: typeof import('../src/services/orders/orderService').OrderService;
 
     beforeAll(async () => {
-        process.env.ORDER_MODE = 'fixture';
+        process.env.ORDER_MODE = 'disabled';
         process.env.DATABASE_URL = url();
         process.env.CORE_DATABASE_URL = url();
         process.env.MARKET_DATABASE_URL = url();
@@ -56,7 +56,7 @@ suite('order ambiguity infrastructure', () => {
                 order_type, state, input_mint, output_mint, input_amount, trigger_mint,
                 params, expires_at, provider_order_id
             ) VALUES (
-                $1, $2, 'fixture', $3, repeat('a', 64), $4,
+                $1, $2, 'jupiter_trigger_v2', $3, repeat('a', 64), $4,
                 'single', 'open', $5, $6, 1, $6,
                 '{"triggerPriceUsd":250}'::jsonb, clock_timestamp() + INTERVAL '1 day', $7
             )
@@ -71,7 +71,7 @@ suite('order ambiguity infrastructure', () => {
     };
 
     const provider = (update: ReturnType<typeof vi.fn>) => ({
-        name: 'fixture',
+        name: 'jupiter_trigger_v2',
         requiresAuth: false,
         custody: 'none',
         update,

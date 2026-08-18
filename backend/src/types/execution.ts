@@ -40,7 +40,7 @@ export const submitRequestSchema = z.object({
 
 export type QuoteRequest = z.infer<typeof quoteRequestSchema>;
 export type SubmitRequest = z.infer<typeof submitRequestSchema>;
-export type ExecutionProviderName = 'fixture' | 'jupiter_swap_v2';
+export type ExecutionProviderName = 'jupiter_swap_v2';
 export type ExecutionState =
     | 'requested'
     | 'quoted'
@@ -136,7 +136,7 @@ export interface TradeExecution {
 }
 
 export interface ExecutionCapabilities {
-    mode: 'disabled' | 'fixture' | 'live';
+    mode: 'disabled' | 'live';
     provider: ExecutionProviderName | 'none';
     canQuote: boolean;
     canSubmit: boolean;

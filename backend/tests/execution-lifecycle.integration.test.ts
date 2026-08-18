@@ -1,5 +1,10 @@
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+    signTestSwap,
+    TestSwapProvider,
+    testSwapWallet,
+} from './helpers/testSwapProvider';
 
 const enabled = process.env.RUN_INFRA_TESTS === 'true';
 const suite = enabled ? describe : describe.skip;
@@ -9,13 +14,11 @@ suite('execution lifecycle infrastructure', () => {
     let transaction: any;
     let service: any;
     let userId = '';
-    let executionId = '';
     let recoveryId = '';
     let leaseId = '';
     let operationId = '';
-    let submits = 0;
     const marker = crypto.randomBytes(8).toString('hex');
-    const wallet = '7Zb1d7t2S9Bkv8G6gPKZQdgs7Qk1HSA1xY5g7uEczwzE';
+    const wallet = testSwapWallet;
     const sol = 'So11111111111111111111111111111111111111112';
     const usdc = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
@@ -23,30 +26,14 @@ suite('execution lifecycle infrastructure', () => {
         process.env.CORE_DATABASE_URL ??= 'postgresql://fervor@localhost:55432/fervor';
         process.env.MARKET_DATABASE_URL ??= process.env.CORE_DATABASE_URL;
         process.env.DB_COLOCATED ??= 'true';
-        process.env.TRADING_MODE = 'fixture';
+        process.env.TRADING_MODE = 'disabled';
         process.env.REDIS_URL ??= 'redis://localhost:6379';
         process.env.EXECUTION_TIMEOUT_MS = '1000';
         process.env.EXECUTION_OP_LEASE_MS = '6000';
         process.env.EXECUTION_RECONCILE_LEASE_MS = '8000';
         ({ query, transaction } = await import('../src/config/database'));
         const { ExecutionService } = await import('../src/services/execution/executionService');
-        const { ExecutionProviderError } = await import('../src/services/execution/provider');
-        const { FixtureSwapProvider } = await import('../src/services/execution/fixtureSwapProvider');
-        const fixture = new FixtureSwapProvider();
-        const provider = {
-            name: 'fixture' as const,
-            quote: fixture.quote.bind(fixture),
-            submit: async (input: { providerQuoteId: string; signedTransaction: string }) => {
-                submits += 1;
-                if (submits === 1) {
-                    throw new ExecutionProviderError(
-                        'provider_timeout', 'Timed out after broadcast', true, 504, undefined, true
-                    );
-                }
-                return fixture.submit(input);
-            },
-        };
-        service = new ExecutionService(provider, query);
+        service = new ExecutionService(new TestSwapProvider(), query);
         const user = await query(
             'INSERT INTO users (wallet_address) VALUES ($1) RETURNING id',
             [`ExecutionWallet${marker}`]
@@ -55,9 +42,6 @@ suite('execution lifecycle infrastructure', () => {
     });
 
     afterAll(async () => {
-        if (executionId) {
-            await query('DELETE FROM event_outbox WHERE event_key LIKE $1', [`execution:${executionId}:%`]);
-        }
         if (recoveryId) {
             await query('DELETE FROM event_outbox WHERE event_key LIKE $1', [`execution:${recoveryId}:%`]);
         }
@@ -70,68 +54,7 @@ suite('execution lifecycle infrastructure', () => {
         if (userId) await query('DELETE FROM users WHERE id = $1', [userId]);
     });
 
-    it('recovers a signature-less ambiguity only through the identical submission', async () => {
-        const quote = await service.createQuote(userId, {
-            inputMint: sol,
-            outputMint: usdc,
-            inputAmount: '1000000',
-            taker: wallet,
-            slippageBps: 100,
-        });
-        const request = {
-            signedTransaction: quote.transaction,
-            idempotencyKey: `infra-execution-${marker}`,
-        };
-
-        await expect(service.submit(userId, quote.id, request, `trace-${marker}-1`))
-            .rejects.toMatchObject({ code: 'submission_ambiguous', retryable: false });
-        const pending = await query(
-            `SELECT id, state, provider_status, error_code, op_token, op_lease_until,
-                    broadcast_started_at, broadcast_count
-             FROM trade_executions WHERE user_id = $1 AND idempotency_key = $2`,
-            [userId, request.idempotencyKey]
-        );
-        executionId = pending.rows[0].id;
-        expect(pending.rows[0]).toMatchObject({
-            state: 'signed',
-            provider_status: 'ambiguous',
-            error_code: 'provider_timeout',
-            op_token: null,
-            op_lease_until: null,
-            broadcast_count: 1,
-        });
-        expect(pending.rows[0].broadcast_started_at).toBeInstanceOf(Date);
-
-        await expect(service.submit(userId, quote.id, request, `trace-${marker}-2`))
-            .resolves.toMatchObject({ id: executionId, state: 'confirmed' });
-        expect(submits).toBe(2);
-        const durable = await query(
-            `SELECT state, provider_status, error_code, broadcast_count,
-                    (SELECT COUNT(*)::int FROM execution_events WHERE execution_id = trade_executions.id) AS event_count
-             FROM trade_executions WHERE id = $1`,
-            [executionId]
-        );
-        expect(durable.rows[0]).toMatchObject({
-            state: 'confirmed',
-            provider_status: 'fixture_confirmed',
-            error_code: null,
-            broadcast_count: 2,
-            event_count: 5,
-        });
-        const outbox = await query(
-            'SELECT COUNT(*)::int AS count FROM event_outbox WHERE event_key LIKE $1',
-            [`execution:${executionId}:%`]
-        );
-        expect(outbox.rows[0].count).toBe(5);
-    });
-
     it('reconciles a known signature after a broadcast-window process death', async () => {
-        await query(
-            `UPDATE trade_executions
-             SET state = 'finalized', confirmed_at = COALESCE(confirmed_at, CURRENT_TIMESTAMP)
-             WHERE id = $1 AND state = 'confirmed'`,
-            [executionId]
-        );
         const quote = await service.createQuote(userId, {
             inputMint: sol,
             outputMint: usdc,
@@ -146,7 +69,7 @@ suite('execution lifecycle infrastructure', () => {
              (id, quote_id, user_id, wallet_address, provider, idempotency_key, state,
               signature, input_mint, output_mint, expected_input_amount, expected_output_amount,
               signed_tx_digest, broadcast_started_at, broadcast_count, op_lease_until)
-             VALUES ($1, $2, $3, $4, 'fixture', $5, 'signed', $6, $7, $8, $9, $10,
+             VALUES ($1, $2, $3, $4, 'jupiter_swap_v2', $5, 'signed', $6, $7, $8, $9, $10,
                      $11, CURRENT_TIMESTAMP - INTERVAL '1 minute', 1,
                      CURRENT_TIMESTAMP - INTERVAL '30 seconds')`,
             [recoveryId, quote.id, userId, wallet, `crash-${marker}-execution`, signature,
@@ -199,7 +122,7 @@ suite('execution lifecycle infrastructure', () => {
              (id, quote_id, user_id, wallet_address, provider, idempotency_key, state,
               signature, input_mint, output_mint, expected_input_amount, expected_output_amount,
               signed_tx_digest, broadcast_started_at, broadcast_count)
-             VALUES ($1, $2, $3, $4, 'fixture', $5, 'signed', $6, $7, $8, $9, $10,
+             VALUES ($1, $2, $3, $4, 'jupiter_swap_v2', $5, 'signed', $6, $7, $8, $9, $10,
                      $11, CURRENT_TIMESTAMP, 1)`,
             [leaseId, quote.id, userId, wallet, `lease-${marker}-execution`, '6'.repeat(88),
                 sol, usdc, '3000000', quote.outputAmount, 'e'.repeat(64)]
@@ -247,10 +170,9 @@ suite('execution lifecycle infrastructure', () => {
 
     it('fences a second worker while a late rate reservation crosses the deadline', async () => {
         const { ExecutionService } = await import('../src/services/execution/executionService');
-        const { FixtureSwapProvider } = await import('../src/services/execution/fixtureSwapProvider');
         const { JupiterSwapProvider } = await import('../src/services/execution/jupiterSwapProvider');
         const { redisStreams } = await import('../src/services/redisStreamService');
-        const fixture = new FixtureSwapProvider();
+        const base = new TestSwapProvider();
         const jupiter = new JupiterSwapProvider();
         await redisStreams.connect();
         await redisStreams.command.del(
@@ -266,8 +188,8 @@ suite('execution lifecycle infrastructure', () => {
         let calls = 0;
         let running: Promise<unknown> | undefined;
         const provider = {
-            name: 'fixture' as const,
-            quote: fixture.quote.bind(fixture),
+            name: 'jupiter_swap_v2' as const,
+            quote: base.quote.bind(base),
             submit: async (
                 input: { providerQuoteId: string; signedTransaction: string },
                 call?: { signal?: AbortSignal }
@@ -287,7 +209,7 @@ suite('execution lifecycle infrastructure', () => {
                 slippageBps: 100,
             });
             const request = {
-                signedTransaction: quote.transaction,
+                signedTransaction: signTestSwap(quote.transaction),
                 idempotencyKey: `operation-${marker}-execution`,
             };
             const startedAt = Date.now();
@@ -351,7 +273,7 @@ suite('execution lifecycle infrastructure', () => {
                 (id, user_id, wallet_address, provider, provider_quote_id, input_mint, output_mint,
                  input_amount, output_amount, min_output_amount, slippage_bps, fee_payer,
                  transaction_digest, integrity_digest, state, expires_at)
-                SELECT quote_id, $1, $2, 'fixture', request_id, $3, $4,
+                SELECT quote_id, $1, $2, 'jupiter_swap_v2', request_id, $3, $4,
                        '1', '1', '1', 100, $2, repeat('d', 64), repeat('e', 64),
                        'consumed', CURRENT_TIMESTAMP + INTERVAL '1 day'
                   FROM data
@@ -362,7 +284,7 @@ suite('execution lifecycle infrastructure', () => {
               signature, input_mint, output_mint, expected_input_amount, expected_output_amount,
               signed_tx_digest, provider_status, broadcast_started_at, broadcast_count,
               submitted_at, created_at, updated_at)
-             SELECT gen_random_uuid(), data.quote_id, $1, $2, 'fixture', data.request_id,
+             SELECT gen_random_uuid(), data.quote_id, $1, $2, 'jupiter_swap_v2', data.request_id,
                     CASE sequence WHEN 1 THEN 'signed'
                                   WHEN 2 THEN 'submitted'
                                   WHEN 3 THEN 'processed'
@@ -402,7 +324,7 @@ suite('execution lifecycle infrastructure', () => {
                 (id, user_id, wallet_address, provider, provider_quote_id, input_mint, output_mint,
                  input_amount, output_amount, min_output_amount, slippage_bps, fee_payer,
                  transaction_digest, integrity_digest, state, expires_at)
-                SELECT quote_id, $1, $2, 'fixture', request_id, $3, $4,
+                SELECT quote_id, $1, $2, 'jupiter_swap_v2', request_id, $3, $4,
                        '1', '1', '1', 100, $2, repeat('a', 64), repeat('b', 64),
                        'consumed', CURRENT_TIMESTAMP + INTERVAL '1 day'
                   FROM data
@@ -413,7 +335,7 @@ suite('execution lifecycle infrastructure', () => {
               signature, input_mint, output_mint, expected_input_amount, expected_output_amount,
               signed_tx_digest, broadcast_started_at, broadcast_count, submitted_at,
               created_at, updated_at)
-             SELECT gen_random_uuid(), data.quote_id, $1, $2, 'fixture', data.request_id,
+             SELECT gen_random_uuid(), data.quote_id, $1, $2, 'jupiter_swap_v2', data.request_id,
                     CASE WHEN sequence <= 8 THEN 'signed'
                          WHEN sequence <= 16 THEN 'submitted'
                          WHEN sequence <= 24 THEN 'processed'

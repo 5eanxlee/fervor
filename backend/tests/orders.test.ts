@@ -1,44 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { FixtureOrderProvider } from '../src/services/orders/fixtureOrderProvider';
 import { mapProviderState } from '../src/services/orders/jupiterTriggerProvider';
+import { OrderService } from '../src/services/orders/orderService';
 import { orderAuthSchema, orderChallengeSchema, orderRequestSchema, orderUpdateSchema } from '../src/types';
 
 const wallet = '7Zb1d7t2S9Bkv8G6gPKZQdgs7Qk1HSA1xY5g7uEczwzE';
 const sol = 'So11111111111111111111111111111111111111112';
 const usdc = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
-const single = () => orderRequestSchema.parse({
-    orderType: 'single',
-    walletAddress: wallet,
-    inputMint: sol,
-    outputMint: usdc,
-    inputAmount: '1000000000',
-    triggerMint: sol,
-    triggerCondition: 'above',
-    triggerPriceUsd: 250,
-    slippageBps: 100,
-    expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
-    clientOrderId: 'client-order-00000001',
-});
-
 describe('conditional order contracts', () => {
-    it('runs the deterministic fixture lifecycle without custody or network submission', async () => {
-        const provider = new FixtureOrderProvider();
-        const request = single();
-        const prepared = await provider.prepare(request);
-        const repeated = await provider.prepare(request);
-        expect(prepared).toEqual(repeated);
-        expect(provider.custody).toBe('none');
-
-        const active = await provider.activate(request, prepared.depositRequestId, prepared.transaction);
-        expect(active.state).toBe('open');
-        const cancellation = await provider.cancel(active.providerOrderId);
-        const cancelled = await provider.confirmCancel(
-            active.providerOrderId,
-            cancellation.requestId,
-            cancellation.transaction
-        );
-        expect(cancelled.state).toBe('cancelled');
+    it('does not construct a mutation provider in the API service', async () => {
+        const service = new OrderService();
+        expect(service.capabilities()).toMatchObject({
+            mode: 'disabled',
+            provider: 'none',
+            canPrepare: false,
+            canActivate: false,
+        });
+        await expect(service.challenge(wallet, 'message'))
+            .rejects.toMatchObject({ code: 'orders_disabled', status: 503 });
     });
 
     it('supports OCO risk brackets and rejects an inverted price band', () => {

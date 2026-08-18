@@ -62,14 +62,11 @@ describe('action evidence rules', () => {
     });
 
     it('requires provider-specific proof before accepting absence', () => {
-        const action = { provider: 'jupiter' } as OrderAction;
+        const action = { provider: 'jupiter_trigger_v2' } as OrderAction;
         expect(strictProofPolicy.permits(action, {
             source: 'provider', verdict: 'absence', queryKind: 'found',
         } as never)).toBe(false);
-        expect(strictProofPolicy.permits({ provider: 'fixture' } as OrderAction, {
-            source: 'provider', verdict: 'absence', queryKind: 'found',
-        } as never)).toBe(true);
-        expect(strictProofPolicy.permits({ provider: 'fixture' } as OrderAction, {
+        expect(strictProofPolicy.permits(action, {
             source: 'provider', verdict: 'absence', queryKind: 'queried_no_evidence',
         } as never)).toBe(false);
         expect(strictProofPolicy.permits(action, {
@@ -89,14 +86,14 @@ describe('action evidence rules', () => {
             actionId: '2cb08ba3-f135-439b-a0ab-80282ee3febe',
             source: 'provider',
             cluster: 'mainnet-beta',
-            sourceKey: 'provider:fixture:order:1',
-            factKey: 'provider:fixture:order-state:1',
+            sourceKey: 'provider:jupiter:order:1',
+            factKey: 'provider:jupiter:order-state:1',
             factRev: 1,
             queryKind: 'found',
             verdict: 'presence',
             predicate: 'provider_sync.provider.effect.v1',
             ruleVer: 1,
-            provider: 'fixture',
+            provider: 'jupiter_trigger_v2',
             desiredHash: 'a'.repeat(64),
             effectHash: 'a'.repeat(64),
             providerOrderId: 'provider-order-1',

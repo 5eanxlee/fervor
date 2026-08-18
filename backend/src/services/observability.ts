@@ -300,12 +300,8 @@ export const getReadiness = async (
     checks.redis = await ping();
     checks.marketDataProvider = !env.ENABLE_MARKET_FEED
         || isMarketDataProviderConfigured();
-    checks.executionProvider = env.TRADING_MODE !== 'live'
-        || (env.ALLOW_LIVE_SUBMISSION && !!env.JUPITER_API_KEY);
-    checks.solanaRpc = (env.TRADING_MODE !== 'live' && env.ORDER_MODE !== 'live')
-        || !!env.SOLANA_RPC_URL;
-    checks.orderProvider = env.ORDER_MODE !== 'live'
-        || (env.ALLOW_LIVE_SUBMISSION && !!env.JUPITER_API_KEY);
+    checks.executionProvider = env.TRADING_MODE === 'disabled';
+    checks.orderProvider = env.ORDER_MODE === 'disabled';
     checks.walletProvider = env.WALLET_TRACKING_MODE !== 'live' || !!env.HELIUS_API_KEY;
     checks.telegramProvider = !env.ENABLE_TELEGRAM_NOTIFICATIONS || !!env.TELEGRAM_BOT_TOKEN;
     checks.discordProvider = !env.ENABLE_DISCORD_NOTIFICATIONS || !!env.DISCORD_BOT_TOKEN;

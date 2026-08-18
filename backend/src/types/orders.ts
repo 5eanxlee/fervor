@@ -139,7 +139,7 @@ export type OrderAuthType = OrderAuth['type'];
 export type OrderChallenge =
     | { type: 'message'; challenge: string }
     | { type: 'transaction'; transaction: string };
-export type OrderProviderName = 'fixture' | 'jupiter_trigger_v2';
+export type OrderProviderName = 'jupiter_trigger_v2';
 export type OrderState =
     | 'preparing'
     | 'prepared'
@@ -186,7 +186,7 @@ export interface OrderRecord {
 }
 
 export interface OrderCapabilities {
-    mode: 'disabled' | 'fixture' | 'live';
+    mode: 'disabled' | 'live';
     provider: OrderProviderName | 'none';
     canPrepare: boolean;
     canActivate: boolean;

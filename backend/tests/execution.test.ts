@@ -6,14 +6,19 @@ import { DbQuery } from '../src/config/database';
 import { env, parseEnv } from '../src/config/env';
 import { ExecutionService } from '../src/services/execution/executionService';
 import type { ExecutionTxStore } from '../src/services/execution/executionTxStore';
-import { FixtureSwapProvider } from '../src/services/execution/fixtureSwapProvider';
 import { JupiterSwapProvider } from '../src/services/execution/jupiterSwapProvider';
 import { ExecutionReconciler, resolveChainState } from '../src/services/execution/executionReconciler';
 import { ExecutionProviderError, SwapProvider } from '../src/services/execution/provider';
 import { jupiterRate } from '../src/services/jupiterRateService';
 import { quoteRequestSchema } from '../src/types';
+import {
+    signTestSwap,
+    TestSwapProvider,
+    testSwapSignature,
+    testSwapWallet,
+} from './helpers/testSwapProvider';
 
-const wallet = '7Zb1d7t2S9Bkv8G6gPKZQdgs7Qk1HSA1xY5g7uEczwzE';
+const wallet = testSwapWallet;
 const inputMint = 'So11111111111111111111111111111111111111112';
 const outputMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
@@ -180,23 +185,20 @@ describe('execution contracts', () => {
         vi.restoreAllMocks();
     });
 
-    it('produces deterministic fixture quotes with integer slippage protection', async () => {
-        const provider = new FixtureSwapProvider();
-        const request = quoteRequestSchema.parse({
+    it('does not construct a mutation provider in the API service', async () => {
+        const service = new ExecutionService();
+        expect(service.capabilities()).toMatchObject({
+            mode: 'disabled',
+            provider: 'none',
+            canQuote: false,
+            canSubmit: false,
+        });
+        await expect(service.createQuote('user-1', {
             inputMint,
             outputMint,
-            inputAmount: '1000000',
+            inputAmount: '1',
             taker: wallet,
-            slippageBps: 100,
-        });
-
-        const first = await provider.quote(request);
-        const second = await provider.quote(request);
-
-        expect(first.providerQuoteId).toBe(second.providerQuoteId);
-        expect(first.outputAmount).toBe('990000');
-        expect(first.minOutputAmount).toBe('980100');
-        expect(first.transaction).toBe(second.transaction);
+        })).rejects.toMatchObject({ code: 'trading_disabled', status: 503 });
     });
 
     it('rejects malformed public keys and decimal base-unit amounts', () => {
@@ -465,7 +467,7 @@ describe('execution contracts', () => {
     });
 
     it('enforces deployment fee caps before calling a provider', async () => {
-        const provider = new FixtureSwapProvider();
+        const provider = new TestSwapProvider();
         const providerQuote = vi.spyOn(provider, 'quote');
         const db = vi.fn() as unknown as DbQuery;
         const service = new ExecutionService(provider, db);
@@ -483,13 +485,13 @@ describe('execution contracts', () => {
 
     it('rejects malformed provider transaction encoding before persistence', async () => {
         const provider: SwapProvider = {
-            name: 'fixture',
+            name: 'jupiter_swap_v2',
             quote: async (request) => ({
-                provider: 'fixture', providerQuoteId: 'bad-provider-quote', inputAmount: request.inputAmount,
+                provider: 'jupiter_swap_v2', providerQuoteId: 'bad-provider-quote', inputAmount: request.inputAmount,
                 outputAmount: '1', minOutputAmount: '1', taker: request.taker, feePayer: request.taker,
                 slippageBps: 100, transaction: 'not+canonical/base64!', route: [], fees: {},
             }),
-            submit: async () => ({ provider: 'fixture', state: 'confirmed' }),
+            submit: async () => ({ provider: 'jupiter_swap_v2', state: 'confirmed' }),
         };
         const db = vi.fn() as unknown as DbQuery;
         const service = new ExecutionService(provider, db);
@@ -500,14 +502,14 @@ describe('execution contracts', () => {
     });
 
     it('rejects provider quotes that drift from the signed user intent', async () => {
-        const fixture = new FixtureSwapProvider();
+        const testProvider = new TestSwapProvider();
         const provider: SwapProvider = {
-            name: 'fixture',
+            name: 'jupiter_swap_v2',
             quote: async (request) => ({
-                ...await fixture.quote(request),
+                ...await testProvider.quote(request),
                 inputAmount: '999999',
             }),
-            submit: (input) => fixture.submit(input),
+            submit: (input) => testProvider.submit(input),
         };
         const db = vi.fn() as unknown as DbQuery;
         const service = new ExecutionService(provider, db);
@@ -521,44 +523,24 @@ describe('execution contracts', () => {
         expect(db).not.toHaveBeenCalled();
     });
 
-    it('requires an explicit kill-switch override and API key for live submission', () => {
+    it('keeps live financial mutation disabled in the API runtime', () => {
         const base = {
-            NODE_ENV: 'production',
-            CORE_DATABASE_URL: 'postgres://core/fervor',
-            MARKET_DATABASE_URL: 'postgres://market/fervor',
+            DATABASE_URL: 'postgres://local/fervor',
+            DB_COLOCATED: 'true',
             JWT_SECRET: 'a'.repeat(64),
-            TRADING_MODE: 'live',
         } as NodeJS.ProcessEnv;
 
-        expect(() => parseEnv(base)).toThrow(/ALLOW_LIVE_SUBMISSION/);
-        expect(() => parseEnv({ ...base, ALLOW_LIVE_SUBMISSION: 'true' })).toThrow(/JUPITER_API_KEY/);
-        expect(() => parseEnv({
-            ...base,
-            ALLOW_LIVE_SUBMISSION: 'true',
-            JUPITER_API_KEY: 'realistic-provider-key',
-        })).toThrow(/SOLANA_RPC_URL/);
-        expect(() => parseEnv({
-            ...base,
-            ALLOW_LIVE_SUBMISSION: 'true',
-            JUPITER_API_KEY: 'realistic-provider-key',
-            SOLANA_RPC_URL: 'https://rpc.example.com',
-        })).toThrow(/REDIS_URL/);
-        expect(() => parseEnv({
-            ...base,
-            ALLOW_LIVE_SUBMISSION: 'true',
-            JUPITER_API_KEY: 'realistic-provider-key',
-            SOLANA_RPC_URL: 'https://rpc.example.com',
-            REDIS_URL: 'redis://redis.example.com:6379',
-        })).toThrow(/TX_KEY_PROVIDER=aws_kms/);
-        expect(parseEnv({
-            ...base,
-            ALLOW_LIVE_SUBMISSION: 'true',
-            JUPITER_API_KEY: 'realistic-provider-key',
-            SOLANA_RPC_URL: 'https://rpc.example.com',
-            REDIS_URL: 'redis://redis.example.com:6379',
-            TX_KEY_PROVIDER: 'aws_kms',
-            TX_KMS_KEY_ID: 'alias/fervor-transactions',
-        }).TRADING_MODE).toBe('live');
+        expect(() => parseEnv({ ...base, TRADING_MODE: 'fixture' })).toThrow(/Invalid enum value/);
+        expect(() => parseEnv({ ...base, ORDER_MODE: 'fixture' })).toThrow(/Invalid enum value/);
+        expect(() => parseEnv({ ...base, TRADING_MODE: 'live' })).toThrow(/isolated mutation gateway/);
+        expect(() => parseEnv({ ...base, ORDER_MODE: 'live' })).toThrow(/isolated mutation gateway/);
+        expect(() => parseEnv({ ...base, ALLOW_LIVE_SUBMISSION: 'true' }))
+            .toThrow(/isolated mutation gateway/);
+        expect(parseEnv(base)).toMatchObject({
+            TRADING_MODE: 'disabled',
+            ORDER_MODE: 'disabled',
+            ALLOW_LIVE_SUBMISSION: false,
+        });
     });
 
     it('keeps the execution lease beyond the provider timeout boundary', () => {
@@ -589,33 +571,19 @@ describe('execution contracts', () => {
         });
     });
 
-    it('fails closed when live orders lack envelope key management', () => {
+    it('requires a named KMS key when encrypted transaction storage is configured', () => {
         const base = {
             DATABASE_URL: 'postgres://local/fervor',
             DB_COLOCATED: 'true',
             JWT_SECRET: 'a'.repeat(64),
-            ORDER_MODE: 'live',
-            ALLOW_LIVE_SUBMISSION: 'true',
-            JUPITER_API_KEY: 'realistic-provider-key',
-            REDIS_URL: 'redis://redis.example.com:6379',
+            TX_KEY_PROVIDER: 'aws_kms',
         } as NodeJS.ProcessEnv;
 
-        expect(() => parseEnv(base)).toThrow(/TX_KEY_PROVIDER=aws_kms/);
-        expect(() => parseEnv({
-            ...base,
-            TX_KEY_PROVIDER: 'aws_kms',
-        })).toThrow(/TX_KMS_KEY_ID/);
-        expect(() => parseEnv({
-            ...base,
-            TX_KEY_PROVIDER: 'aws_kms',
-            TX_KMS_KEY_ID: 'alias/fervor-order-transactions',
-        })).toThrow(/SOLANA_RPC_URL/);
+        expect(() => parseEnv(base)).toThrow(/TX_KMS_KEY_ID/);
         expect(parseEnv({
             ...base,
-            SOLANA_RPC_URL: 'https://rpc.example.com',
-            TX_KEY_PROVIDER: 'aws_kms',
-            TX_KMS_KEY_ID: 'alias/fervor-order-transactions',
-        }).ORDER_MODE).toBe('live');
+            TX_KMS_KEY_ID: 'alias/fervor-transactions',
+        }).TX_KEY_PROVIDER).toBe('aws_kms');
     });
 
     it('rejects an unauthenticated fee payer before persistence or provider submission', async () => {
@@ -938,7 +906,7 @@ describe('execution contracts', () => {
     it('persists a quote and submits through a transactionally claimed execution', async () => {
         const { db, tx, executions, published } = executionHarness();
         let providerSubmits = 0;
-        const provider = new FixtureSwapProvider();
+        const provider = new TestSwapProvider();
         const originalSubmit = provider.submit.bind(provider);
         provider.submit = async (input) => {
             providerSubmits += 1;
@@ -952,37 +920,30 @@ describe('execution contracts', () => {
             inputAmount: '1000000',
             taker: wallet,
         });
+        const signedQuote = signTestSwap(quote.transaction);
         const execution = await service.submit('user-1', quote.id, {
-            signedTransaction: quote.transaction,
+            signedTransaction: signedQuote,
             idempotencyKey: 'client-order-00000001',
         }, 'trace-0001');
 
         expect(execution.state).toBe('confirmed');
-        expect(execution.signature).toMatch(/^fixture_/);
+        expect(bs58.decode(execution.signature!)).toHaveLength(64);
         expect(providerSubmits).toBe(1);
         expect(published.map((event) => (event.payload as Record<string, unknown>).state))
             .toEqual(['signed', 'signed', 'confirmed']);
 
         const retry = await service.submit('user-1', quote.id, {
-            signedTransaction: quote.transaction,
+            signedTransaction: signedQuote,
             idempotencyKey: 'client-order-00000001',
         }, 'trace-0002');
         expect(retry.id).toBe(execution.id);
         expect(providerSubmits).toBe(1);
 
-        const signature = '6'.repeat(88);
-        const executeFetch = vi.fn(async () => Response.json({
-            status: 'Success',
-            code: 0,
-            signature,
-            totalInputAmount: Number.MAX_SAFE_INTEGER + 1,
-            totalOutputAmount: '1900000',
-        }));
-        vi.stubGlobal('fetch', executeFetch);
         const jupiterProvider = new JupiterSwapProvider();
+        const quoteProvider = new TestSwapProvider();
         const unsafeProvider: SwapProvider = {
-            name: 'fixture',
-            quote: (request) => new FixtureSwapProvider().quote(request),
+            name: 'jupiter_swap_v2',
+            quote: (request) => quoteProvider.quote(request),
             submit: (input) => jupiterProvider.submit(input),
         };
         const jupiter = new ExecutionService(unsafeProvider, db, tx);
@@ -992,8 +953,18 @@ describe('execution contracts', () => {
             inputAmount: '2000000',
             taker: wallet,
         });
+        const secondSigned = signTestSwap(second.transaction);
+        const signature = testSwapSignature(secondSigned);
+        const executeFetch = vi.fn(async () => Response.json({
+            status: 'Success',
+            code: 0,
+            signature,
+            totalInputAmount: Number.MAX_SAFE_INTEGER + 1,
+            totalOutputAmount: '1900000',
+        }));
+        vi.stubGlobal('fetch', executeFetch);
         await expect(jupiter.submit('user-1', second.id, {
-            signedTransaction: second.transaction,
+            signedTransaction: secondSigned,
             idempotencyKey: 'client-order-00000002',
         }, 'trace-0003')).rejects.toMatchObject({
             code: 'submission_ambiguous',
@@ -1009,7 +980,7 @@ describe('execution contracts', () => {
             op_token: null,
         });
         await expect(jupiter.submit('user-1', second.id, {
-            signedTransaction: second.transaction,
+            signedTransaction: secondSigned,
             idempotencyKey: 'client-order-00000002',
         }, 'trace-0004')).resolves.toMatchObject({
             state: 'submitted',
@@ -1018,10 +989,10 @@ describe('execution contracts', () => {
         expect(executeFetch).toHaveBeenCalledOnce();
 
         let timeoutSubmits = 0;
-        const timeoutFixture = new FixtureSwapProvider();
+        const timeoutBase = new TestSwapProvider();
         const timeoutProvider: SwapProvider = {
-            name: 'fixture',
-            quote: timeoutFixture.quote.bind(timeoutFixture),
+            name: 'jupiter_swap_v2',
+            quote: timeoutBase.quote.bind(timeoutBase),
             submit: async (input) => {
                 timeoutSubmits += 1;
                 if (timeoutSubmits === 1) {
@@ -1029,7 +1000,7 @@ describe('execution contracts', () => {
                         'provider_timeout', 'Timed out after broadcast', true, 504, undefined, true
                     );
                 }
-                return timeoutFixture.submit(input);
+                return timeoutBase.submit(input);
             },
         };
         const timeoutService = new ExecutionService(timeoutProvider, db, tx);
@@ -1040,20 +1011,20 @@ describe('execution contracts', () => {
             taker: wallet,
         });
         const timeoutRequest = {
-            signedTransaction: third.transaction,
+            signedTransaction: signTestSwap(third.transaction),
             idempotencyKey: 'client-order-00000003',
         };
         await expect(timeoutService.submit('user-1', third.id, timeoutRequest, 'trace-0005'))
             .rejects.toMatchObject({ code: 'submission_ambiguous', retryable: false });
         await expect(timeoutService.submit('user-1', third.id, timeoutRequest, 'trace-0006'))
-            .resolves.toMatchObject({ state: 'confirmed' });
-        expect(timeoutSubmits).toBe(2);
+            .resolves.toMatchObject({ state: 'submitted' });
+        expect(timeoutSubmits).toBe(1);
 
-        const fixture = new FixtureSwapProvider();
+        const quotaBase = new TestSwapProvider();
         let quotaSubmits = 0;
         const quotaProvider: SwapProvider = {
-            name: 'fixture',
-            quote: fixture.quote.bind(fixture),
+            name: 'jupiter_swap_v2',
+            quote: quotaBase.quote.bind(quotaBase),
             submit: async (input) => {
                 quotaSubmits += 1;
                 if (quotaSubmits === 1) {
@@ -1061,7 +1032,7 @@ describe('execution contracts', () => {
                         'provider_rate_limited', 'Local provider quota is exhausted', true, 429
                     );
                 }
-                return fixture.submit(input);
+                return quotaBase.submit(input);
             },
         };
         const quotaService = new ExecutionService(quotaProvider, db, tx);
@@ -1072,7 +1043,7 @@ describe('execution contracts', () => {
             taker: wallet,
         });
         const quotaRequest = {
-            signedTransaction: fourth.transaction,
+            signedTransaction: signTestSwap(fourth.transaction),
             idempotencyKey: 'client-order-00000004',
         };
         await expect(quotaService.submit('user-1', fourth.id, quotaRequest, 'trace-0007'))
@@ -1081,55 +1052,6 @@ describe('execution contracts', () => {
             .resolves.toMatchObject({ state: 'confirmed' });
         expect(quotaSubmits).toBe(2);
 
-        let ambiguousFailureSubmits = 0;
-        const ambiguousFailureFixture = new FixtureSwapProvider();
-        const ambiguousFailureProvider: SwapProvider = {
-            name: 'fixture',
-            quote: ambiguousFailureFixture.quote.bind(ambiguousFailureFixture),
-            submit: async () => {
-                ambiguousFailureSubmits += 1;
-                if (ambiguousFailureSubmits === 1) {
-                    throw new ExecutionProviderError(
-                        'provider_timeout', 'Timed out after broadcast', true, 504, undefined, true
-                    );
-                }
-                return {
-                    provider: 'fixture',
-                    state: 'failed',
-                    errorCode: 'expired_request',
-                    errorMessage: 'Provider request expired',
-                    rawStatus: 'Failed',
-                };
-            },
-        };
-        const ambiguousFailure = new ExecutionService(ambiguousFailureProvider, db, tx);
-        const fifth = await ambiguousFailure.createQuote('user-1', {
-            inputMint,
-            outputMint,
-            inputAmount: '5000000',
-            taker: wallet,
-        });
-        const ambiguousFailureRequest = {
-            signedTransaction: fifth.transaction,
-            idempotencyKey: 'client-order-00000005',
-        };
-        await expect(ambiguousFailure.submit(
-            'user-1', fifth.id, ambiguousFailureRequest, 'trace-0009'
-        )).rejects.toMatchObject({ code: 'submission_ambiguous' });
-        await expect(ambiguousFailure.submit(
-            'user-1', fifth.id, ambiguousFailureRequest, 'trace-0010'
-        )).rejects.toMatchObject({ code: 'submission_ambiguous' });
-        const stillAmbiguous = [...executions.values()].find((row) =>
-            row.idempotency_key === 'client-order-00000005'
-        );
-        expect(stillAmbiguous).toMatchObject({
-            state: 'signed',
-            provider_status: 'ambiguous:Failed',
-            error_code: 'expired_request',
-            broadcast_count: 2,
-            op_token: null,
-        });
-        expect(ambiguousFailureSubmits).toBe(2);
     });
 });
 

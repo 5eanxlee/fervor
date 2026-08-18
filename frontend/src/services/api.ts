@@ -208,8 +208,8 @@ export interface DiscoveryToken {
 }
 
 export interface ExecutionCapabilities {
-    mode: 'disabled' | 'fixture' | 'live';
-    provider: 'fixture' | 'jupiter_swap_v2' | 'none';
+    mode: 'disabled' | 'live';
+    provider: 'jupiter_swap_v2' | 'none';
     canQuote: boolean;
     canSubmit: boolean;
     clientSigning: true;
@@ -222,7 +222,7 @@ export interface ExecutionCapabilities {
 
 export interface SwapQuote {
     id: string;
-    provider: 'fixture' | 'jupiter_swap_v2';
+    provider: 'jupiter_swap_v2';
     inputMint: string;
     outputMint: string;
     inputAmount: string;
@@ -258,8 +258,8 @@ export interface TradeExecution {
 }
 
 export interface OrderCapabilities {
-    mode: 'disabled' | 'fixture' | 'live';
-    provider: 'fixture' | 'jupiter_trigger_v2' | 'none';
+    mode: 'disabled' | 'live';
+    provider: 'jupiter_trigger_v2' | 'none';
     canPrepare: boolean;
     canActivate: boolean;
     requiresProviderAuth: boolean;

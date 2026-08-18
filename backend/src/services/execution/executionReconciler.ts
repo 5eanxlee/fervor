@@ -202,7 +202,6 @@ export class ExecutionReconciler {
                     SELECT execution.id
                     FROM trade_executions execution
                     WHERE execution.signature IS NOT NULL
-                      AND LEFT(execution.signature, 8) <> 'fixture_'
                       AND execution.settlement_commitment IS DISTINCT FROM 'finalized'
                       AND (
                         execution.state IN ('submitted', 'processed', 'confirmed')

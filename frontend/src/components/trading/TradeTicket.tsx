@@ -159,7 +159,7 @@ export default function TradeTicket({
     const inputMint = side === 'buy' ? SOL_MINT : tokenMint;
     const outputMint = side === 'buy' ? tokenMint : SOL_MINT;
     const inputDecimals = side === 'buy' ? 9 : tokenDecimals;
-    const modeLabel = executionMode?.mode === 'live' ? 'Live' : executionMode?.mode === 'fixture' ? 'Fixture' : 'Off';
+    const modeLabel = executionMode?.mode === 'live' ? 'Live' : 'Off';
 
     const refreshOrders = async () => {
         try {

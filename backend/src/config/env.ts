@@ -146,8 +146,8 @@ const EnvSchema = z.object({
     SUPPLY_MAX_STALE_MS: z.coerce.number().int().min(1000).max(86400000).default(300000),
     LIQUIDITY_TTL_MS: z.coerce.number().int().min(50).max(60000).default(250),
     SOLANA_RPC_URL: z.string().url().optional(),
-    TRADING_MODE: z.enum(['disabled', 'fixture', 'live']).default('disabled'),
-    ORDER_MODE: z.enum(['disabled', 'fixture', 'live']).default('disabled'),
+    TRADING_MODE: z.enum(['disabled', 'live']).default('disabled'),
+    ORDER_MODE: z.enum(['disabled', 'live']).default('disabled'),
     ORDER_OP_LEASE_MS: z.coerce.number().int().min(1000).max(600000).default(30000),
     ORDER_SYNC_MAX_PAGES: z.coerce.number().int().min(1).max(100).default(20),
     TX_KEY_PROVIDER: z.enum(['disabled', 'aws_kms']).default('disabled'),
@@ -312,36 +312,11 @@ const EnvSchema = z.object({
         });
     }
 
-    if ((value.TRADING_MODE === 'live' || value.ORDER_MODE === 'live') && !value.ALLOW_LIVE_SUBMISSION) {
+    if (value.TRADING_MODE === 'live' || value.ORDER_MODE === 'live' || value.ALLOW_LIVE_SUBMISSION) {
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['ALLOW_LIVE_SUBMISSION'],
-            message: 'ALLOW_LIVE_SUBMISSION=true is required for live trading or orders',
-        });
-    }
-
-    if ((value.TRADING_MODE === 'live' || value.ORDER_MODE === 'live') && !value.JUPITER_API_KEY) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['JUPITER_API_KEY'],
-            message: 'JUPITER_API_KEY is required for live trading or orders',
-        });
-    }
-
-    if ((value.TRADING_MODE === 'live' || value.ORDER_MODE === 'live') && !value.REDIS_URL) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['REDIS_URL'],
-            message: 'REDIS_URL is required for distributed provider rate limiting in live modes',
-        });
-    }
-
-    if ((value.TRADING_MODE === 'live' || value.ORDER_MODE === 'live')
-        && value.TX_KEY_PROVIDER !== 'aws_kms') {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['TX_KEY_PROVIDER'],
-            message: 'TX_KEY_PROVIDER=aws_kms is required for live signed transaction persistence',
+            message: 'Live financial mutations require the isolated mutation gateway',
         });
     }
 
@@ -358,14 +333,6 @@ const EnvSchema = z.object({
             code: z.ZodIssueCode.custom,
             path: ['REDIS_URL'],
             message: 'REDIS_URL is required for production stream and outbox coordination',
-        });
-    }
-
-    if ((value.TRADING_MODE === 'live' || value.ORDER_MODE === 'live') && !value.SOLANA_RPC_URL) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: ['SOLANA_RPC_URL'],
-            message: 'SOLANA_RPC_URL is required for live transaction validation and reconciliation',
         });
     }
 

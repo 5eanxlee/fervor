@@ -15,7 +15,6 @@ import {
 import { metrics } from '../metrics';
 import { eventOutbox } from '../eventOutbox';
 import { STREAMS } from '../redisStreamService';
-import { createOrderProvider } from './providerFactory';
 import { OrderProvider, OrderProviderError, ProviderOrderSnapshot } from './provider';
 import { ProviderMoneySync } from './providerMoneySync';
 import {
@@ -193,7 +192,7 @@ export class OrderService {
         private readonly tx: TxFn = transaction,
         resolver?: OrderTxResolver | null
     ) {
-        this.provider = provider === undefined ? this.safeProvider() : provider;
+        this.provider = provider ?? null;
         this.resolver = resolver === undefined ? this.safeResolver() : resolver;
     }
 
@@ -257,7 +256,7 @@ export class OrderService {
                     request.orderType, request.inputMint, request.outputMint, request.inputAmount,
                     request.triggerMint, JSON.stringify(request), request.expiresAt, opToken, env.ORDER_OP_LEASE_MS,
                     fact.kind, fact.reqHash, fact.wantHash, JSON.stringify(fact.detail),
-                    provider.name === 'fixture' ? 'localnet' : 'mainnet-beta']
+                    'mainnet-beta']
             );
             if (!inserted.rows[0]) {
                 const raced = await this.db(
@@ -285,14 +284,12 @@ export class OrderService {
                 outputAccount: prepared.outputAccount,
                 transaction: txFact(prepared.transaction),
             };
-            if (provider.name !== 'fixture') {
-                await this.validateProviderTx(prepared.transaction, depositIntent(
-                    request,
-                    prepared.receiverAddress,
-                    prepared.inputAccount,
-                    prepared.outputAccount
-                ));
-            }
+            await this.validateProviderTx(prepared.transaction, depositIntent(
+                request,
+                prepared.receiverAddress,
+                prepared.inputAccount,
+                prepared.outputAccount
+            ));
             await this.tx(async (db) => {
                 const updated = await db(
                     `UPDATE order_intents
@@ -351,26 +348,24 @@ export class OrderService {
         if (!depositRequestId) throw new OrderError('deposit_not_prepared', 'Order deposit is not prepared', 409, true);
         const preparedTx = text(row.prepared_tx);
         if (!preparedTx) throw new OrderError('deposit_not_prepared', 'Order deposit transaction is unavailable', 409, true);
-        if (provider.name !== 'fixture') {
-            try {
-                await this.validateProviderTx(
-                    preparedTx,
-                    depositIntent(
-                        request,
-                        row.receiver_address,
-                        detail.depositAccount,
-                        detail.outputAccount
-                    )
-                );
-                validateSignedTransaction(
-                    parseTransaction(preparedTx),
-                    parseTransaction(signedTransaction),
-                    String(row.wallet_address)
-                );
-            } catch (error) {
-                if (error instanceof OrderError) throw error;
-                throw new OrderError('transaction_mismatch', error instanceof Error ? error.message : 'Signed deposit is invalid', 400);
-            }
+        try {
+            await this.validateProviderTx(
+                preparedTx,
+                depositIntent(
+                    request,
+                    row.receiver_address,
+                    detail.depositAccount,
+                    detail.outputAccount
+                )
+            );
+            validateSignedTransaction(
+                parseTransaction(preparedTx),
+                parseTransaction(signedTransaction),
+                String(row.wallet_address)
+            );
+        } catch (error) {
+            if (error instanceof OrderError) throw error;
+            throw new OrderError('transaction_mismatch', error instanceof Error ? error.message : 'Signed deposit is invalid', 400);
         }
 
         const fact = opFact('activate', {
@@ -498,12 +493,10 @@ export class OrderService {
         const row = result.rows[0] as Row | undefined;
         if (!row) throw new OrderError('order_not_found', 'Order was not found', 404);
         if (row.state === 'cancel_pending' && row.cancel_request_id && row.cancel_tx) {
-            if (provider.name !== 'fixture') {
-                await this.validateProviderTx(
-                    String(row.cancel_tx),
-                    withdrawalIntent(row)
-                );
-            }
+            await this.validateProviderTx(
+                String(row.cancel_tx),
+                withdrawalIntent(row)
+            );
             return { requestId: String(row.cancel_request_id), transaction: String(row.cancel_tx) };
         }
         this.assertKnown(row);
@@ -534,12 +527,10 @@ export class OrderService {
                 cancelRequestId: cancellation.requestId,
                 cancelTx: cancellation.transaction,
             };
-            if (provider.name !== 'fixture') {
-                await this.validateProviderTx(
-                    cancellation.transaction,
-                    withdrawalIntent(row)
-                );
-            }
+            await this.validateProviderTx(
+                cancellation.transaction,
+                withdrawalIntent(row)
+            );
             await this.tx(async (db) => {
                 const updated = await db(
                     `UPDATE order_intents SET state = 'cancel_pending', cancel_request_id = $2, cancel_tx = $3,
@@ -582,21 +573,19 @@ export class OrderService {
         }
         const cancelTx = text(row.cancel_tx);
         if (!cancelTx) throw new OrderError('cancel_state_conflict', 'Cancellation transaction is unavailable', 409);
-        if (provider.name !== 'fixture') {
-            try {
-                await this.validateProviderTx(
-                    cancelTx,
-                    withdrawalIntent(row)
-                );
-                validateSignedTransaction(
-                    parseTransaction(cancelTx),
-                    parseTransaction(signedTransaction),
-                    String(row.wallet_address)
-                );
-            } catch (error) {
-                if (error instanceof OrderError) throw error;
-                throw new OrderError('transaction_mismatch', error instanceof Error ? error.message : 'Signed withdrawal is invalid', 400);
-            }
+        try {
+            await this.validateProviderTx(
+                cancelTx,
+                withdrawalIntent(row)
+            );
+            validateSignedTransaction(
+                parseTransaction(cancelTx),
+                parseTransaction(signedTransaction),
+                String(row.wallet_address)
+            );
+        } catch (error) {
+            if (error instanceof OrderError) throw error;
+            throw new OrderError('transaction_mismatch', error instanceof Error ? error.message : 'Signed withdrawal is invalid', 400);
         }
         const signed = txFact(signedTransaction);
         const fact = opFact('cancel_confirm', {
@@ -863,15 +852,13 @@ export class OrderService {
             expiresAt: iso(row.expires_at),
             custody: provider.custody,
         } as const;
-        if (provider.name !== 'fixture') {
-            const detail = params(row);
-            await this.validateProviderTx(prepared.transaction, depositIntent(
-                detail as OrderRequest,
-                row.receiver_address,
-                detail.depositAccount,
-                detail.outputAccount
-            ));
-        }
+        const detail = params(row);
+        await this.validateProviderTx(prepared.transaction, depositIntent(
+            detail as OrderRequest,
+            row.receiver_address,
+            detail.depositAccount,
+            detail.outputAccount
+        ));
         return prepared;
     }
 
@@ -1101,14 +1088,6 @@ export class OrderService {
                 `Provider ${intent.kind} transaction is invalid`,
                 502
             );
-        }
-    }
-
-    private safeProvider(): OrderProvider | null {
-        try {
-            return createOrderProvider();
-        } catch {
-            return null;
         }
     }
 
