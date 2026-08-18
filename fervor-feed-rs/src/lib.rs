@@ -5,6 +5,8 @@ pub mod contracts;
 pub mod fervor_tx;
 pub mod market_decoder;
 pub mod market_journal;
+#[cfg(feature = "archive-replay")]
+pub mod old_faithful;
 pub mod postgres;
 pub mod stream_bus;
 pub mod yellowstone;

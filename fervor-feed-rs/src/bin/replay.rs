@@ -1,0 +1,273 @@
+use anyhow::{anyhow, bail, Context, Result};
+use clap::Parser;
+use fervor_feed_rs::{
+    archive::{verify_extract, ExtractManifest},
+    fervor_tx::Network,
+    market_decoder::decode_swap,
+    old_faithful::{ArchiveReader, OldFaithfulAdapter},
+};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{BufWriter, Write},
+    path::{Path, PathBuf},
+};
+
+const SCHEMA: &str = "fervor-replay-v1";
+const TX_FILE: &str = "transactions.ndjson";
+const SWAP_FILE: &str = "swaps.ndjson";
+
+#[derive(Debug, Parser)]
+#[command(name = "fervor-replay")]
+#[command(about = "Replay a verified Old Faithful extract without network access")]
+struct Args {
+    #[arg(long)]
+    corpus: PathBuf,
+    #[arg(long)]
+    out: PathBuf,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ReplayManifest {
+    schema: &'static str,
+    network: String,
+    mint: String,
+    start_slot: u64,
+    end_slot: u64,
+    first_slot: u64,
+    last_slot: u64,
+    source_raw_sha256: String,
+    source_index_sha256: String,
+    source_bytes: u64,
+    present_slots: u64,
+    skipped_slots: u64,
+    blocks: u64,
+    transactions: u64,
+    matched_transactions: u64,
+    swaps: u64,
+    transaction_file: &'static str,
+    transaction_sha256: String,
+    swap_file: &'static str,
+    swap_sha256: String,
+    replay_sha256: String,
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+    let report = verify_extract(&args.corpus)?;
+    let manifest = read_manifest(&args.corpus)?;
+    if report.raw_sha256 != manifest.raw_sha256
+        || report.index_sha256 != manifest.index_sha256
+        || report.mint != manifest.plan.mint
+    {
+        bail!("verified extract differs from its manifest");
+    }
+    if manifest.plan.network != "mainnet-beta" {
+        bail!("replay only supports mainnet-beta OF1 extracts");
+    }
+
+    let parent = args.out.parent().unwrap_or_else(|| Path::new("."));
+    let out_name = args
+        .out
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| anyhow!("output directory name is invalid"))?;
+    if args.out.exists() {
+        bail!("replay output already exists: {}", args.out.display());
+    }
+    let stage = parent.join(format!(".{out_name}.{}.stage", std::process::id()));
+    fs::create_dir(&stage)
+        .with_context(|| format!("failed to create replay stage {}", stage.display()))?;
+    let result = replay(&args.corpus, &stage, &manifest);
+    if let Err(error) = result {
+        let _ = fs::remove_dir_all(&stage);
+        return Err(error);
+    }
+    fs::rename(&stage, &args.out).with_context(|| {
+        format!(
+            "failed to publish replay {} to {}",
+            stage.display(),
+            args.out.display()
+        )
+    })?;
+    File::open(parent)?.sync_all()?;
+    println!(
+        "{}",
+        fs::read_to_string(args.out.join("manifest.json"))?.trim_end()
+    );
+    Ok(())
+}
+
+fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
+    let mint = &source.plan.mint;
+    let adapter = OldFaithfulAdapter::new(source.raw_sha256.clone(), Network::MainnetBeta)?;
+    let mut archive = ArchiveReader::open(
+        &corpus.join(&source.raw_file),
+        source.plan.start_slot..source.plan.end_slot,
+    )?;
+    let mut tx_out = Output::new(&out.join(TX_FILE))?;
+    let mut swap_out = Output::new(&out.join(SWAP_FILE))?;
+    let mut blocks = 0_u64;
+    let mut transactions = 0_u64;
+    let mut matched = 0_u64;
+    let mut swaps = 0_u64;
+    let mut first_slot = None;
+    let mut last_slot = None;
+
+    while let Some(block) = archive.next_block()? {
+        first_slot.get_or_insert(block.slot);
+        last_slot = Some(block.slot);
+        blocks = checked_count(blocks, "block")?;
+        for record in block.records {
+            transactions = checked_count(transactions, "transaction")?;
+            let references_mint = record.references(mint);
+            let tx = adapter.adapt_record(&record, mint).map_err(|quarantine| {
+                anyhow!(
+                    "archive transaction was quarantined: {}",
+                    serde_json::to_string(&quarantine).unwrap_or(quarantine.detail)
+                )
+            })?;
+            if !references_mint {
+                continue;
+            }
+            matched = checked_count(matched, "matched transaction")?;
+            tx_out.write_json(&tx)?;
+            if let Some(swap) = decode_swap(&tx).map_err(|quarantine| {
+                anyhow!(
+                    "matched transaction was quarantined: {}",
+                    serde_json::to_string(&quarantine).unwrap_or(quarantine.detail)
+                )
+            })? {
+                if swap.token_mint == *mint || swap.quote_mint == *mint {
+                    swaps = checked_count(swaps, "swap")?;
+                    swap_out.write_json(&swap)?;
+                }
+            }
+        }
+    }
+
+    let first_slot = first_slot.ok_or_else(|| anyhow!("replay contained no blocks"))?;
+    let last_slot = last_slot.expect("first slot implies last slot");
+    if blocks != source.plan.present_slots
+        || first_slot != source.plan.first_slot
+        || last_slot != source.plan.last_slot
+    {
+        bail!("replay block coverage differs from the extract plan");
+    }
+    if matched == 0 {
+        bail!("replay found no transactions for mint {mint}");
+    }
+
+    let transaction_sha256 = tx_out.finish()?;
+    let swap_sha256 = swap_out.finish()?;
+    let replay_sha256 = replay_hash(&transaction_sha256, &swap_sha256);
+    let manifest = ReplayManifest {
+        schema: SCHEMA,
+        network: source.plan.network.clone(),
+        mint: mint.clone(),
+        start_slot: source.plan.start_slot,
+        end_slot: source.plan.end_slot,
+        first_slot,
+        last_slot,
+        source_raw_sha256: source.raw_sha256.clone(),
+        source_index_sha256: source.index_sha256.clone(),
+        source_bytes: source.raw_bytes,
+        present_slots: source.plan.present_slots,
+        skipped_slots: source.plan.skipped_slots,
+        blocks,
+        transactions,
+        matched_transactions: matched,
+        swaps,
+        transaction_file: TX_FILE,
+        transaction_sha256,
+        swap_file: SWAP_FILE,
+        swap_sha256,
+        replay_sha256,
+    };
+    let mut bytes = serde_json::to_vec_pretty(&manifest)?;
+    bytes.push(b'\n');
+    write_file(&out.join("manifest.json"), &bytes)?;
+    File::open(out)?.sync_all()?;
+    Ok(())
+}
+
+fn read_manifest(corpus: &Path) -> Result<ExtractManifest> {
+    let path = corpus.join("manifest.json");
+    let bytes = fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    if bytes.len() > 1024 * 1024 {
+        bail!("extract manifest exceeds 1 MiB");
+    }
+    serde_json::from_slice(&bytes).with_context(|| format!("invalid {}", path.display()))
+}
+
+fn checked_count(value: u64, name: &str) -> Result<u64> {
+    value
+        .checked_add(1)
+        .ok_or_else(|| anyhow!("{name} count overflow"))
+}
+
+fn replay_hash(tx_hash: &str, swap_hash: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(SCHEMA.as_bytes());
+    digest.update([0]);
+    digest.update(tx_hash.as_bytes());
+    digest.update([0]);
+    digest.update(swap_hash.as_bytes());
+    hex::encode(digest.finalize())
+}
+
+struct Output {
+    writer: BufWriter<File>,
+    digest: Sha256,
+}
+
+impl Output {
+    fn new(path: &Path) -> Result<Self> {
+        Ok(Self {
+            writer: BufWriter::new(
+                OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)
+                    .with_context(|| format!("failed to create {}", path.display()))?,
+            ),
+            digest: Sha256::new(),
+        })
+    }
+
+    fn write_json(&mut self, value: &impl Serialize) -> Result<()> {
+        let mut bytes = serde_json::to_vec(value)?;
+        bytes.push(b'\n');
+        self.writer.write_all(&bytes)?;
+        self.digest.update(&bytes);
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<String> {
+        self.writer.flush()?;
+        self.writer.get_ref().sync_all()?;
+        Ok(hex::encode(self.digest.finalize()))
+    }
+}
+
+fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replay_digest_is_domain_separated_and_stable() {
+        let hash = replay_hash(&"a".repeat(64), &"b".repeat(64));
+        assert_eq!(hash.len(), 64);
+        assert_eq!(hash, replay_hash(&"a".repeat(64), &"b".repeat(64)));
+        assert_ne!(hash, replay_hash(&"b".repeat(64), &"a".repeat(64)));
+    }
+}
