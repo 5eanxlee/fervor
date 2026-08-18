@@ -92,13 +92,11 @@ export class WalletIndexerService {
         const leaseToken = String(source.lease_token || 'test-lease');
         const done = metrics.timer('fervor_wallet_poll_ms', { provider: this.provider.name });
         try {
-            if (this.provider.name !== 'fixture') {
-                const delay = await redisStreams.rateDelay('wallet', [`${this.provider.name}:global`])
-                    .catch(() => 0);
-                if (delay > 0) {
-                    await this.finish(sourceId, pollSeq, leaseToken, source, delay);
-                    return;
-                }
+            const delay = await redisStreams.rateDelay('wallet', [`${this.provider.name}:global`])
+                .catch(() => 0);
+            if (delay > 0) {
+                await this.finish(sourceId, pollSeq, leaseToken, source, delay);
+                return;
             }
 
             const next = { ...source };
@@ -207,8 +205,7 @@ export class WalletIndexerService {
         }
     }
 
-    private heartbeat(source: Row): (() => Promise<void>) | undefined {
-        if (this.provider.name === 'fixture') return undefined;
+    private heartbeat(source: Row): () => Promise<void> {
         return () => this.renew(
             String(source.id),
             String(source.poll_seq),

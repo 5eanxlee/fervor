@@ -1,8 +1,6 @@
-export type MarketDataProviderName =
-    | 'fixture'
-    | 'helius_laserstream';
+export type MarketDataProviderName = 'helius_laserstream';
 
-export type FervorSupplyPolicy = 'fervor_mint_supply_v1' | 'fixture_supply_v1';
+export type FervorSupplyPolicy = 'fervor_mint_supply_v1';
 
 export type NormalizedEventKind =
     | 'trade'
@@ -40,7 +38,6 @@ export interface ProviderRawEvent extends SourceProvenance {
         | 'pool'
         | 'token'
         | 'market_state'
-        | 'fixture_trade'
         | 'unknown';
     subscriptionId?: string;
     tokenMint?: string;

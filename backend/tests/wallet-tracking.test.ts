@@ -220,7 +220,7 @@ describe('wallet tracking', () => {
                 value_micro_usd: '1',
                 signature: '5'.repeat(88),
                 slot: '9007199254740992',
-                provider: 'fixture',
+                provider: 'helius_history_v2',
                 occurred_at: now,
             }],
             rowCount: 1,
@@ -270,7 +270,7 @@ describe('wallet tracking', () => {
 
     it('never rounds an unsafe provider slot into the wallet checkpoint', async () => {
         const provider = {
-            name: 'fixture' as const,
+            name: 'helius_history_v2' as const,
             history: async () => ({
                 transactions: [{ signature: '8'.repeat(88), slot: '9007199254740992', tokenTransfers: [] }],
             }),
@@ -314,7 +314,7 @@ describe('wallet tracking', () => {
     it('overlaps the checkpoint slot so a second signature in that slot is indexed', async () => {
         let request: any;
         const provider = {
-            name: 'fixture' as const,
+            name: 'helius_history_v2' as const,
             history: async (_wallet: string, value: any) => {
                 request = value;
                 return { transactions: [] };

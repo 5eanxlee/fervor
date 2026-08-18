@@ -14,17 +14,17 @@ const receivedAt = '2026-04-27T00:00:00.000Z';
 
 describe('raw-first market data pipeline contracts', () => {
     it('calculates market cap and fdv from explicit supply fields instead of trade notional', () => {
-        expect(calculateMarketCapUsd(0.00072, 850_000_000, 'fixture_supply_v1')).toBe(612000);
+        expect(calculateMarketCapUsd(0.00072, 850_000_000, 'fervor_mint_supply_v1')).toBe(612000);
         expect(calculateMarketCapUsd(0.00072, 850_000_000)).toBeUndefined();
         expect(calculateFdvUsd(0.00072, 1_000_000_000)).toBe(720000);
     });
 
-    it('normalizes fixture protocol trades into trade and market-state events', () => {
+    it('normalizes decoded protocol trades into trade and market-state events', () => {
         const raw: ProviderRawEvent = {
-            provider: 'fixture',
-            source: 'fixture',
-            sourceEventId: 'fixture:event:1',
-            type: 'fixture_trade',
+            provider: 'helius_laserstream',
+            source: 'helius_laserstream',
+            sourceEventId: 'helius:event:1',
+            type: 'transaction',
             tokenMint: fixtureTrade.tokenMint,
             poolAddress: fixtureTrade.poolAddress,
             signature: fixtureTrade.signature,
@@ -35,6 +35,7 @@ describe('raw-first market data pipeline contracts', () => {
             stale: false,
             payload: {
                 ...fixtureTrade,
+                supplyPolicy: 'fervor_mint_supply_v1',
                 marketCapUsd: 1,
                 fdvUsd: 2,
             },
@@ -201,10 +202,10 @@ describe('raw-first market data pipeline contracts', () => {
 
     it('derives alert ticks only from normalized market state values', () => {
         const raw: ProviderRawEvent = {
-            provider: 'fixture',
-            source: 'fixture',
-            sourceEventId: 'fixture:event:2',
-            type: 'fixture_trade',
+            provider: 'helius_laserstream',
+            source: 'helius_laserstream',
+            sourceEventId: 'helius:event:2',
+            type: 'transaction',
             tokenMint: fixtureTrade.tokenMint,
             poolAddress: fixtureTrade.poolAddress,
             signature: fixtureTrade.signature,
@@ -215,6 +216,7 @@ describe('raw-first market data pipeline contracts', () => {
             stale: false,
             payload: {
                 ...fixtureTrade,
+                supplyPolicy: 'fervor_mint_supply_v1',
                 usdAmount: 999999999,
             },
         };
@@ -225,18 +227,16 @@ describe('raw-first market data pipeline contracts', () => {
         expect(tick?.usdValue).toBe(0);
     });
 
-    it('uses fixture provider in tests without API keys', () => {
-        const provider = createMarketDataProvider('fixture');
-        expect(provider.name).toBe('fixture');
-        expect(provider.configured).toBe(true);
+    it('rejects unknown providers instead of silently substituting market data', () => {
+        expect(() => createMarketDataProvider('unknown')).toThrow(/Unsupported market data provider/);
     });
 
     it('aggregates rolling trade windows from normalized trade events', () => {
         const raw: ProviderRawEvent = {
-            provider: 'fixture',
-            source: 'fixture',
-            sourceEventId: 'fixture:event:3',
-            type: 'fixture_trade',
+            provider: 'helius_laserstream',
+            source: 'helius_laserstream',
+            sourceEventId: 'helius:event:3',
+            type: 'transaction',
             tokenMint: fixtureTrade.tokenMint,
             poolAddress: fixtureTrade.poolAddress,
             signature: fixtureTrade.signature,

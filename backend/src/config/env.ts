@@ -131,11 +131,10 @@ const EnvSchema = z.object({
     HELIUS_LASERSTREAM_ENDPOINT: z.string().url().default('https://laserstream-mainnet-ewr.helius-rpc.com'),
     HELIUS_LASERSTREAM_REGION: z.string().trim().min(1).default('ewr'),
     LASERSTREAM_REPLAY_ENABLED: booleanFromEnv.default(true),
-    MARKET_DATA_PROVIDER: z.enum(['fixture', 'helius_laserstream']).default('helius_laserstream'),
+    MARKET_DATA_PROVIDER: z.literal('helius_laserstream').default('helius_laserstream'),
     LATENCY_SAMPLE_RATE: z.coerce.number().min(0).max(1).optional(),
     MARKET_DATA_COMMITMENT: z.enum(['processed', 'confirmed', 'finalized']).default('confirmed'),
     MARKET_DATA_REPLAY_WINDOW_SLOTS: z.coerce.number().int().positive().default(216000),
-    MARKET_DATA_FIXTURE_INTERVAL_MS: z.coerce.number().int().positive().default(250),
     JUPITER_API_KEY: optionalProviderSecret,
     JUPITER_API_URL: z.string().url().default('https://api.jup.ag'),
     JUPITER_RATE_PER_MIN: z.coerce.number().int().min(1).max(1000000).default(60),
@@ -156,7 +155,7 @@ const EnvSchema = z.object({
     TX_KMS_KEY_ALLOWLIST: optionalText,
     TX_KMS_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(2_000),
     TX_BLOB_TTL_MS: z.coerce.number().int().min(60_000).max(86_400_000).default(900_000),
-    WALLET_TRACKING_MODE: z.enum(['disabled', 'fixture', 'live']).default('fixture'),
+    WALLET_TRACKING_MODE: z.enum(['disabled', 'live']).default('disabled'),
     WALLET_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).max(300000).default(15000),
     WALLET_TIMEOUT_MS: z.coerce.number().int().min(1000).max(30000).default(8000),
     WALLET_BACKFILL_LIMIT: z.coerce.number().int().min(1).max(1000).default(100),
@@ -464,7 +463,6 @@ export const isProduction = env.NODE_ENV === 'production';
 export const latencySampleRate = env.LATENCY_SAMPLE_RATE ?? (isProduction ? 0.01 : 1);
 
 export const isMarketDataProviderConfigured = (provider: string = env.MARKET_DATA_PROVIDER): boolean => {
-    if (provider === 'fixture') return true;
     if (provider === 'helius_laserstream') return !!env.HELIUS_API_KEY;
     return false;
 };

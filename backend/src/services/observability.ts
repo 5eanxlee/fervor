@@ -299,7 +299,6 @@ export const getReadiness = async (
 
     checks.redis = await ping();
     checks.marketDataProvider = !env.ENABLE_MARKET_FEED
-        || env.MARKET_DATA_PROVIDER === 'fixture'
         || isMarketDataProviderConfigured();
     checks.executionProvider = env.TRADING_MODE !== 'live'
         || (env.ALLOW_LIVE_SUBMISSION && !!env.JUPITER_API_KEY);

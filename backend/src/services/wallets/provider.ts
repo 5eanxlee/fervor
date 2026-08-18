@@ -11,7 +11,7 @@ export interface WalletHistoryRequest {
 }
 
 export interface WalletHistoryProvider {
-    readonly name: 'fixture' | 'helius_history_v2';
+    readonly name: 'helius_history_v2';
     history(walletAddress: string, request?: WalletHistoryRequest): Promise<WalletHistoryPage>;
 }
 

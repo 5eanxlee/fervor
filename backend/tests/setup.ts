@@ -8,5 +8,5 @@ process.env.FRONTEND_URL = 'http://localhost:3002';
 process.env.ENABLE_TELEGRAM_NOTIFICATIONS = 'false';
 process.env.ENABLE_DISCORD_NOTIFICATIONS = 'false';
 process.env.ENABLE_MARKET_FEED = 'false';
-process.env.MARKET_DATA_PROVIDER = 'fixture';
+process.env.MARKET_DATA_PROVIDER = 'helius_laserstream';
 process.env.JUPITER_API_KEY = 'test-jupiter-api-key';

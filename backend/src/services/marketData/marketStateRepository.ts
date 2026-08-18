@@ -1,6 +1,11 @@
 import { query } from '../../config/database';
 import { TokenData, TokenMarketStateView } from '../../types';
 
+const marketSource = (value: unknown): TokenMarketStateView['source'] => {
+    if (value === 'helius_laserstream' || value === 'fervor_engine') return value;
+    throw new Error('Stored market state has no supported source');
+};
+
 export class MarketStateRepository {
     async getTokenState(tokenMint: string): Promise<TokenMarketStateView | null> {
         const result = await query(
@@ -21,7 +26,7 @@ export class MarketStateRepository {
             liquidityUsd: row.liquidity_usd === null ? undefined : Number(row.liquidity_usd),
             totalSupply: row.total_supply === null ? undefined : Number(row.total_supply),
             circulatingSupply: row.circulating_supply === null ? undefined : Number(row.circulating_supply),
-            source: row.source || 'fixture',
+            source: marketSource(row.source),
             observedAt: row.observed_at?.toISOString?.() || row.observed_at || new Date(0).toISOString(),
             stale: Boolean(row.stale),
             confidence: 1,

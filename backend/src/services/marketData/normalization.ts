@@ -76,7 +76,7 @@ const qualityFromRaw = (raw: ProviderRawEvent, estimated: boolean): MetricQualit
     commitment: raw.commitment,
 });
 
-const normalizeFixtureTrade = (raw: ProviderRawEvent): NormalizedMarketEvent[] => {
+const normalizeDecodedTrade = (raw: ProviderRawEvent): NormalizedMarketEvent[] => {
     if (!isRecord(raw.payload)) return [];
     if (raw.payload.success === false) return [];
     const tokenMint = typeof raw.payload.tokenMint === 'string' ? raw.payload.tokenMint : raw.tokenMint;
@@ -91,9 +91,8 @@ const normalizeFixtureTrade = (raw: ProviderRawEvent): NormalizedMarketEvent[] =
     const quoteAmount = toFiniteNumber(raw.payload.quoteAmount);
     const totalSupply = toFiniteNumber(raw.payload.totalSupply);
     const circulatingSupply = toFiniteNumber(raw.payload.circulatingSupply);
-    const supplyPolicy = circulatingSupply !== undefined
-        && raw.provider === 'fixture'
-        ? 'fixture_supply_v1'
+    const supplyPolicy = raw.payload.supplyPolicy === 'fervor_mint_supply_v1'
+        ? raw.payload.supplyPolicy
         : undefined;
     const derived = deriveFervorMetrics({
         priceUsd,
@@ -255,6 +254,18 @@ const normalizeDecodedProviderPayload = (raw: ProviderRawEvent): NormalizedMarke
 
     const normalized: NormalizedMarketEvent[] = [];
     for (const candidate of candidates) {
+        const isTrade =
+            candidate.kind === 'trade' ||
+            candidate.type === 'trade' ||
+            candidate.usdAmount !== undefined ||
+            candidate.tokenAmount !== undefined ||
+            candidate.side === 'buy' ||
+            candidate.side === 'sell';
+        if (isTrade) {
+            normalized.push(...normalizeDecodedTrade(rawWithPayload(raw, candidate, 'transaction')));
+            continue;
+        }
+
         if (
             candidate.kind === 'market_state' ||
             candidate.type === 'market_state' ||
@@ -263,17 +274,6 @@ const normalizeDecodedProviderPayload = (raw: ProviderRawEvent): NormalizedMarke
             candidate.market_cap !== undefined
         ) {
             normalized.push(...normalizeProviderMarketState(rawWithPayload(raw, candidate, 'market_state')));
-        }
-
-        if (
-            candidate.kind === 'trade' ||
-            candidate.type === 'trade' ||
-            candidate.usdAmount !== undefined ||
-            candidate.tokenAmount !== undefined ||
-            candidate.side === 'buy' ||
-            candidate.side === 'sell'
-        ) {
-            normalized.push(...normalizeFixtureTrade(rawWithPayload(raw, candidate, 'fixture_trade')));
         }
     }
 
@@ -288,7 +288,6 @@ const normalizeDecodedProviderPayload = (raw: ProviderRawEvent): NormalizedMarke
 
 export const normalizeProviderRawEvent = (raw: ProviderRawEvent): NormalizedMarketEvent[] => {
     if (raw.type === 'transaction' || raw.type === 'account') return normalizeDecodedProviderPayload(raw);
-    if (raw.type === 'fixture_trade') return normalizeFixtureTrade(raw);
     if (raw.type === 'market_state') return normalizeProviderMarketState(raw);
     return [];
 };

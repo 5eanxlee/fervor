@@ -12,7 +12,7 @@ const trade = (offsetMs: number, side: 'buy' | 'sell', maker: string, usdAmount 
     side,
     usdAmount,
     priceUsd: 1,
-    source: 'fixture',
+    source: 'helius_laserstream',
     sourceEventId: `${offsetMs}:${side}:${maker}`,
     observedAt: new Date(nowMs + offsetMs).toISOString(),
     receivedAt: new Date(nowMs).toISOString(),

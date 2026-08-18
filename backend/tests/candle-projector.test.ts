@@ -9,7 +9,7 @@ const trade = (input: Partial<NormalizedTradeEvent> = {}): NormalizedTradeEvent 
     side: input.side || 'buy',
     priceUsd: input.priceUsd ?? 1,
     usdAmount: input.usdAmount ?? 10,
-    source: 'fixture',
+    source: 'helius_laserstream',
     sourceEventId: input.sourceEventId || input.idempotencyKey || 'source-1',
     observedAt: input.observedAt || '2026-08-03T12:00:01.000Z',
     receivedAt: input.receivedAt || '2026-08-03T12:00:01.010Z',

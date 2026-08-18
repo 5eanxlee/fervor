@@ -107,7 +107,7 @@ suite('wallet portfolio infrastructure', () => {
         eventIndex: 0,
         commitment: 'finalized' as const,
         occurredAt: new Date(start + offsetMs).toISOString(),
-        summary: { source: 'fixture' },
+        summary: { source: 'helius_history_v2' },
     });
 
     it('leases a due source to only one overlapping poller', async () => {

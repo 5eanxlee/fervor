@@ -23,7 +23,7 @@ describe('market metric bootstrap', () => {
                     slot: 42,
                     instruction_index: 0,
                     event_index: 0,
-                    source: 'fixture',
+                    source: 'fervor_engine',
                     source_event_id: 'legacy-event-1',
                     observed_at: '2026-08-03T11:59:00.000Z',
                     received_at: '2026-08-03T11:59:00.100Z',

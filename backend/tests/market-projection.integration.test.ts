@@ -100,8 +100,8 @@ suite('market projection infrastructure', () => {
                 supply: {
                     totalSupply: 1_000_000_000,
                     circulatingSupply: 900_000_000,
-                    supplyPolicy: 'fixture_supply_v1',
-                    source: 'fixture',
+                    supplyPolicy: 'fervor_mint_supply_v1',
+                    source: 'helius_laserstream',
                     sourceEventId: 'fixture:supply:1',
                     observedAt: now.toISOString(),
                     stale: false,
@@ -152,7 +152,7 @@ suite('market projection infrastructure', () => {
             inputContract: 'fervor-market-input-v1',
             metricSource: 'fervor_engine',
             metricVersion: 'fervor-market-v1',
-            supplyPolicy: 'fixture_supply_v1',
+            supplyPolicy: 'fervor_mint_supply_v1',
         });
 
         const late = {
