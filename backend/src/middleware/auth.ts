@@ -153,6 +153,36 @@ export const authenticateToken = async (
         return res.status(401).json({ success: false, error: 'Access token required' });
     }
 
+    try {
+        req.user = await authenticateUserToken(token);
+        next();
+    } catch (error) {
+        if (!(error instanceof AuthTokenError)) throw error;
+        if (error.code === 'unavailable') {
+            console.error('[auth] User lookup failed', {
+                traceId: String(res.locals.traceId || 'unknown'),
+                error: error.source instanceof Error ? error.source.name : 'unknown',
+            });
+        }
+        return res.status(error.status).json({ success: false, error: error.message });
+    }
+};
+
+export type AuthTokenCode = 'invalid' | 'type' | 'missing' | 'wallet' | 'unavailable';
+
+export class AuthTokenError extends Error {
+    constructor(
+        readonly code: AuthTokenCode,
+        message: string,
+        readonly status: 401 | 403 | 503,
+        readonly source?: unknown
+    ) {
+        super(message);
+        this.name = 'AuthTokenError';
+    }
+}
+
+export const authenticateUserToken = async (token: string): Promise<User> => {
     let decoded: jwt.JwtPayload;
     try {
         const payload = jwt.verify(token, env.JWT_SECRET, {
@@ -163,32 +193,31 @@ export const authenticateToken = async (
         if (typeof payload === 'string') throw new jwt.JsonWebTokenError('Invalid token payload');
         decoded = payload;
     } catch {
-        return res.status(403).json({ success: false, error: 'Invalid or expired token' });
+        throw new AuthTokenError('invalid', 'Invalid or expired token', 403);
     }
     if (decoded.tokenType !== 'user' || typeof decoded.userId !== 'string') {
-        return res.status(403).json({ success: false, error: 'Invalid token type' });
+        throw new AuthTokenError('type', 'Invalid token type', 403);
     }
 
     try {
         const user = await authUsers.get(decoded.userId);
         if (!user) {
-            return res.status(401).json({
-                success: false,
-                error: 'User not found'
-            });
+            throw new AuthTokenError('missing', 'User not found', 401);
         }
         if (decoded.walletAddress !== user.wallet_address) {
-            return res.status(403).json({ success: false, error: 'Token wallet no longer matches the user' });
+            throw new AuthTokenError(
+                'wallet', 'Token wallet no longer matches the user', 403
+            );
         }
-
-        req.user = user;
-        next();
+        return user;
     } catch (error) {
-        console.error('[auth] User lookup failed', {
-            traceId: String(res.locals.traceId || 'unknown'),
-            error: error instanceof Error ? error.name : 'unknown',
-        });
-        return res.status(503).json({ success: false, error: 'Authentication service unavailable' });
+        if (error instanceof AuthTokenError) throw error;
+        throw new AuthTokenError(
+            'unavailable',
+            'Authentication service unavailable',
+            503,
+            error
+        );
     }
 };
 

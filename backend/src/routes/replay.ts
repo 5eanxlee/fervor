@@ -1,10 +1,8 @@
 import { Request, Response, Router } from 'express';
 import { authenticateToken } from '../middleware/auth';
 import { userMutationLimiter } from '../middleware/rateLimits';
-import { env } from '../config/env';
 import type { AuthRequest } from '../types';
 import {
-    createReplayGateway,
     ReplayGatewayError,
     type ReplayCall,
     type ReplayGateway,
@@ -87,5 +85,3 @@ export const createReplayRouter = (gateway: ReplayGateway): Router => {
         void call(req, res, 'controls', 'POST'));
     return router;
 };
-
-export default createReplayRouter(createReplayGateway(env));

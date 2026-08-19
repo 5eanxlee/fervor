@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import crypto from 'crypto';
-import { Server } from 'http';
+import { createServer, Server } from 'http';
 
 import authRoutes from './routes/auth';
 import alertRoutes from './routes/alerts';
@@ -15,7 +15,7 @@ import notificationDeliveryRoutes from './routes/notificationDeliveries';
 import executionRoutes from './routes/execution';
 import orderRoutes from './routes/orders';
 import walletRoutes from './routes/wallets';
-import replayRoutes from './routes/replay';
+import { createReplayRouter } from './routes/replay';
 import { env, isProduction } from './config/env';
 import { standardLimiter } from './middleware/rateLimits';
 import { metrics } from './services/metrics';
@@ -23,6 +23,9 @@ import { getReadiness, opsCollector } from './services/observability';
 import { traceMiddleware } from './middleware/trace';
 import { closeDatabase } from './config/database';
 import { redisStreams } from './services/redisStreamService';
+import { createReplayGateway } from './services/replay/replayGateway';
+import { ReplayFeed } from './services/realtime/replayFeed';
+import { attachRealtime, type RealtimeServer } from './services/realtime/server';
 
 const app = express();
 const PORT = env.API_PORT;
@@ -30,6 +33,13 @@ if (env.TRUST_PROXY_HOPS > 0) app.set('trust proxy', env.TRUST_PROXY_HOPS);
 const DEV_FRONTEND_PORTS = new Set(['3000', '3001', '3002', '3003', '3004', '3005']);
 
 const allowedOrigins = new Set([env.FRONTEND_URL]);
+const replayGateway = createReplayGateway(env);
+const replayFeed = new ReplayFeed(replayGateway, {
+    pollMs: env.RT_POLL_MS,
+    resumeEvents: env.RT_RESUME_EVENTS,
+    heartbeatMs: env.RT_HEARTBEAT_MS,
+    maxSubs: env.RT_MAX_SUBS,
+});
 
 const isAllowedDevOrigin = (origin: string): boolean => {
     if (isProduction) return false;
@@ -42,11 +52,14 @@ const isAllowedDevOrigin = (origin: string): boolean => {
     }
 };
 
+export const isAllowedOrigin = (origin: string | undefined): boolean =>
+    origin === undefined || allowedOrigins.has(origin) || isAllowedDevOrigin(origin);
+
 // Security middleware
 app.use(helmet());
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin || allowedOrigins.has(origin) || isAllowedDevOrigin(origin)) {
+        if (isAllowedOrigin(origin)) {
             callback(null, true);
             return;
         }
@@ -113,7 +126,7 @@ app.use('/api/stream', streamRoutes);
 app.use('/api/execution', executionRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/wallets', walletRoutes);
-app.use('/api/replay/v1', replayRoutes);
+app.use('/api/replay/v1', createReplayRouter(replayGateway));
 
 // Global error handler
 app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -137,6 +150,7 @@ app.use('*', (req, res) => {
 
 // Graceful shutdown
 let server: Server | undefined;
+let realtime: RealtimeServer | undefined;
 let stopping = false;
 
 const gracefulShutdown = async (signal: string): Promise<void> => {
@@ -147,6 +161,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
     const timeout = setTimeout(() => process.exit(1), 10_000);
     timeout.unref();
     try {
+        await realtime?.close();
         if (server) {
             await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
         }
@@ -167,7 +182,19 @@ export const startServer = () => {
     process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
 
-    server = app.listen(PORT, () => {
+    server = createServer(app);
+    realtime = attachRealtime(server, {
+        feed: replayFeed,
+        allowOrigin: isAllowedOrigin,
+        config: {
+            authMs: env.RT_AUTH_MS,
+            heartbeatMs: env.RT_HEARTBEAT_MS,
+            maxPayloadBytes: env.RT_MAX_PAYLOAD_BYTES,
+            queueBytes: env.RT_QUEUE_BYTES,
+            queueFrames: env.RT_QUEUE_FRAMES,
+        },
+    });
+    server.listen(PORT, () => {
         console.log(`[FERVOR] Server running on port ${PORT}`);
         console.log(`[FERVOR] Health check: http://localhost:${PORT}/health`);
         console.log(`[FERVOR] API base URL: http://localhost:${PORT}/api`);
