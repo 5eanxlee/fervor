@@ -176,6 +176,7 @@ impl PumpState {
     pub fn reconstruct(mint: &str, events: &[PumpEvent]) -> Result<Self, SourceError> {
         let mut state = None;
         let mut last_order = None;
+        let mut pending = None;
 
         for event in events.iter().filter(|event| event.mint() == mint) {
             let tx_index = event.origin.tx_index.ok_or_else(|| {
@@ -191,7 +192,7 @@ impl PumpState {
 
             match &event.data {
                 PumpData::Create(create) => {
-                    if state.is_some() {
+                    if state.is_some() || pending.is_some() {
                         return Err(SourceError(
                             "Pump lifecycle contains more than one create event".to_string(),
                         ));
@@ -233,29 +234,22 @@ impl PumpState {
                     });
                 }
                 PumpData::Trade(trade) => {
+                    let complete = pending.take();
+                    if complete.is_some_and(|(origin, _): (&PumpOrigin, &PumpComplete)| {
+                        origin.signature != event.origin.signature
+                            || origin.instruction_index != event.origin.instruction_index
+                    }) {
+                        return Err(SourceError(
+                            "Pump completion is not paired with its final trade".to_string(),
+                        ));
+                    }
                     let state = state.as_mut().ok_or_else(|| {
                         SourceError("Pump trade precedes its create event".to_string())
                     })?;
-                    if state.phase != PumpPhase::Curve {
-                        return Err(SourceError(
-                            "Pump trade follows curve completion".to_string(),
-                        ));
+                    state.apply_trade(trade, event.origin.slot)?;
+                    if let Some((origin, complete)) = complete {
+                        state.apply_complete(complete, origin.slot)?;
                     }
-                    validate_reserves(state, trade)?;
-                    state.event_count = add_one(state.event_count, "Pump event")?;
-                    state.trade_count = add_one(state.trade_count, "Pump trade")?;
-                    if trade.is_buy {
-                        state.buy_count = add_one(state.buy_count, "Pump buy")?;
-                    } else {
-                        state.sell_count = add_one(state.sell_count, "Pump sell")?;
-                    }
-                    state.last_slot = event.origin.slot;
-                    state.last_trade_at = Some(trade.timestamp);
-                    state.virtual_sol_raw = Some(trade.virtual_sol_raw);
-                    state.virtual_token_raw = Some(trade.virtual_token_raw);
-                    state.real_sol_raw = Some(trade.real_sol_raw);
-                    state.real_token_raw = Some(trade.real_token_raw);
-                    state.refresh_price()?;
                 }
                 PumpData::Complete(complete) => {
                     let state = state.as_mut().ok_or_else(|| {
@@ -263,18 +257,25 @@ impl PumpState {
                     })?;
                     if state.phase != PumpPhase::Curve
                         || complete.bonding_curve != state.bonding_curve
-                        || state.real_token_raw != Some(0)
                     {
                         return Err(SourceError(
                             "Pump completion is inconsistent with curve state".to_string(),
                         ));
                     }
-                    state.event_count = add_one(state.event_count, "Pump event")?;
-                    state.phase = PumpPhase::Complete;
-                    state.completed_at = Some(complete.timestamp);
-                    state.last_slot = event.origin.slot;
+                    if state.real_token_raw == Some(0) {
+                        state.apply_complete(complete, event.origin.slot)?;
+                    } else if pending.replace((&event.origin, complete)).is_some() {
+                        return Err(SourceError(
+                            "Pump lifecycle contains overlapping completions".to_string(),
+                        ));
+                    }
                 }
                 PumpData::Withdraw(withdraw) => {
+                    if pending.is_some() {
+                        return Err(SourceError(
+                            "Pump withdrawal precedes its final curve trade".to_string(),
+                        ));
+                    }
                     let state = state.as_mut().ok_or_else(|| {
                         SourceError("Pump withdrawal precedes its create event".to_string())
                     })?;
@@ -293,7 +294,51 @@ impl PumpState {
             }
         }
 
+        if pending.is_some() {
+            return Err(SourceError(
+                "Pump completion has no final curve trade".to_string(),
+            ));
+        }
         state.ok_or_else(|| SourceError(format!("Pump lifecycle has no create event for {mint}")))
+    }
+
+    fn apply_trade(&mut self, trade: &PumpTrade, slot: u64) -> Result<(), SourceError> {
+        if self.phase != PumpPhase::Curve {
+            return Err(SourceError(
+                "Pump trade follows curve completion".to_string(),
+            ));
+        }
+        validate_reserves(self, trade)?;
+        self.event_count = add_one(self.event_count, "Pump event")?;
+        self.trade_count = add_one(self.trade_count, "Pump trade")?;
+        if trade.is_buy {
+            self.buy_count = add_one(self.buy_count, "Pump buy")?;
+        } else {
+            self.sell_count = add_one(self.sell_count, "Pump sell")?;
+        }
+        self.last_slot = slot;
+        self.last_trade_at = Some(trade.timestamp);
+        self.virtual_sol_raw = Some(trade.virtual_sol_raw);
+        self.virtual_token_raw = Some(trade.virtual_token_raw);
+        self.real_sol_raw = Some(trade.real_sol_raw);
+        self.real_token_raw = Some(trade.real_token_raw);
+        self.refresh_price()
+    }
+
+    fn apply_complete(&mut self, complete: &PumpComplete, slot: u64) -> Result<(), SourceError> {
+        if self.phase != PumpPhase::Curve
+            || complete.bonding_curve != self.bonding_curve
+            || self.real_token_raw != Some(0)
+        {
+            return Err(SourceError(
+                "Pump completion is inconsistent with final curve state".to_string(),
+            ));
+        }
+        self.event_count = add_one(self.event_count, "Pump event")?;
+        self.phase = PumpPhase::Complete;
+        self.completed_at = Some(complete.timestamp);
+        self.last_slot = slot;
+        Ok(())
     }
 
     fn refresh_price(&mut self) -> Result<(), SourceError> {
@@ -793,8 +838,8 @@ mod tests {
             },
             cpi(0, 3, pump, CREATE_EVENT, create),
             outer(1, pump, vec![0; 8], vec![]),
-            cpi(1, 0, pump, TRADE_EVENT, trade),
-            cpi(1, 1, pump, COMPLETE_EVENT, complete),
+            cpi(1, 0, pump, COMPLETE_EVENT, complete),
+            cpi(1, 1, pump, TRADE_EVENT, trade),
             outer(2, pump, WITHDRAW_IX.to_vec(), vec![0, 0, 1, 2, 0, 0, 3]),
         ];
         let keys = vec![
@@ -944,5 +989,19 @@ mod tests {
             .unwrap(),
             "285.714285714285714285"
         );
+    }
+
+    #[test]
+    fn completion_cannot_consume_another_transactions_trade() {
+        let mut events = decode_pump_events(&sample()).unwrap();
+        let trade = events
+            .iter_mut()
+            .find(|event| matches!(event.data, PumpData::Trade(_)))
+            .unwrap();
+        trade.origin.signature = bs58::encode([8_u8; 64]).into_string();
+        assert!(PumpState::reconstruct(&key(2), &events)
+            .unwrap_err()
+            .to_string()
+            .contains("not paired"));
     }
 }
