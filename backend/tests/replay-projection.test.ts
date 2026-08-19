@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { NormalizedTradeEvent } from '../src/types';
 import type { MetricReplay } from '../src/services/marketData/metricReplay';
+import { CheckpointStore } from '../src/services/replay/checkpointStore';
 import { ReplayCoordinator } from '../src/services/replay/coordinator';
 import {
     parseReplayCheckpoint,
@@ -10,6 +14,11 @@ import {
 
 const mint = 'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf';
 const sourceSha = '1'.repeat(64);
+const tempDirs: string[] = [];
+
+afterEach(async () => {
+    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
 
 const resign = (value: any): any => {
     const { checkpointSha256: _prior, ...payload } = value;
@@ -132,5 +141,29 @@ describe('replay projection checkpoints', () => {
 
         expect(() => target.restore(null)).toThrow('cut is invalid');
         expect(target.snapshot()).toEqual(before);
+    });
+
+    it('atomically stores one canonical checkpoint across concurrent writers', async () => {
+        const source = replay();
+        const coordinator = new ReplayCoordinator(source, 'durable');
+        const projection = ReplayProjection.start(coordinator);
+        projection.apply(coordinator.step()!);
+        const checkpoint = projection.checkpoint(coordinator);
+        const temp = await mkdtemp(path.join(os.tmpdir(), 'fervor-checkpoint-'));
+        tempDirs.push(temp);
+        const store = new CheckpointStore(path.join(temp, 'store'));
+
+        const keys = await Promise.all(Array.from({ length: 8 }, () => store.write(checkpoint)));
+        expect(new Set(keys.map((key) => JSON.stringify(key))).size).toBe(1);
+        await expect(new CheckpointStore(store.root).read(keys[0])).resolves.toEqual(checkpoint);
+
+        const sourceDir = path.join(store.root, sourceSha);
+        const files = await readdir(sourceDir);
+        expect(files).toHaveLength(1);
+        expect(files[0]).toMatch(/\.json$/);
+        await expect(store.read({ ...keys[0], ignored: true })).rejects.toThrow('key is invalid');
+
+        await writeFile(path.join(sourceDir, files[0]), '{');
+        await expect(store.read(keys[0])).rejects.toThrow('invalid');
     });
 });
