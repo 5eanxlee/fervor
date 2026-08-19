@@ -12,18 +12,21 @@ use fervor_feed_rs::{
         decode_pump_events, pump_supply, PumpEvent, PumpState, SupplyEvidence, PUMP_LAYOUT,
         SUPPLY_CONTRACT,
     },
+    trade_event::{TradeEvent, TRADE_CONTRACT},
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
 
-const SCHEMA: &str = "fervor-replay-v5";
+const SCHEMA: &str = "fervor-replay-v6";
 const TX_FILE: &str = "transactions.ndjson";
 const SWAP_FILE: &str = "swaps.ndjson";
+const TRADE_FILE: &str = "trades.ndjson";
 const PUMP_FILE: &str = "pump-events.ndjson";
 const STATE_FILE: &str = "pump-state.json";
 const SUPPLY_FILE: &str = "supply.json";
@@ -63,6 +66,10 @@ struct ReplayManifest {
     transaction_sha256: String,
     swap_file: &'static str,
     swap_sha256: String,
+    trade_contract: &'static str,
+    trades: u64,
+    trade_file: &'static str,
+    trade_sha256: String,
     pump_layout: &'static str,
     pump_events: u64,
     pump_event_file: &'static str,
@@ -139,6 +146,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     )?;
     let mut tx_out = Output::new(&out.join(TX_FILE))?;
     let mut swap_out = Output::new(&out.join(SWAP_FILE))?;
+    let mut trade_out = Output::new(&out.join(TRADE_FILE))?;
     let mut pump_out = Output::new(&out.join(PUMP_FILE))?;
     let mut fx_out = Output::new(&out.join(FX_FILE))?;
     let mut fx_tape_out = Output::new(&out.join(FX_TAPE_FILE))?;
@@ -146,10 +154,12 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     let mut transactions = 0_u64;
     let mut matched = 0_u64;
     let mut swaps = 0_u64;
+    let mut trades = 0_u64;
     let mut pump_count = 0_u64;
     let mut fx_count = 0_u64;
     let mut pump_events = Vec::<PumpEvent>::new();
     let mut fx_events = Vec::<FxObservation>::new();
+    let mut trade_keys = HashSet::new();
     let mut supply = None::<SupplyEvidence>;
     let mut first_slot = None;
     let mut last_slot = None;
@@ -185,14 +195,15 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
             tx_out.write_json(&tx)?;
             let events =
                 decode_pump_events(&tx).map_err(|error| quarantine_error("Pump event", error))?;
-            if let Some(value) = pump_supply(
+            let trade_supply = pump_supply(
                 &events,
                 mint,
                 &tx.observation.provider,
                 &tx.observed_at,
                 tx.commitment,
-            ) {
-                if supply.replace(value).is_some() {
+            );
+            if let Some(value) = &trade_supply {
+                if supply.replace(value.clone()).is_some() {
                     bail!("replay found more than one qualified supply event for {mint}");
                 }
             }
@@ -207,6 +218,16 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
                 if swap.token_mint == *mint || swap.quote_mint == *mint {
                     swaps = checked_count(swaps, "swap")?;
                     swap_out.write_json(&swap)?;
+                    let trade = TradeEvent::from_swap(&swap, &tx, &tx.observed_at, trade_supply)
+                        .map_err(|detail| anyhow!("normalized trade rejected: {detail}"))?;
+                    if !trade_keys.insert(trade.idempotency_key.clone()) {
+                        bail!(
+                            "replay found duplicate normalized trade {}",
+                            trade.idempotency_key
+                        );
+                    }
+                    trades = checked_count(trades, "normalized trade")?;
+                    trade_out.write_json(&trade)?;
                 }
             }
         }
@@ -243,8 +264,12 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     for point in &fx_tape {
         fx_tape_out.write_json(point)?;
     }
+    if trades != swaps {
+        bail!("normalized trade count differs from decoded swap count");
+    }
     let transaction_sha256 = tx_out.finish()?;
     let swap_sha256 = swap_out.finish()?;
+    let trade_sha256 = trade_out.finish()?;
     let pump_event_sha256 = pump_out.finish()?;
     let fx_sha256 = fx_out.finish()?;
     let fx_tape_sha256 = fx_tape_out.finish()?;
@@ -253,6 +278,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     let replay_sha256 = replay_hash(&[
         &transaction_sha256,
         &swap_sha256,
+        &trade_sha256,
         &pump_event_sha256,
         &pump_state_sha256,
         &supply_sha256,
@@ -280,6 +306,10 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         transaction_sha256,
         swap_file: SWAP_FILE,
         swap_sha256,
+        trade_contract: TRADE_CONTRACT,
+        trades,
+        trade_file: TRADE_FILE,
+        trade_sha256,
         pump_layout: PUMP_LAYOUT,
         pump_events: pump_count,
         pump_event_file: PUMP_FILE,

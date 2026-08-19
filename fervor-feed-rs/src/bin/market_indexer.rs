@@ -2,11 +2,12 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use fervor_feed_rs::fervor_tx::{Commitment, Network, RawEnvelope, SourceAdapter, SourceCap};
-use fervor_feed_rs::market_decoder::{decode_swap, QuoteKind, Side, Venue, PROGRAM_IDS};
+use fervor_feed_rs::market_decoder::{decode_swap, PROGRAM_IDS};
 use fervor_feed_rs::market_journal::MarketJournal;
 use fervor_feed_rs::postgres::DbTls;
-use fervor_feed_rs::pump::{decode_pump_events, has_pump_create, pump_supply, SupplyEvidence};
+use fervor_feed_rs::pump::{decode_pump_events, has_pump_create, pump_supply};
 use fervor_feed_rs::stream_bus::{StreamBus, RAW_SOURCE, TRADE_STREAM};
+use fervor_feed_rs::trade_event::TradeEvent;
 use fervor_feed_rs::yellowstone::{YellowstoneAdapter, WIRE_FORMAT, WIRE_VERSION};
 use futures_util::StreamExt;
 use prost::Message;
@@ -58,54 +59,6 @@ struct Args {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TradeEvent<'a> {
-    source: &'a str,
-    source_event_id: &'a str,
-    kind: &'static str,
-    idempotency_key: String,
-    token_mint: &'a str,
-    quote_mint: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pool_address: Option<&'a str>,
-    protocol: Venue,
-    program_id: &'a str,
-    maker: &'a str,
-    side: Side,
-    token_amount: f64,
-    quote_amount: f64,
-    token_amount_raw: &'a str,
-    quote_amount_raw: &'a str,
-    token_decimals: u32,
-    quote_decimals: u32,
-    price_quote: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    sol_amount: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    usd_amount: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    price_sol: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    price_usd: Option<f64>,
-    quote_kind: QuoteKind,
-    route: &'a [Venue],
-    instruction_index: u32,
-    event_index: u32,
-    slot: u64,
-    signature: &'a str,
-    received_at: &'a str,
-    observed_at: &'a str,
-    confidence: f64,
-    stale: bool,
-    commitment: &'a str,
-    decode_version: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    compute_units: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    supply: Option<SupplyEvidence>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 struct Health<'a> {
     status: &'static str,
     endpoint: &'a str,
@@ -125,20 +78,6 @@ fn commitment(value: &str) -> Result<CommitmentLevel> {
         "finalized" => Ok(CommitmentLevel::Finalized),
         _ => Err(anyhow!("unsupported commitment: {value}")),
     }
-}
-
-fn event_key(
-    network: Network,
-    signature: &str,
-    instruction_index: u32,
-    event_index: u32,
-) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(format!(
-        "{}:{signature}:{instruction_index}:{event_index}",
-        network.as_str()
-    ));
-    hex::encode(hasher.finalize())
 }
 
 fn subscription_id(network: Network, commitment: &str, programs: &[String]) -> String {
@@ -393,12 +332,6 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
                     }
                 };
                 decoded += 1;
-                let source_id = format!(
-                    "{}:{}:{}:{}:{}:{}",
-                    args.source,
-                    network.as_str(),
-                    swap.slot, swap.signature, swap.instruction_index, swap.event_index
-                );
                 let supply = pump_events.as_deref().and_then(|events| {
                     pump_supply(
                         events,
@@ -408,49 +341,8 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
                         source_commitment,
                     )
                 });
-                let trade = TradeEvent {
-                    source: &args.source,
-                    source_event_id: &source_id,
-                    kind: "trade",
-                    idempotency_key: event_key(
-                        network,
-                        &swap.signature,
-                        swap.instruction_index,
-                        swap.event_index,
-                    ),
-                    token_mint: &swap.token_mint,
-                    quote_mint: &swap.quote_mint,
-                    pool_address: swap.pool_address.as_deref(),
-                    protocol: swap.protocol,
-                    program_id: &swap.program_id,
-                    maker: &swap.trader,
-                    side: swap.side,
-                    token_amount: swap.token_amount,
-                    quote_amount: swap.quote_amount,
-                    token_amount_raw: &swap.token_amount_raw,
-                    quote_amount_raw: &swap.quote_amount_raw,
-                    token_decimals: swap.token_decimals,
-                    quote_decimals: swap.quote_decimals,
-                    price_quote: swap.price_quote,
-                    sol_amount: swap.sol_amount,
-                    usd_amount: swap.usd_amount,
-                    price_sol: swap.price_sol,
-                    price_usd: swap.price_usd,
-                    quote_kind: swap.quote_kind,
-                    route: &swap.route,
-                    instruction_index: swap.instruction_index,
-                    event_index: swap.event_index,
-                    slot: swap.slot,
-                    signature: &swap.signature,
-                    received_at: &received,
-                    observed_at: &observed,
-                    confidence: swap.confidence,
-                    stale: false,
-                    commitment: &commitment_name,
-                    decode_version: swap.decode_version,
-                    compute_units: swap.compute_units,
-                    supply,
-                };
+                let trade = TradeEvent::from_swap(&swap, &tx, &received, supply)
+                    .map_err(|detail| anyhow!("normalized trade rejected: {detail}"))?;
                 bus.publish(TRADE_STREAM, &trade).await?;
             }
         }
@@ -526,77 +418,9 @@ mod tests {
             subscription_id(Network::Devnet, "confirmed", &first)
         );
         assert_ne!(
-            event_key(Network::MainnetBeta, "signature", 0, 0),
-            event_key(Network::Devnet, "signature", 0, 0)
+            fervor_feed_rs::trade_event::event_key(Network::MainnetBeta, "signature", 0, 0),
+            fervor_feed_rs::trade_event::event_key(Network::Devnet, "signature", 0, 0)
         );
-    }
-
-    #[test]
-    fn decoded_trade_matches_the_shared_backend_contract() {
-        let signature = "BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA";
-        let source_id = format!("helius_laserstream:mainnet-beta:42:{signature}:0:0");
-        let route = [Venue::PumpFun];
-        let supply = SupplyEvidence {
-            contract: fervor_feed_rs::pump::SUPPLY_CONTRACT.to_string(),
-            token_mint: "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf".to_string(),
-            raw_amount: "1000000000000000".to_string(),
-            decimals: 6,
-            fixed: true,
-            layout: fervor_feed_rs::pump::PUMP_LAYOUT.to_string(),
-            source: "helius_laserstream".to_string(),
-            source_event_id: format!("helius_laserstream:supply:42:{signature}:0:0"),
-            slot: 42,
-            signature: signature.to_string(),
-            instruction_index: 0,
-            event_index: 0,
-            observed_at: "2024-11-19T00:00:00Z".to_string(),
-            confidence: 1.0,
-            stale: false,
-            commitment: Commitment::Confirmed,
-        };
-        let trade = TradeEvent {
-            source: "helius_laserstream",
-            source_event_id: &source_id,
-            kind: "trade",
-            idempotency_key: event_key(Network::MainnetBeta, signature, 0, 0),
-            token_mint: "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
-            quote_mint: "So11111111111111111111111111111111111111112",
-            pool_address: Some("CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"),
-            protocol: Venue::PumpFun,
-            program_id: Venue::PumpFun.program_id(),
-            maker: "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi",
-            side: Side::Buy,
-            token_amount: 2.0,
-            quote_amount: 4.0,
-            token_amount_raw: "2000000",
-            quote_amount_raw: "4000000000",
-            token_decimals: 6,
-            quote_decimals: 9,
-            price_quote: 2.0,
-            sol_amount: Some(4.0),
-            usd_amount: None,
-            price_sol: Some(2.0),
-            price_usd: None,
-            quote_kind: QuoteKind::Wsol,
-            route: &route,
-            instruction_index: 0,
-            event_index: 0,
-            slot: 42,
-            signature,
-            received_at: "2024-11-19T00:00:00Z",
-            observed_at: "2024-11-19T00:00:00Z",
-            confidence: 0.94,
-            stale: false,
-            commitment: "confirmed",
-            decode_version: "balance-delta-v1",
-            compute_units: Some(88_000),
-            supply: Some(supply),
-        };
-        let expected: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../tests/contracts/decoded-trade-v1.json"
-        ))
-        .unwrap();
-        assert_eq!(serde_json::to_value(trade).unwrap(), expected);
     }
 
     #[test]

@@ -11,4 +11,5 @@ pub mod old_faithful;
 pub mod postgres;
 pub mod pump;
 pub mod stream_bus;
+pub mod trade_event;
 pub mod yellowstone;
