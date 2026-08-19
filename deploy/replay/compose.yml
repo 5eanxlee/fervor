@@ -232,11 +232,12 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
-    networks: [private]
+    networks: [private, ingress]
 
 networks:
   private:
     internal: true
+  ingress:
 
 volumes:
   replay-db:
