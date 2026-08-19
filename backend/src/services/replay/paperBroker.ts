@@ -1,145 +1,67 @@
-import { createHash } from 'node:crypto';
-import { z } from 'zod';
-import { addressSchema } from '../../types/execution';
-import { amountSchema, u64Schema, u64Text } from '../../types/amount';
+import { amountSchema } from '../../types/amount';
 import type { ReplayEvent, ReplaySnapshot } from './coordinator';
+import {
+    createPaperCheckpoint,
+    parsePaperCheckpoint,
+    type PaperCheckpoint,
+    type PaperPayload,
+} from './paperCheckpoint';
+import {
+    addMs,
+    asU64,
+    bpsBase,
+    cloneFact,
+    cloneFill,
+    grossOf,
+    limitPriceOk,
+    marketPriceOk,
+    modelDigest,
+    normalizeModel,
+    paperCheckpointContract,
+    paperFactContract,
+    paperModelContract,
+    paperModelSchema,
+    paperOrderSchema,
+    parseTime,
+    priceOf,
+    protocolFee,
+    terminal,
+    toIso,
+    type PaperFact,
+    type PaperFactKind,
+    type PaperFee,
+    type PaperFill,
+    type PaperModel,
+    type PaperModelInput,
+    type PaperOrder,
+    type PaperRequest,
+    type PaperSide,
+    type PaperStatus,
+    type RawPrice,
+} from './paperTypes';
 
-export const paperModelContract = 'fervor-paper-fill-v1' as const;
-export const paperFactContract = 'fervor-paper-fact-v1' as const;
-
-const bpsBase = 10_000n;
-const orderId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
-const rawPriceSchema = z.object({
-    quoteRaw: amountSchema,
-    tokenRaw: amountSchema,
-}).strict();
-const fixedFeeSchema = z.object({
-    kind: z.enum(['network', 'priority', 'rent']),
-    mint: addressSchema,
-    amountRaw: u64Schema,
-}).strict();
-
-export const paperModelSchema = z.object({
-    contract: z.literal(paperModelContract),
-    latency: z.object({
-        clientMs: z.number().int().min(0).max(60_000),
-        buildMs: z.number().int().min(0).max(60_000),
-        submitMs: z.number().int().min(0).max(60_000),
-    }).strict(),
-    participationBps: z.number().int().min(1).max(10_000),
-    maxLookaheadMs: z.number().int().min(1).max(86_400_000),
-    priceGuardBps: z.number().int().min(0).max(9_999),
-    protocolFeeBps: z.number().int().min(0).max(9_999),
-    fixedFees: z.array(fixedFeeSchema).max(3),
-    partialFill: z.literal('allow'),
-}).strict().refine((model) => new Set(model.fixedFees.map((fee) => fee.kind)).size
-    === model.fixedFees.length, {
-    message: 'Fixed fee kinds must be unique',
-    path: ['fixedFees'],
-});
-
-const orderBase = z.object({
-    id: orderId,
-    side: z.enum(['buy', 'sell']),
-    tokenMint: addressSchema,
-    quoteMint: addressSchema,
-    inputRaw: amountSchema,
-}).strict();
-const marketOrder = orderBase.extend({
-    kind: z.literal('market'),
-    reference: rawPriceSchema,
-}).strict();
-const limitOrder = orderBase.extend({
-    kind: z.literal('limit'),
-    limit: rawPriceSchema,
-}).strict();
-
-export const paperOrderSchema = z.discriminatedUnion('kind', [marketOrder, limitOrder]);
-
-export type PaperSide = 'buy' | 'sell';
-export type PaperStatus =
-    | 'pending'
-    | 'eligible'
-    | 'partially_filled'
-    | 'filled'
-    | 'expired'
-    | 'cancelled';
-export type PaperFactKind = 'intent' | 'eligible' | 'fill' | 'filled' | 'expired' | 'cancelled';
-export type PaperRequest = z.infer<typeof paperOrderSchema>;
-export type PaperModelInput = z.infer<typeof paperModelSchema>;
-
-export interface RawPrice {
-    readonly quoteRaw: string;
-    readonly tokenRaw: string;
-}
-
-export interface PaperFee {
-    readonly kind: 'protocol' | 'network' | 'priority' | 'rent';
-    readonly mint: string;
-    readonly amountRaw: string;
-}
-
-export interface PaperFill {
-    readonly tradeId: string;
-    readonly cursor: number;
-    readonly observedAt: string;
-    readonly inputMint: string;
-    readonly outputMint: string;
-    readonly inputRaw: string;
-    readonly grossOutputRaw: string;
-    readonly netOutputRaw: string;
-    readonly price: RawPrice;
-    readonly fees: readonly PaperFee[];
-}
-
-export interface PaperOrder {
-    readonly id: string;
-    readonly kind: 'market' | 'limit';
-    readonly side: PaperSide;
-    readonly status: PaperStatus;
-    readonly tokenMint: string;
-    readonly quoteMint: string;
-    readonly inputRaw: string;
-    readonly remainingRaw: string;
-    readonly filledInputRaw: string;
-    readonly grossOutputRaw: string;
-    readonly netOutputRaw: string;
-    readonly placedCursor: number;
-    readonly placedAt: string | null;
-    readonly eligibleAt: string | null;
-    readonly expiresAt: string | null;
-    readonly price: RawPrice;
-    readonly modelSha256: string;
-    readonly fills: readonly PaperFill[];
-}
-
-export interface PaperFact {
-    readonly contract: typeof paperFactContract;
-    readonly key: string;
-    readonly runId: string;
-    readonly epoch: number;
-    readonly sourceReplaySha256: string;
-    readonly modelSha256: string;
-    readonly orderId: string;
-    readonly seq: number;
-    readonly kind: PaperFactKind;
-    readonly status: PaperStatus;
-    readonly cursor: number;
-    readonly observedAt: string | null;
-    readonly reason?: 'user' | 'lookahead_elapsed' | 'end_of_tape';
-    readonly fill?: PaperFill;
-}
-
-interface PaperModel {
-    readonly contract: typeof paperModelContract;
-    readonly latency: Readonly<PaperModelInput['latency']>;
-    readonly participationBps: number;
-    readonly maxLookaheadMs: number;
-    readonly priceGuardBps: number;
-    readonly protocolFeeBps: number;
-    readonly fixedFees: readonly Readonly<PaperModelInput['fixedFees'][number]>[];
-    readonly partialFill: 'allow';
-}
+export {
+    paperCheckpointContract,
+    paperFactContract,
+    paperModelContract,
+    paperModelSchema,
+    paperOrderSchema,
+    parsePaperCheckpoint,
+};
+export type {
+    PaperCheckpoint,
+    PaperFact,
+    PaperFactKind,
+    PaperFee,
+    PaperFill,
+    PaperModel,
+    PaperModelInput,
+    PaperOrder,
+    PaperRequest,
+    PaperSide,
+    PaperStatus,
+    RawPrice,
+};
 
 interface MutableOrder {
     readonly request: PaperRequest;
@@ -160,100 +82,6 @@ interface MutableOrder {
 
 type Binding = Pick<ReplaySnapshot, 'runId' | 'epoch' | 'sourceReplaySha256'>;
 
-const gcd = (left: bigint, right: bigint): bigint => {
-    let a = left;
-    let b = right;
-    while (b !== 0n) [a, b] = [b, a % b];
-    return a;
-};
-
-const priceOf = (value: z.infer<typeof rawPriceSchema>): RawPrice => {
-    const quote = BigInt(value.quoteRaw);
-    const token = BigInt(value.tokenRaw);
-    const divisor = gcd(quote, token);
-    return Object.freeze({
-        quoteRaw: (quote / divisor).toString(),
-        tokenRaw: (token / divisor).toString(),
-    });
-};
-
-const asU64 = (value: bigint, name: string): string => {
-    const text = value.toString();
-    if (u64Text(text) === undefined) throw new Error(`${name} exceeds an unsigned 64-bit amount`);
-    return text;
-};
-
-const toIso = (value: number): string => new Date(value).toISOString();
-
-const addMs = (base: number, delta: number): number => {
-    const value = base + delta;
-    if (!Number.isSafeInteger(value)) throw new Error('Paper order time is outside the safe range');
-    return value;
-};
-
-const parseTime = (value: string): number => {
-    const parsed = Date.parse(value);
-    if (!Number.isSafeInteger(parsed) || toIso(parsed) !== value) {
-        throw new Error('Paper broker requires canonical replay time');
-    }
-    return parsed;
-};
-
-const cloneFee = (fee: PaperFee): PaperFee => Object.freeze({ ...fee });
-const cloneFill = (fill: PaperFill): PaperFill => Object.freeze({
-    ...fill,
-    price: Object.freeze({ ...fill.price }),
-    fees: Object.freeze(fill.fees.map(cloneFee)),
-});
-
-const normalizeModel = (value: unknown): PaperModel => {
-    const parsed = paperModelSchema.parse(value);
-    const fixedFees = parsed.fixedFees
-        .map((fee) => Object.freeze({ ...fee }))
-        .sort((left, right) => left.kind.localeCompare(right.kind));
-    return Object.freeze({
-        contract: paperModelContract,
-        latency: Object.freeze({ ...parsed.latency }),
-        participationBps: parsed.participationBps,
-        maxLookaheadMs: parsed.maxLookaheadMs,
-        priceGuardBps: parsed.priceGuardBps,
-        protocolFeeBps: parsed.protocolFeeBps,
-        fixedFees: Object.freeze(fixedFees),
-        partialFill: 'allow',
-    });
-};
-
-const modelDigest = (model: PaperModel): string => createHash('sha256')
-    .update(paperModelContract)
-    .update('\0')
-    .update(JSON.stringify(model))
-    .digest('hex');
-
-const terminal = (status: PaperStatus): boolean =>
-    status === 'filled' || status === 'expired' || status === 'cancelled';
-
-const marketPriceOk = (
-    side: PaperSide,
-    trade: RawPrice,
-    reference: RawPrice,
-    guardBps: number
-): boolean => {
-    const tradeQuote = BigInt(trade.quoteRaw);
-    const tradeToken = BigInt(trade.tokenRaw);
-    const refQuote = BigInt(reference.quoteRaw);
-    const refToken = BigInt(reference.tokenRaw);
-    const left = tradeQuote * refToken * bpsBase;
-    const move = BigInt(guardBps);
-    const right = refQuote * tradeToken * (side === 'buy' ? bpsBase + move : bpsBase - move);
-    return side === 'buy' ? left <= right : left >= right;
-};
-
-const limitPriceOk = (side: PaperSide, trade: RawPrice, limit: RawPrice): boolean => {
-    const left = BigInt(trade.quoteRaw) * BigInt(limit.tokenRaw);
-    const right = BigInt(limit.quoteRaw) * BigInt(trade.tokenRaw);
-    return side === 'buy' ? left <= right : left >= right;
-};
-
 export class ReplayPaperBroker {
     private readonly binding: Binding;
     private readonly model: PaperModel;
@@ -272,7 +100,8 @@ export class ReplayPaperBroker {
             || snapshot.cursor < 0
             || snapshot.cursor > snapshot.total
             || snapshot.epoch < 1
-            || snapshot.status !== 'paused'
+            || (snapshot.status !== 'paused'
+                && !(snapshot.status === 'complete' && snapshot.cursor === snapshot.total))
             || (snapshot.cursor === 0) !== (snapshot.now === null)
             || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(snapshot.runId)
             || !/^[0-9a-f]{64}$/.test(snapshot.sourceReplaySha256)) {
@@ -288,6 +117,22 @@ export class ReplayPaperBroker {
         this.now = snapshot.now;
         this.model = normalizeModel(model);
         this.modelSha = modelDigest(this.model);
+    }
+
+    static restore(snapshot: ReplaySnapshot, value: unknown, model: unknown): ReplayPaperBroker {
+        const checkpoint = parsePaperCheckpoint(value);
+        const broker = new ReplayPaperBroker(snapshot, model);
+        if (checkpoint.runId !== snapshot.runId
+            || checkpoint.sourceReplaySha256 !== snapshot.sourceReplaySha256
+            || checkpoint.cursor !== snapshot.cursor
+            || checkpoint.total !== snapshot.total
+            || checkpoint.now !== snapshot.now
+            || checkpoint.epoch > snapshot.epoch
+            || checkpoint.modelSha256 !== broker.modelSha) {
+            throw new Error('Paper checkpoint does not match replay state');
+        }
+        broker.hydrate(checkpoint);
+        return broker;
     }
 
     modelSha256(): string {
@@ -371,6 +216,25 @@ export class ReplayPaperBroker {
         return Object.freeze(this.factLog.slice(factStart));
     }
 
+    checkpoint(snapshot: ReplaySnapshot): PaperCheckpoint {
+        this.assertBound(snapshot);
+        if (snapshot.status !== 'paused' && snapshot.status !== 'complete') {
+            throw new Error(`${snapshot.status} replay cannot checkpoint paper state`);
+        }
+        const payload: PaperPayload = {
+            contract: paperCheckpointContract,
+            ...this.binding,
+            cursor: this.cursor,
+            total: this.total,
+            now: this.now,
+            model: this.model,
+            modelSha256: this.modelSha,
+            orders: this.orders(),
+            facts: this.facts(),
+        };
+        return createPaperCheckpoint(payload);
+    }
+
     finish(snapshot: ReplaySnapshot): readonly PaperFact[] {
         if (snapshot.runId !== this.binding.runId
             || snapshot.epoch !== this.binding.epoch
@@ -415,10 +279,8 @@ export class ReplayPaperBroker {
             if (available === 0n) break;
             if (!this.priceOk(order, tradePrice)) continue;
             const input = order.remaining < available ? order.remaining : available;
-            const tradeOutput = side === 'buy' ? tokenRaw : quoteRaw;
-            const gross = input * tradeOutput / tradeInput;
-            const fee = this.model.protocolFeeBps === 0 ? 0n
-                : (gross * BigInt(this.model.protocolFeeBps) + bpsBase - 1n) / bpsBase;
+            const gross = grossOf(side, input, tradePrice);
+            const fee = protocolFee(gross, this.model.protocolFeeBps);
             if (gross === 0n || fee >= gross) continue;
             const net = gross - fee;
             const fees: PaperFee[] = [];
@@ -486,7 +348,7 @@ export class ReplayPaperBroker {
         order.factSeq += 1;
         this.factLog.push(Object.freeze({
             contract: paperFactContract,
-            key: `${this.binding.runId}:${this.binding.epoch}:${order.request.id}:${seq}`,
+            key: `${this.binding.sourceReplaySha256}:${this.binding.runId}:${order.request.id}:${seq}`,
             ...this.binding,
             modelSha256: this.modelSha,
             orderId: order.request.id,
@@ -504,6 +366,60 @@ export class ReplayPaperBroker {
         return this.model.latency.clientMs
             + this.model.latency.buildMs
             + this.model.latency.submitMs;
+    }
+
+    private assertBound(snapshot: ReplaySnapshot): void {
+        if (snapshot.runId !== this.binding.runId
+            || snapshot.epoch !== this.binding.epoch
+            || snapshot.sourceReplaySha256 !== this.binding.sourceReplaySha256
+            || snapshot.cursor !== this.cursor
+            || snapshot.total !== this.total
+            || snapshot.now !== this.now) {
+            throw new Error('Paper broker is not bound to replay state');
+        }
+    }
+
+    private hydrate(checkpoint: PaperCheckpoint): void {
+        const factCounts = new Map<string, number>();
+        for (const fact of checkpoint.facts) {
+            factCounts.set(fact.orderId, (factCounts.get(fact.orderId) ?? 0) + 1);
+        }
+        for (const order of checkpoint.orders) {
+            const request = paperOrderSchema.parse(order.kind === 'market' ? {
+                id: order.id,
+                kind: order.kind,
+                side: order.side,
+                tokenMint: order.tokenMint,
+                quoteMint: order.quoteMint,
+                inputRaw: order.inputRaw,
+                reference: order.price,
+            } : {
+                id: order.id,
+                kind: order.kind,
+                side: order.side,
+                tokenMint: order.tokenMint,
+                quoteMint: order.quoteMint,
+                inputRaw: order.inputRaw,
+                limit: order.price,
+            });
+            this.orderMap.set(order.id, {
+                request,
+                price: order.price,
+                placedCursor: order.placedCursor,
+                placedAt: order.placedAt,
+                eligibleMs: order.eligibleAt === null ? null : parseTime(order.eligibleAt),
+                expiresMs: order.expiresAt === null ? null : parseTime(order.expiresAt),
+                status: order.status,
+                remaining: BigInt(order.remainingRaw),
+                filledInput: BigInt(order.filledInputRaw),
+                grossOutput: BigInt(order.grossOutputRaw),
+                netOutput: BigInt(order.netOutputRaw),
+                fixedCharged: order.fills.length > 0,
+                factSeq: factCounts.get(order.id) ?? 0,
+                fills: order.fills.map(cloneFill),
+            });
+        }
+        this.factLog.push(...checkpoint.facts.map(cloneFact));
     }
 
     private requireOrder(id: string): MutableOrder {

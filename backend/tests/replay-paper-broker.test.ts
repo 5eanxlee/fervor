@@ -1,8 +1,11 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { NormalizedTradeEvent } from '../src/types';
 import type { ReplayEvent, ReplaySnapshot } from '../src/services/replay/coordinator';
 import {
     paperModelContract,
+    paperCheckpointContract,
+    parsePaperCheckpoint,
     ReplayPaperBroker,
     type PaperModelInput,
 } from '../src/services/replay/paperBroker';
@@ -85,6 +88,18 @@ const marketBuy = (id: string, inputRaw = '100') => ({
     inputRaw,
     reference: { quoteRaw: '1', tokenRaw: '1' },
 });
+
+const resign = (value: Record<string, unknown>): Record<string, unknown> => {
+    const { checkpointSha256: _prior, ...payload } = value;
+    return {
+        ...payload,
+        checkpointSha256: createHash('sha256')
+            .update(paperCheckpointContract)
+            .update('\0')
+            .update(JSON.stringify(payload))
+            .digest('hex'),
+    };
+};
 
 describe('replay paper broker', () => {
     it('uses only later, eligible, opposite-side trades from the exact pair', () => {
@@ -245,5 +260,45 @@ describe('replay paper broker', () => {
             grossOutputRaw: '2',
             netOutputRaw: '2',
         });
+    });
+
+    it('restores one economic history with stable keys under a new replay epoch', () => {
+        const config = model({
+            participationBps: 5_000,
+            priceGuardBps: 0,
+            protocolFeeBps: 100,
+            fixedFees: [{ kind: 'network', mint: quoteMint, amountRaw: '5' }],
+        });
+        const original = new ReplayPaperBroker(snapshot(), config);
+        original.place(marketBuy('crash-safe'));
+        const first = tradeEvent(0, 0, 'sell', '100', '100');
+        original.apply(first);
+        const atOne = snapshot({ cursor: 1, now: first.trade.observedAt });
+        const saved = original.checkpoint(atOne);
+        const portable = JSON.parse(JSON.stringify(saved));
+        expect(parsePaperCheckpoint(portable)).toEqual(saved);
+
+        const restored = ReplayPaperBroker.restore({ ...atOne, epoch: 2 }, portable, config);
+        const next = tradeEvent(1, 1, 'sell', '100', '100');
+        original.apply(next);
+        restored.apply({ ...next, epoch: 2 });
+
+        expect(restored.orders()).toEqual(original.orders());
+        expect(restored.facts().map(({ key, kind, fill }) => ({ key, kind, fill })))
+            .toEqual(original.facts().map(({ key, kind, fill }) => ({ key, kind, fill })));
+        expect(restored.facts().map((fact) => fact.epoch)).toEqual([1, 1, 1, 2, 2]);
+        expect(restored.order('crash-safe').fills.flatMap((fill) => fill.fees)
+            .filter((fee) => fee.kind === 'network')).toHaveLength(1);
+
+        const badTotal = JSON.parse(JSON.stringify(saved));
+        badTotal.orders[0].remainingRaw = '49';
+        expect(() => ReplayPaperBroker.restore({ ...atOne, epoch: 2 }, resign(badTotal), config))
+            .toThrow('order totals');
+
+        const badPriceMath = JSON.parse(JSON.stringify(saved));
+        badPriceMath.orders[0].fills[0].grossOutputRaw = '51';
+        expect(() => ReplayPaperBroker.restore(
+            { ...atOne, epoch: 2 }, resign(badPriceMath), config
+        )).toThrow('fill is invalid');
     });
 });
