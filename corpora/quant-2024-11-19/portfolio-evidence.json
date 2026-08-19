@@ -1,0 +1,102 @@
+{
+  "schema": "fervor-replay-portfolio-evidence-v1",
+  "recordedAt": "2026-08-19T05:15:08Z",
+  "runtimeCommit": "ddd8be276537f423a8a1e900a84a920be46422dc",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a",
+    "machine": "n2-standard-16"
+  },
+  "image": {
+    "manifestSha256": "503d8a0f295803546182a892ebda0efd122cb5108a675287037b2acf391b5c81",
+    "configSha256": "208efd424348b8267c3ce9b3110db7e04505d033bfe2b7e1ea9b20b4f4a1b080"
+  },
+  "source": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "events": 5516
+  },
+  "model": {
+    "fileSha256": "1a3c8607858d512b9eab846b48abc4c4adb9065fb3bb04911275fb2451acdfd5",
+    "modelSha256": "dc2bd54f846c381e4fae270858566670be5308cea23b1b43e6c6db075df11bbf"
+  },
+  "run": {
+    "runId": "portfolio-gcp",
+    "cursor": 60,
+    "now": "2024-11-20T03:49:32.000Z",
+    "orderCount": 1,
+    "factCount": 4,
+    "fillCount": 1,
+    "checkpoint": {
+      "seq": 0,
+      "sessionSha256": "8a6256ccd612e9ce5cd5be1597636d06c198ef54a78e3a8aca39fb457fdba080",
+      "paperSha256": "dc38436a1052ee0750b1c837a8dba1171c21a975f20e5f71f87c244e696e56f2",
+      "fileSha256": "39b4264c3e8c776aa4d6bf36cfa38bf933d9a3eb8d14351ce70e406994c80bb0",
+      "fileBytes": 51997
+    }
+  },
+  "portfolio": {
+    "contract": "fervor-paper-portfolio-v1",
+    "portfolioSha256": "5823629fa14a70435c6d51baf17ba5bde0750297cf7a3fa9ab8b8f01a77c1be2",
+    "basisComplete": true,
+    "netFlows": [
+      {
+        "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+        "netRaw": "168671945910"
+      },
+      {
+        "mint": "So11111111111111111111111111111111111111112",
+        "netRaw": "-10005000"
+      }
+    ],
+    "feeTotals": [
+      {
+        "kind": "network",
+        "mint": "So11111111111111111111111111111111111111112",
+        "amountRaw": "5000"
+      },
+      {
+        "kind": "protocol",
+        "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+        "amountRaw": "1703757030"
+      }
+    ],
+    "positions": [
+      {
+        "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+        "quoteMint": "So11111111111111111111111111111111111111112",
+        "openQuantityRaw": "168671945910",
+        "openCostRaw": "10000000",
+        "realizedPnlRaw": "0",
+        "unmatchedSoldRaw": "0",
+        "basisComplete": true
+      }
+    ]
+  },
+  "coldRecovery": {
+    "container": "portfolio-gcp-b",
+    "epoch": 2,
+    "cursor": 60,
+    "orderCount": 1,
+    "factCount": 4,
+    "portfolioSha256": "5823629fa14a70435c6d51baf17ba5bde0750297cf7a3fa9ab8b8f01a77c1be2"
+  },
+  "tests": {
+    "build": true,
+    "backendFilesPassed": 54,
+    "backendFilesSkipped": 14,
+    "backendTestsPassed": 352,
+    "backendTestsSkipped": 60,
+    "compose": true
+  },
+  "result": {
+    "fillFactAuthority": true,
+    "signedNetFlows": true,
+    "separateFeeAttribution": true,
+    "fifoBasis": true,
+    "coldDigestMatch": true,
+    "secondDurableLedger": false,
+    "liveTransactionSubmitted": false
+  }
+}
