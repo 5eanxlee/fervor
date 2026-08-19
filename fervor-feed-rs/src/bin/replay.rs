@@ -3,7 +3,9 @@ use clap::Parser;
 use fervor_feed_rs::{
     archive::{verify_extract, ExtractManifest},
     fervor_tx::{Network, Quarantine},
-    fx::{decode_fx, FX_CONTRACT, FX_POLICY, FX_POOLS},
+    fx::{
+        build_fx_tape, decode_fx, FxObservation, FX_CONTRACT, FX_POLICY, FX_POOLS, FX_TAPE_CONTRACT,
+    },
     market_decoder::decode_swap,
     old_faithful::{ArchiveReader, OldFaithfulAdapter},
     pump::{
@@ -19,13 +21,14 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SCHEMA: &str = "fervor-replay-v4";
+const SCHEMA: &str = "fervor-replay-v5";
 const TX_FILE: &str = "transactions.ndjson";
 const SWAP_FILE: &str = "swaps.ndjson";
 const PUMP_FILE: &str = "pump-events.ndjson";
 const STATE_FILE: &str = "pump-state.json";
 const SUPPLY_FILE: &str = "supply.json";
 const FX_FILE: &str = "fx-observations.ndjson";
+const FX_TAPE_FILE: &str = "fx-tape.ndjson";
 
 #[derive(Debug, Parser)]
 #[command(name = "fervor-replay")]
@@ -74,6 +77,10 @@ struct ReplayManifest {
     fx_observations: u64,
     fx_file: &'static str,
     fx_sha256: String,
+    fx_tape_contract: &'static str,
+    fx_tape_buckets: u64,
+    fx_tape_file: &'static str,
+    fx_tape_sha256: String,
     replay_sha256: String,
 }
 
@@ -134,6 +141,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     let mut swap_out = Output::new(&out.join(SWAP_FILE))?;
     let mut pump_out = Output::new(&out.join(PUMP_FILE))?;
     let mut fx_out = Output::new(&out.join(FX_FILE))?;
+    let mut fx_tape_out = Output::new(&out.join(FX_TAPE_FILE))?;
     let mut blocks = 0_u64;
     let mut transactions = 0_u64;
     let mut matched = 0_u64;
@@ -141,6 +149,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     let mut pump_count = 0_u64;
     let mut fx_count = 0_u64;
     let mut pump_events = Vec::<PumpEvent>::new();
+    let mut fx_events = Vec::<FxObservation>::new();
     let mut supply = None::<SupplyEvidence>;
     let mut first_slot = None;
     let mut last_slot = None;
@@ -166,6 +175,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
                 {
                     fx_count = checked_count(fx_count, "FX observation")?;
                     fx_out.write_json(&observation)?;
+                    fx_events.push(observation);
                 }
             }
             if !mint_match {
@@ -227,10 +237,17 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     {
         bail!("supply contract differs from reconstructed Pump state");
     }
+    let fx_tape =
+        build_fx_tape(&fx_events).map_err(|detail| anyhow!("FX tape rejected replay: {detail}"))?;
+    let fx_tape_buckets = u64::try_from(fx_tape.len()).context("FX tape count overflow")?;
+    for point in &fx_tape {
+        fx_tape_out.write_json(point)?;
+    }
     let transaction_sha256 = tx_out.finish()?;
     let swap_sha256 = swap_out.finish()?;
     let pump_event_sha256 = pump_out.finish()?;
     let fx_sha256 = fx_out.finish()?;
+    let fx_tape_sha256 = fx_tape_out.finish()?;
     let pump_state_sha256 = write_json(&out.join(STATE_FILE), &pump_state)?;
     let supply_sha256 = write_json(&out.join(SUPPLY_FILE), &supply)?;
     let replay_sha256 = replay_hash(&[
@@ -240,6 +257,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         &pump_state_sha256,
         &supply_sha256,
         &fx_sha256,
+        &fx_tape_sha256,
     ]);
     let manifest = ReplayManifest {
         schema: SCHEMA,
@@ -276,6 +294,10 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         fx_observations: fx_count,
         fx_file: FX_FILE,
         fx_sha256,
+        fx_tape_contract: FX_TAPE_CONTRACT,
+        fx_tape_buckets,
+        fx_tape_file: FX_TAPE_FILE,
+        fx_tape_sha256,
         replay_sha256,
     };
     let mut bytes = serde_json::to_vec_pretty(&manifest)?;
