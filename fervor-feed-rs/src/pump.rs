@@ -1,8 +1,8 @@
-//! Strict Pump lifecycle events derived from canonical Anchor self-CPI records.
+//! Strict legacy Pump lifecycle events derived from canonical Anchor self-CPI records.
 //!
-//! The v1 layout matches the official Pump IDL at revision
-//! `df5013e0f9253aa8039300964f1e0076da90c83d`. Known events with any other
-//! layout fail closed instead of being decoded as plausible market state.
+//! This layout is pinned to the November 2024 chain frames in Fervor's qualified
+//! corpus. The first public Pump IDL later included an additional `creator` field
+//! in `CreateEvent`; this decoder deliberately rejects that newer shape.
 
 use crate::fervor_tx::{
     opt_u64_text, u64_text, FervorTx, Quarantine, QuarantineReason, SourceError, TxIx,
@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::str;
 
 pub const PUMP_PROGRAM: &str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
-pub const PUMP_LAYOUT: &str = "pump-event-v1";
-pub const PUMP_IDL_REV: &str = "df5013e0f9253aa8039300964f1e0076da90c83d";
+pub const PUMP_LAYOUT: &str = "pump-event-2024-11-v1";
 
 const TOKEN_PROGRAM: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const SELF_CPI: [u8; 8] = [228, 69, 165, 46, 81, 203, 154, 29];
@@ -66,7 +65,6 @@ pub struct PumpCreate {
     pub mint: String,
     pub bonding_curve: String,
     pub user: String,
-    pub creator: String,
     pub timestamp: i64,
     pub decimals: u32,
     #[serde(with = "u64_text")]
@@ -136,14 +134,12 @@ pub enum PumpPhase {
 pub struct PumpState {
     pub version: u16,
     pub layout: String,
-    pub idl_revision: String,
     pub mint: String,
     pub name: String,
     pub symbol: String,
     pub uri: String,
     pub bonding_curve: String,
     pub deployer: String,
-    pub creator: String,
     pub decimals: u32,
     #[serde(with = "u64_text")]
     pub supply_raw: u64,
@@ -209,14 +205,12 @@ impl PumpState {
                     state = Some(Self {
                         version: VERSION,
                         layout: PUMP_LAYOUT.to_string(),
-                        idl_revision: PUMP_IDL_REV.to_string(),
                         mint: create.mint.clone(),
                         name: create.name.clone(),
                         symbol: create.symbol.clone(),
                         uri: create.uri.clone(),
                         bonding_curve: create.bonding_curve.clone(),
                         deployer: create.user.clone(),
-                        creator: create.creator.clone(),
                         decimals: create.decimals,
                         supply_raw: create.supply_raw,
                         supply_fixed: true,
@@ -420,7 +414,6 @@ fn parse_create(
     let mint = input.pubkey("mint")?;
     let bonding_curve = input.pubkey("bonding curve")?;
     let user = input.pubkey("user")?;
-    let creator = input.pubkey("creator")?;
     let timestamp = input.i64("timestamp")?;
     input.finish("create")?;
     let evidence = mint_evidence(tx, keys, outer, &mint)?;
@@ -431,7 +424,6 @@ fn parse_create(
         mint,
         bonding_curve,
         user,
-        creator,
         timestamp,
         decimals: evidence.decimals,
         supply_raw: evidence.supply_raw,
@@ -738,7 +730,6 @@ mod tests {
         let mint = bytes(2);
         let curve = bytes(3);
         let user = bytes(4);
-        let creator = bytes(5);
 
         let mut create = Vec::new();
         push_string(&mut create, "QUANT");
@@ -747,7 +738,6 @@ mod tests {
         create.extend_from_slice(&mint);
         create.extend_from_slice(&curve);
         create.extend_from_slice(&user);
-        create.extend_from_slice(&creator);
         create.extend_from_slice(&1_732_076_908_i64.to_le_bytes());
 
         let mut trade = Vec::new();
@@ -889,6 +879,29 @@ mod tests {
             })
             .unwrap();
         trade.data.push(0);
+        assert!(matches!(
+            decode_pump_events(&tx),
+            Err(Quarantine {
+                reason: QuarantineReason::UnsupportedWire,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn rejects_create_event_with_newer_creator_field() {
+        let mut tx = sample();
+        let create = tx
+            .instructions
+            .iter_mut()
+            .find(|ix| {
+                ix.data
+                    .starts_with(&[SELF_CPI.as_slice(), CREATE_EVENT.as_slice()].concat())
+            })
+            .unwrap();
+        let timestamp = create.data.split_off(create.data.len() - 8);
+        create.data.extend_from_slice(&bytes(5));
+        create.data.extend_from_slice(&timestamp);
         assert!(matches!(
             decode_pump_events(&tx),
             Err(Quarantine {

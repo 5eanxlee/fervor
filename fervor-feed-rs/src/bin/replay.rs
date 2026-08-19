@@ -5,7 +5,7 @@ use fervor_feed_rs::{
     fervor_tx::{Network, Quarantine},
     market_decoder::decode_swap,
     old_faithful::{ArchiveReader, OldFaithfulAdapter},
-    pump::{decode_pump_events, PumpEvent, PumpState, PUMP_IDL_REV, PUMP_LAYOUT},
+    pump::{decode_pump_events, PumpEvent, PumpState, PUMP_LAYOUT},
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -55,7 +55,6 @@ struct ReplayManifest {
     swap_file: &'static str,
     swap_sha256: String,
     pump_layout: &'static str,
-    pump_idl_revision: &'static str,
     pump_events: u64,
     pump_event_file: &'static str,
     pump_event_sha256: String,
@@ -212,7 +211,6 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         swap_file: SWAP_FILE,
         swap_sha256,
         pump_layout: PUMP_LAYOUT,
-        pump_idl_revision: PUMP_IDL_REV,
         pump_events: pump_count,
         pump_event_file: PUMP_FILE,
         pump_event_sha256,
