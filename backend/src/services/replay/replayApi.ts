@@ -101,7 +101,7 @@ interface ApiEnvelope {
     readonly data: unknown;
 }
 
-const sessionId = (value: z.infer<typeof authSchema>): string => createHash('sha256')
+export const replayApiSessionId = (value: z.infer<typeof authSchema>): string => createHash('sha256')
     .update(replayApiAuthContract)
     .update('\0')
     .update(value.sourceReplaySha256)
@@ -120,7 +120,7 @@ export const normalizeReplayApiAuth = (
         || input.runId !== snapshot.runId) {
         throw new Error('Replay API auth does not match its run');
     }
-    return Object.freeze({ ...input, sessionId: sessionId(input) });
+    return Object.freeze({ ...input, sessionId: replayApiSessionId(input) });
 };
 
 const identityOf = (snapshot: ReplaySnapshot): CutIdentity => ({

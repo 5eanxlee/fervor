@@ -15,6 +15,7 @@ import notificationDeliveryRoutes from './routes/notificationDeliveries';
 import executionRoutes from './routes/execution';
 import orderRoutes from './routes/orders';
 import walletRoutes from './routes/wallets';
+import replayRoutes from './routes/replay';
 import { env, isProduction } from './config/env';
 import { standardLimiter } from './middleware/rateLimits';
 import { metrics } from './services/metrics';
@@ -112,6 +113,7 @@ app.use('/api/stream', streamRoutes);
 app.use('/api/execution', executionRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/wallets', walletRoutes);
+app.use('/api/replay/v1', replayRoutes);
 
 // Global error handler
 app.use((error: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

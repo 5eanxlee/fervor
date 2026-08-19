@@ -41,6 +41,13 @@ const optionalText = z.preprocess((value) => {
     return trimmed === '' ? undefined : trimmed;
 }, z.string().min(1).optional());
 
+const optionalPath = z.preprocess((value) => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed;
+}, z.string().refine(path.isAbsolute, 'Path must be absolute').optional());
+
 const optionalDatabaseUrl = z.preprocess((value) => {
     if (value === undefined || value === null) return undefined;
     if (typeof value !== 'string') return value;
@@ -126,6 +133,12 @@ const EnvSchema = z.object({
     JWT_SECRET: requiredSecret('JWT_SECRET'),
     AUTH_USER_CACHE_TTL_SEC: z.coerce.number().int().min(5).max(3600).default(60),
     FRONTEND_URL: z.string().url().default('http://localhost:3002'),
+    REPLAY_API_SOCKET: optionalPath,
+    REPLAY_API_AUTH_FILE: optionalPath,
+    REPLAY_API_TOKEN_FILE: optionalPath,
+    REPLAY_API_USER_ID: z.string().uuid().optional(),
+    REPLAY_API_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(3_000),
+    REPLAY_API_MAX_BYTES: z.coerce.number().int().min(16_384).max(16_777_216).default(2_097_152),
     HELIUS_API_KEY: optionalProviderSecret,
     HELIUS_API_URL: z.string().url().default('https://mainnet.helius-rpc.com'),
     LATENCY_SAMPLE_RATE: z.coerce.number().min(0).max(1).optional(),
@@ -234,6 +247,20 @@ const EnvSchema = z.object({
     const marketPoolMin = value.MARKET_DB_POOL_MIN ?? value.DB_POOL_MIN ?? 0;
     const egressPoolMax = value.EGRESS_DB_POOL_MAX ?? 4;
     const egressPoolMin = value.EGRESS_DB_POOL_MIN ?? 0;
+    const replay = [
+        value.REPLAY_API_SOCKET,
+        value.REPLAY_API_AUTH_FILE,
+        value.REPLAY_API_TOKEN_FILE,
+        value.REPLAY_API_USER_ID,
+    ];
+
+    if (replay.some(Boolean) && !replay.every(Boolean)) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['REPLAY_API_SOCKET'],
+            message: 'Replay API socket, auth file, token file, and user ID must be configured together',
+        });
+    }
 
     if (!coreUrl) {
         ctx.addIssue({
