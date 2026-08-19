@@ -5,6 +5,14 @@ import type { ReplaySnapshot } from './coordinator';
 
 export const replayWalletTradeContract = 'fervor-replay-wallet-trade-v1' as const;
 export const replayWalletPageContract = 'fervor-replay-wallet-page-v1' as const;
+export const replayWalletCoverage = Object.freeze({
+    source: 'verified_trade_tape',
+    scope: 'trade_only',
+    history: 'selected_window',
+    historyComplete: false,
+    balanceComplete: false,
+    feeComplete: false,
+} as const);
 
 export interface ReplayWalletTrade {
     readonly contract: typeof replayWalletTradeContract;
@@ -45,14 +53,7 @@ export interface ReplayWalletPage {
     readonly windowStart: string | null;
     readonly windowEnd: string | null;
     readonly cutAt: string | null;
-    readonly coverage: {
-        readonly source: 'verified_trade_tape';
-        readonly scope: 'trade_only';
-        readonly history: 'selected_window';
-        readonly historyComplete: false;
-        readonly balanceComplete: false;
-        readonly feeComplete: false;
-    };
+    readonly coverage: typeof replayWalletCoverage;
     readonly items: readonly ReplayWalletTrade[];
 }
 
@@ -145,14 +146,7 @@ export const replayWalletPage = (
         windowStart: trades[0]?.observedAt ?? null,
         windowEnd: trades.at(-1)?.observedAt ?? null,
         cutAt: snapshot.now,
-        coverage: Object.freeze({
-            source: 'verified_trade_tape',
-            scope: 'trade_only',
-            history: 'selected_window',
-            historyComplete: false,
-            balanceComplete: false,
-            feeComplete: false,
-        }),
+        coverage: replayWalletCoverage,
         items: Object.freeze(items),
     });
 };

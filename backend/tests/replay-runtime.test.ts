@@ -205,6 +205,7 @@ describe('replay runtime', () => {
         runtime.step();
         runtime.step();
         const page = runtime.walletTrades(trackedWallet);
+        const portfolio = runtime.walletPortfolio(trackedWallet);
         expect(page).toMatchObject({
             cutCursor: 2,
             nextCursor: 2,
@@ -221,11 +222,22 @@ describe('replay runtime', () => {
             source, 'wallet-runtime', store, sessions, paperModel
         );
         expect(restored.walletTrades(trackedWallet).items).toEqual(page.items);
+        expect(restored.walletPortfolio(trackedWallet)).toEqual({
+            ...portfolio,
+            epoch: 2,
+        });
         await restored.seek(0);
         expect(restored.walletTrades(trackedWallet)).toMatchObject({
             cutCursor: 0,
             nextCursor: 0,
             items: [],
+        });
+        expect(restored.walletPortfolio(trackedWallet)).toMatchObject({
+            cutCursor: 0,
+            tradeCount: 0,
+            observedBasisComplete: true,
+            netFlows: [],
+            positions: [],
         });
     });
 });

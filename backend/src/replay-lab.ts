@@ -30,6 +30,7 @@ const commandSchema = z.discriminatedUnion('op', [
     z.object({ id: requestId, op: z.literal('place'), order: paperOrderSchema }).strict(),
     z.object({ id: requestId, op: z.literal('cancel'), orderId }).strict(),
     z.object({ id: requestId, op: z.literal('portfolio') }).strict(),
+    z.object({ id: requestId, op: z.literal('wallet_portfolio'), wallet: addressSchema }).strict(),
     z.object({
         id: requestId,
         op: z.literal('wallet_trades'),
@@ -153,6 +154,11 @@ const main = async (): Promise<void> => {
             }
             if (command.op === 'portfolio') {
                 return success(command, runtime.state(), { portfolio: runtime.portfolio() });
+            }
+            if (command.op === 'wallet_portfolio') {
+                return success(command, runtime.state(), {
+                    portfolio: runtime.walletPortfolio(command.wallet),
+                });
             }
             if (command.op === 'wallet_trades') {
                 return success(command, runtime.state(), {

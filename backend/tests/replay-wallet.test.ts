@@ -6,6 +6,10 @@ import {
     replayWalletPageContract,
     replayWalletTradeContract,
 } from '../src/services/replay/replayWallet';
+import {
+    projectWalletPortfolio,
+    walletPortfolioContract,
+} from '../src/services/replay/walletPortfolio';
 import { replayMint, replayQuoteMint, replaySha, replayTape } from './helpers/replayTape';
 
 const wallet = '7Zb1d7t2S9Bkv8G6gPKZQdgs7Qk1HSA1xY5g7uEczwzE';
@@ -29,6 +33,21 @@ const snapshot = (epoch = 1): ReplaySnapshot => ({
     status: 'complete',
     now: '2024-11-19T00:00:30.000Z',
 });
+
+const portfolioTrades = (): NormalizedTradeEvent[] => {
+    const source = trades();
+    const makers = [wallet, replayMint, wallet, replayMint];
+    const sides = ['buy', 'sell', 'sell', 'buy'] as const;
+    const tokenRaw = ['100', '10', '40', '10'];
+    const quoteRaw = ['200', '30', '120', '50'];
+    return source.map((trade, cursor) => ({
+        ...trade,
+        maker: makers[cursor],
+        side: sides[cursor],
+        tokenAmountRaw: tokenRaw[cursor],
+        quoteAmountRaw: quoteRaw[cursor],
+    }));
+};
 
 describe('replay wallet activity', () => {
     it('pages exact maker trades with signed raw deltas and explicit coverage', () => {
@@ -79,5 +98,85 @@ describe('replay wallet activity', () => {
             .toThrow('page is invalid');
         expect(() => replayWalletPage(snapshot(), source, wallet, 0, 501))
             .toThrow('page is invalid');
+    });
+
+    it('derives observed FIFO basis and a last-trade mark without claiming history', () => {
+        expect(projectWalletPortfolio(snapshot(), portfolioTrades(), wallet)).toMatchObject({
+            contract: walletPortfolioContract,
+            tradeCount: 2,
+            buyCount: 1,
+            sellCount: 1,
+            observedBasisComplete: true,
+            coverage: {
+                basisPolicy: 'observed_fifo',
+                historyComplete: false,
+                balanceComplete: false,
+                openingBalanceKnown: false,
+                transferComplete: false,
+            },
+            netFlows: expect.arrayContaining([
+                { mint: replayMint, netRaw: '60' },
+                { mint: replayQuoteMint, netRaw: '-80' },
+            ]),
+            positions: [{
+                acquiredRaw: '100',
+                soldRaw: '40',
+                coveredSoldRaw: '40',
+                unmatchedSoldRaw: '0',
+                soldBasisCoverageBps: 10_000,
+                openQuantityRaw: '60',
+                openCostRaw: '120',
+                realizedPnlRaw: '40',
+                markPolicy: 'last_trade_ratio',
+                markCursor: 3,
+                markValueRaw: '300',
+                unrealizedPnlRaw: '180',
+                observedBasisComplete: true,
+            }],
+        });
+    });
+
+    it('separates unmatched sales from covered basis', () => {
+        const source = portfolioTrades();
+        source[0] = {
+            ...source[0],
+            side: 'sell',
+            tokenAmountRaw: '30',
+            quoteAmountRaw: '90',
+        };
+        source[1] = {
+            ...source[1],
+            maker: wallet,
+            side: 'buy',
+            tokenAmountRaw: '100',
+            quoteAmountRaw: '200',
+        };
+        source[2] = {
+            ...source[2],
+            tokenAmountRaw: '20',
+            quoteAmountRaw: '60',
+        };
+
+        expect(projectWalletPortfolio(snapshot(), source, wallet)).toMatchObject({
+            tradeCount: 3,
+            observedBasisComplete: false,
+            netFlows: expect.arrayContaining([
+                { mint: replayMint, netRaw: '50' },
+                { mint: replayQuoteMint, netRaw: '-50' },
+            ]),
+            positions: [{
+                acquiredRaw: '100',
+                soldRaw: '50',
+                coveredSoldRaw: '20',
+                unmatchedSoldRaw: '30',
+                soldBasisCoverageBps: 4_000,
+                openQuantityRaw: '80',
+                openCostRaw: '160',
+                realizedPnlRaw: '20',
+                markValueRaw: '400',
+                unrealizedPnlRaw: '240',
+                observedBasisComplete: false,
+            }],
+        });
     });
 });

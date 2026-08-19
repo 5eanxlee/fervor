@@ -4,6 +4,7 @@ import {
     type PaperFee,
     type PaperOrder,
 } from './paperTypes';
+import { FifoBasis } from './fifoBasis';
 
 export const paperPortfolioContract = 'fervor-paper-portfolio-v1' as const;
 
@@ -49,20 +50,10 @@ export interface PaperPortfolio {
     readonly portfolioSha256: string;
 }
 
-interface Lot {
-    quantity: bigint;
-    cost: bigint;
-}
-
 interface MutablePosition {
     readonly tokenMint: string;
     readonly quoteMint: string;
-    readonly lots: Lot[];
-    head: number;
-    openQuantity: bigint;
-    openCost: bigint;
-    realized: bigint;
-    unmatched: bigint;
+    readonly basis: FifoBasis;
 }
 
 type PortfolioPayload = Omit<PaperPortfolio, 'portfolioSha256'>;
@@ -73,38 +64,18 @@ const add = (totals: Map<string, bigint>, key: string, value: bigint): void => {
     totals.set(key, (totals.get(key) ?? 0n) + value);
 };
 
-const consume = (position: MutablePosition, requested: bigint): {
-    readonly quantity: bigint;
-    readonly cost: bigint;
-} => {
-    let remaining = requested;
-    let quantity = 0n;
-    let cost = 0n;
-    while (remaining > 0n && position.head < position.lots.length) {
-        const lot = position.lots[position.head];
-        const taken = remaining < lot.quantity ? remaining : lot.quantity;
-        const takenCost = taken === lot.quantity ? lot.cost : lot.cost * taken / lot.quantity;
-        remaining -= taken;
-        quantity += taken;
-        cost += takenCost;
-        lot.quantity -= taken;
-        lot.cost -= takenCost;
-        if (lot.quantity === 0n) position.head += 1;
-    }
-    position.openQuantity -= quantity;
-    position.openCost -= cost;
-    return { quantity, cost };
+const positionView = (position: MutablePosition): PaperPosition => {
+    const basis = position.basis.state();
+    return Object.freeze({
+        tokenMint: position.tokenMint,
+        quoteMint: position.quoteMint,
+        openQuantityRaw: basis.openQuantity.toString(),
+        openCostRaw: basis.openCost.toString(),
+        realizedPnlRaw: basis.realized.toString(),
+        unmatchedSoldRaw: basis.unmatchedSold.toString(),
+        basisComplete: basis.unmatchedSold === 0n,
+    });
 };
-
-const positionView = (position: MutablePosition): PaperPosition => Object.freeze({
-    tokenMint: position.tokenMint,
-    quoteMint: position.quoteMint,
-    openQuantityRaw: position.openQuantity.toString(),
-    openCostRaw: position.openCost.toString(),
-    realizedPnlRaw: position.realized.toString(),
-    unmatchedSoldRaw: position.unmatched.toString(),
-    basisComplete: position.unmatched === 0n,
-});
 
 const digest = (payload: PortfolioPayload): string => createHash('sha256')
     .update(paperPortfolioContract)
@@ -154,25 +125,14 @@ export const projectPaperPortfolio = (
         const position = positions.get(positionKey) ?? {
             tokenMint: order.tokenMint,
             quoteMint: order.quoteMint,
-            lots: [],
-            head: 0,
-            openQuantity: 0n,
-            openCost: 0n,
-            realized: 0n,
-            unmatched: 0n,
+            basis: new FifoBasis(),
         };
         positions.set(positionKey, position);
         if (buy) {
-            position.lots.push({ quantity: output, cost: input });
-            position.openQuantity += output;
-            position.openCost += input;
+            position.basis.buy(output, input);
             continue;
         }
-
-        const consumed = consume(position, input);
-        const proceeds = output * consumed.quantity / input;
-        position.realized += proceeds - consumed.cost;
-        position.unmatched += input - consumed.quantity;
+        position.basis.sell(input, output);
     }
 
     const netFlows = Object.freeze([...flows.entries()]

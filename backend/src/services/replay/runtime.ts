@@ -22,6 +22,10 @@ import {
 } from './replayWallet';
 import { ReplayScheduler } from './scheduler';
 import { createReplaySession } from './sessionCheckpoint';
+import {
+    projectWalletPortfolio,
+    type WalletPortfolio,
+} from './walletPortfolio';
 
 const deniedEnv = [
     'ALLOW_LIVE_SUBMISSION',
@@ -256,6 +260,10 @@ export class ReplayRuntime {
         return replayWalletPage(
             this.coordinator.snapshot(), this.trades, wallet, afterCursor, limit
         );
+    }
+
+    walletPortfolio(wallet: unknown): WalletPortfolio {
+        return projectWalletPortfolio(this.coordinator.snapshot(), this.trades, wallet);
     }
 
     async stop(): Promise<ReplayState> {
