@@ -114,7 +114,11 @@ const legacyCardinality = (value: unknown, limit: number): Cardinality => {
 export class RollingMetricBook {
     private readonly windows = emptyWindows();
 
-    constructor(readonly tokenMint: string, private revision = 0) {}
+    constructor(readonly tokenMint: string, private revision = 0) {
+        if (tokenMint.length === 0 || tokenMint.length > 128 || !safeCount(revision)) {
+            throw new Error('Invalid rolling metric identity');
+        }
+    }
 
     static hydrate(value: unknown): RollingMetricBook {
         const snapshot = recordOf(value);
@@ -187,13 +191,31 @@ export class RollingMetricBook {
     }
 
     add(trade: NormalizedTradeEvent, nowMs: number): boolean {
-        if (trade.tokenMint !== this.tokenMint) return false;
+        if (trade.tokenMint !== this.tokenMint
+            || (trade.side !== 'buy' && trade.side !== 'sell')
+            || (trade.maker !== undefined && (typeof trade.maker !== 'string'
+                || trade.maker.length === 0
+                || trade.maker.length > 256))
+            || !safeTime(nowMs)) {
+            return false;
+        }
         const observedMs = Date.parse(trade.observedAt);
-        if (!Number.isFinite(observedMs)) return false;
+        if (!safeTime(observedMs)) return false;
         if (observedMs > nowMs + 30_000 || observedMs <= nowMs - ROLLING_WINDOWS_MS['24h']) return false;
-        const volumeMicroUsd = Math.round((trade.usdAmount || 0) * 1_000_000);
+        const volumeMicroUsd = Math.round((trade.usdAmount ?? 0) * 1_000_000);
         if (!Number.isSafeInteger(volumeMicroUsd) || volumeMicroUsd < 0) return false;
 
+        if (this.revision === Number.MAX_SAFE_INTEGER) return false;
+        for (const name of windowNames) {
+            const startMs = Math.floor(observedMs / BUCKET_MS[name]) * BUCKET_MS[name];
+            const bucket = this.windows[name].get(startMs);
+            if (bucket && (!Number.isSafeInteger(bucket.volumeMicroUsd + volumeMicroUsd)
+                || bucket.txCount === Number.MAX_SAFE_INTEGER
+                || (trade.side === 'buy' && bucket.buyCount === Number.MAX_SAFE_INTEGER)
+                || (trade.side === 'sell' && bucket.sellCount === Number.MAX_SAFE_INTEGER))) {
+                return false;
+            }
+        }
         for (const name of windowNames) {
             const bucketMs = BUCKET_MS[name];
             const startMs = Math.floor(observedMs / bucketMs) * bucketMs;
@@ -210,9 +232,7 @@ export class RollingMetricBook {
                 };
                 this.windows[name].set(startMs, bucket);
             }
-            const nextVolume = bucket.volumeMicroUsd + volumeMicroUsd;
-            if (!Number.isSafeInteger(nextVolume)) return false;
-            bucket.volumeMicroUsd = nextVolume;
+            bucket.volumeMicroUsd += volumeMicroUsd;
             bucket.txCount += 1;
             if (trade.side === 'buy') {
                 bucket.buyCount += 1;

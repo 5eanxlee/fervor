@@ -50,7 +50,21 @@ describe('RollingMetricBook', () => {
         const book = new RollingMetricBook('token-a');
         expect(book.add(trade(31_000, 'buy', 'wallet-a'), nowMs)).toBe(false);
         expect(book.add(trade(-(24 * 60 * 60 * 1000 + 1), 'buy', 'wallet-a'), nowMs)).toBe(false);
+        expect(book.add({ ...trade(-1_000, 'buy', 'wallet-a'), side: undefined }, nowMs)).toBe(false);
+        expect(book.add({ ...trade(-1_000, 'buy', 'wallet-a'), usdAmount: Number.NaN }, nowMs)).toBe(false);
         expect(book.metrics(nowMs).txCount['24h']).toBe(0);
+    });
+
+    it('rejects an overflowing trade without partially updating windows', () => {
+        const book = new RollingMetricBook('token-a');
+        book.add(trade(-1_000, 'buy', 'wallet-a', 1), nowMs);
+        const stored = book.serialize();
+        stored.windows['5m'][0].volumeMicroUsd = Number.MAX_SAFE_INTEGER;
+        const restored = RollingMetricBook.hydrate(stored);
+        const before = restored.serialize();
+
+        expect(restored.add(trade(-2_000, 'buy', 'wallet-b', 1), nowMs)).toBe(false);
+        expect(restored.serialize()).toEqual(before);
     });
 
     it('uses fixed-point volume and bounded cardinality sketches', () => {

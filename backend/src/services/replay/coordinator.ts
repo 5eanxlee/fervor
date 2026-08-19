@@ -33,6 +33,45 @@ export interface ReplayCut {
     readonly prefixSha256: string;
 }
 
+export interface ReplayHead {
+    readonly cut: ReplayCut;
+    readonly tradeId: string | null;
+    readonly usdTradeId: string | null;
+    readonly solTradeId: string | null;
+}
+
+const hashPattern = /^[0-9a-f]{64}$/;
+
+export const parseReplayCut = (value: unknown): ReplayCut => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Replay cut is invalid');
+    }
+    const cut = value as Record<string, unknown>;
+    const keys = ['contract', 'sourceReplaySha256', 'cursor', 'now', 'prefixSha256'];
+    const validTime = cut.now === null || (typeof cut.now === 'string'
+        && Number.isFinite(Date.parse(cut.now))
+        && new Date(Date.parse(cut.now)).toISOString() === cut.now);
+    if (Object.keys(cut).length !== keys.length
+        || keys.some((key) => !Object.prototype.hasOwnProperty.call(cut, key))
+        || cut.contract !== replayCutContract
+        || typeof cut.sourceReplaySha256 !== 'string'
+        || !hashPattern.test(cut.sourceReplaySha256)
+        || !Number.isSafeInteger(cut.cursor)
+        || (cut.cursor as number) < 0
+        || !validTime
+        || typeof cut.prefixSha256 !== 'string'
+        || !hashPattern.test(cut.prefixSha256)) {
+        throw new Error('Replay cut is invalid');
+    }
+    return Object.freeze({
+        contract: replayCutContract,
+        sourceReplaySha256: cut.sourceReplaySha256,
+        cursor: cut.cursor as number,
+        now: cut.now as string | null,
+        prefixSha256: cut.prefixSha256,
+    });
+};
+
 export class ReplayCoordinator {
     private clock = new VirtualClock(0);
     private readonly events: NormalizedTradeEvent[];
@@ -40,11 +79,13 @@ export class ReplayCoordinator {
     private epoch = 1;
     private cursor = 0;
     private status: ReplayStatus = 'paused';
+    readonly tokenMint: string;
 
     constructor(replay: MetricReplay, private readonly runId: string) {
         if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(runId)) {
             throw new Error('Replay run ID is invalid');
         }
+        this.tokenMint = replay.source.mint;
         this.sourceSha = replay.source.replaySha256;
         const enriched = new Map(replay.trades.map((trade) => [trade.idempotencyKey, trade]));
         if (enriched.size !== replay.trades.length) {
@@ -130,17 +171,39 @@ export class ReplayCoordinator {
         });
     }
 
-    restore(cut: ReplayCut): ReplaySnapshot {
-        if (cut.contract !== replayCutContract
-            || cut.sourceReplaySha256 !== this.sourceSha
-            || !Number.isSafeInteger(cut.cursor)
-            || cut.cursor < 0
+    head(value: unknown): ReplayHead {
+        const cut = this.matchCut(value);
+        const latest = cut.cursor === 0 ? undefined : this.events[cut.cursor - 1];
+        let usdTradeId: string | null = null;
+        let solTradeId: string | null = null;
+        for (let index = cut.cursor - 1; index >= 0 && (!usdTradeId || !solTradeId); index -= 1) {
+            const trade = this.events[index];
+            if (!usdTradeId && trade.priceUsd !== undefined && trade.usdAmount !== undefined) {
+                usdTradeId = trade.idempotencyKey;
+            }
+            if (!solTradeId && trade.priceSol !== undefined) solTradeId = trade.idempotencyKey;
+        }
+        return {
+            cut,
+            tradeId: latest?.idempotencyKey ?? null,
+            usdTradeId,
+            solTradeId,
+        };
+    }
+
+    restore(value: unknown): ReplaySnapshot {
+        return this.seek(this.matchCut(value).cursor);
+    }
+
+    private matchCut(value: unknown): ReplayCut {
+        const cut = parseReplayCut(value);
+        if (cut.sourceReplaySha256 !== this.sourceSha
             || cut.cursor > this.events.length
             || cut.now !== this.timeAt(cut.cursor)
             || cut.prefixSha256 !== this.prefixHash(cut.cursor)) {
             throw new Error('Replay cut does not match the verified tape');
         }
-        return this.seek(cut.cursor);
+        return cut;
     }
 
     accepts(event: Pick<ReplayEvent, 'runId' | 'epoch' | 'sourceReplaySha256'>): boolean {
