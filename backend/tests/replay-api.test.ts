@@ -3,7 +3,7 @@ import { lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MetricReplay } from '../src/services/marketData/metricReplay';
 import {
     CheckpointStore,
@@ -18,6 +18,8 @@ import {
     replayApiAuthContract,
     replayApiContract,
     replayApiMode,
+    replayControlActionContract,
+    replayControlCommandContract,
     replayPaperActionContract,
     replayPaperCommandContract,
     replayPaperContract,
@@ -653,5 +655,202 @@ describe('replay API', () => {
             ...place,
             extra: true,
         })).resolves.toMatchObject({ status: 400 });
+        await expect(call(
+            socketPath, `${route}?retry=1`, headers, 'POST', place
+        )).resolves.toMatchObject({ status: 400 });
+    });
+
+    it('controls replay from explicit cuts while pause remains a safe idempotent brake', async () => {
+        const { socketPath } = await openApi(1);
+        const route = '/api/replay/v1/runs/api-run/controls';
+        const cut = {
+            contract: replayControlCommandContract,
+            epoch: 1,
+            cursor: 1,
+            fact: 0,
+        } as const;
+
+        await expect(call(socketPath, route, headers)).resolves.toMatchObject({ status: 405 });
+        await expect(call(socketPath, `${route}?extra=1`, headers, 'POST', {
+            ...cut,
+            op: 'pause',
+        })).resolves.toMatchObject({ status: 400 });
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...cut,
+            op: 'play',
+            speed: 10,
+        })).resolves.toMatchObject({ status: 400 });
+
+        const play = await call(socketPath, route, headers, 'POST', {
+            ...cut,
+            op: 'play',
+            speed: 1,
+        });
+        expect(play).toMatchObject({
+            status: 202,
+            body: {
+                success: true,
+                session: { epoch: 1, cursor: 1 },
+                data: {
+                    control: {
+                        contract: replayControlActionContract,
+                        op: 'play',
+                        applied: true,
+                        speed: 1,
+                        revision: { epoch: 1, cursor: 1, fact: 0 },
+                    },
+                    state: { busy: true, snapshot: { status: 'running' } },
+                },
+            },
+        });
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...cut,
+            op: 'step',
+        })).resolves.toMatchObject({
+            status: 409,
+            body: { error: 'Replay must be paused' },
+        });
+
+        const staleBrake = { ...cut, cursor: 0, fact: 99, op: 'pause' } as const;
+        await expect(call(socketPath, route, headers, 'POST', staleBrake))
+            .resolves.toMatchObject({
+                status: 200,
+                body: {
+                    data: {
+                        control: {
+                            op: 'pause',
+                            applied: true,
+                            requested: { epoch: 1, cursor: 0, fact: 99 },
+                            revision: { epoch: 1, cursor: 1, fact: 0 },
+                        },
+                        state: { busy: false, snapshot: { status: 'paused' } },
+                    },
+                },
+            });
+        await expect(call(socketPath, route, headers, 'POST', staleBrake))
+            .resolves.toMatchObject({
+                status: 200,
+                body: { data: { control: { op: 'pause', applied: false } } },
+            });
+
+        const step = await call(socketPath, route, headers, 'POST', {
+            ...cut,
+            op: 'step',
+        });
+        expect(step).toMatchObject({
+            status: 200,
+            body: {
+                session: { epoch: 1, cursor: 2 },
+                data: {
+                    control: {
+                        op: 'step',
+                        applied: true,
+                        revision: { epoch: 1, cursor: 2, fact: 0 },
+                    },
+                },
+            },
+        });
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...cut,
+            op: 'step',
+        })).resolves.toMatchObject({
+            status: 409,
+            body: { data: { resync: { reason: 'cursor_changed' } } },
+        });
+
+        const cutTwo = { ...cut, cursor: 2 } as const;
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...cutTwo,
+            op: 'seek',
+            target: 2,
+        })).resolves.toMatchObject({
+            status: 200,
+            body: { data: { control: { op: 'seek', applied: false, target: 2 } } },
+        });
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...cutTwo,
+            op: 'seek',
+            target: 4,
+        })).resolves.toMatchObject({
+            status: 400,
+            body: { error: 'Replay seek cursor is outside the tape' },
+        });
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...cutTwo,
+            op: 'seek',
+            target: 1,
+        })).resolves.toMatchObject({
+            status: 200,
+            body: {
+                session: { epoch: 2, cursor: 1 },
+                data: {
+                    control: {
+                        op: 'seek',
+                        applied: true,
+                        target: 1,
+                        revision: { epoch: 2, cursor: 1, fact: 0 },
+                    },
+                },
+            },
+        });
+        const staleEpoch = await call(socketPath, route, headers, 'POST', staleBrake);
+        expect(staleEpoch).toMatchObject({
+            status: 409,
+            body: { data: { resync: { reason: 'epoch_changed' } } },
+        });
+        expect(staleEpoch.body.data.resync.requested).toEqual({
+            epoch: 1,
+            cursor: 0,
+            fact: 99,
+        });
+    });
+
+    it('hides intermediate seek state and rejects a second mutation', async () => {
+        const { runtime, socketPath } = await openApi(2);
+        const route = '/api/replay/v1/runs/api-run/controls';
+        let entered!: () => void;
+        let release!: () => void;
+        const started = new Promise<void>((resolve) => { entered = resolve; });
+        const blocked = new Promise<void>((resolve) => { release = resolve; });
+        const seek = runtime.seek.bind(runtime);
+        const spy = vi.spyOn(runtime, 'seek').mockImplementation(async (cursor) => {
+            entered();
+            await blocked;
+            return seek(cursor);
+        });
+        const request = call(socketPath, route, headers, 'POST', {
+            contract: replayControlCommandContract,
+            op: 'seek',
+            epoch: 1,
+            cursor: 2,
+            fact: 0,
+            target: 1,
+        });
+        await started;
+        try {
+            await expect(call(
+                socketPath, '/api/replay/v1/runs/api-run/snapshot', headers
+            )).resolves.toMatchObject({
+                status: 409,
+                body: { error: 'Replay mutation is active' },
+            });
+            await expect(call(socketPath, route, headers, 'POST', {
+                contract: replayControlCommandContract,
+                op: 'step',
+                epoch: 1,
+                cursor: 2,
+                fact: 0,
+            })).resolves.toMatchObject({
+                status: 409,
+                body: { error: 'Replay mutation is already active' },
+            });
+        } finally {
+            release();
+        }
+        await expect(request).resolves.toMatchObject({
+            status: 200,
+            body: { session: { epoch: 2, cursor: 1 } },
+        });
+        spy.mockRestore();
     });
 });

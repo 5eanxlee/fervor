@@ -25,6 +25,8 @@ export const replayApiMode = 'historical_replay' as const;
 export const replayPaperContract = 'fervor-replay-paper-page-v1' as const;
 export const replayPaperCommandContract = 'fervor-replay-paper-command-v1' as const;
 export const replayPaperActionContract = 'fervor-replay-paper-action-v1' as const;
+export const replayControlCommandContract = 'fervor-replay-control-command-v1' as const;
+export const replayControlActionContract = 'fervor-replay-control-action-v1' as const;
 
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
 const runId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
@@ -34,11 +36,14 @@ const authSchema = z.object({
     runId,
     tokenSha256: hash,
 }).strict();
-const actionCut = {
-    contract: z.literal(replayPaperCommandContract),
+const cutFields = {
     epoch: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
     cursor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     fact: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+};
+const actionCut = {
+    contract: z.literal(replayPaperCommandContract),
+    ...cutFields,
 };
 const paperActionSchema = z.discriminatedUnion('op', [
     z.object({
@@ -50,6 +55,24 @@ const paperActionSchema = z.discriminatedUnion('op', [
         ...actionCut,
         op: z.literal('cancel'),
         orderId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/),
+    }).strict(),
+]);
+const controlCut = {
+    contract: z.literal(replayControlCommandContract),
+    ...cutFields,
+};
+const controlSchema = z.discriminatedUnion('op', [
+    z.object({
+        ...controlCut,
+        op: z.literal('play'),
+        speed: z.union([z.literal(1), z.literal(20), z.literal(100), z.literal('max')]),
+    }).strict(),
+    z.object({ ...controlCut, op: z.literal('pause') }).strict(),
+    z.object({ ...controlCut, op: z.literal('step') }).strict(),
+    z.object({
+        ...controlCut,
+        op: z.literal('seek'),
+        target: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     }).strict(),
 ]);
 
@@ -433,11 +456,201 @@ const actionResponse = (
     }),
 });
 
+type ControlCommand = z.infer<typeof controlSchema>;
+type MutationGate = (
+    res: ServerResponse,
+    task: () => void | Promise<void>
+) => Promise<void>;
+
+const controlResponse = (
+    res: ServerResponse,
+    status: number,
+    auth: ReplayApiAuth,
+    command: ControlCommand,
+    applied: boolean,
+    state: ReplayState
+): void => sendJson(res, status, {
+    success: true,
+    ...responseBody(auth, identityOf(state.snapshot), {
+        control: {
+            contract: replayControlActionContract,
+            op: command.op,
+            applied,
+            requested: {
+                epoch: command.epoch,
+                cursor: command.cursor,
+                fact: command.fact,
+            },
+            revision: {
+                epoch: state.snapshot.epoch,
+                cursor: state.snapshot.cursor,
+                fact: state.paper.factCount,
+            },
+            ...(command.op === 'play' ? { speed: command.speed } : {}),
+            ...(command.op === 'seek' ? { target: command.target } : {}),
+        },
+        state,
+    }),
+});
+
+const handlePaperAction = async (
+    runtime: ReplayRuntime,
+    auth: ReplayApiAuth,
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    mutate: MutationGate
+): Promise<void> => {
+    if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST');
+        return reject(res, 405, 'Method not allowed');
+    }
+    if (url.search) return reject(res, 400, 'Paper action query is invalid');
+    const body = await readJson(req, res);
+    if (body === undefined) return;
+    const parsed = paperActionSchema.safeParse(body);
+    if (!parsed.success) return reject(res, 400, 'Paper action is invalid');
+    const command = parsed.data;
+    await mutate(res, () => {
+        if (runtime.state().mutating) {
+            return reject(res, 409, 'Replay mutation is already active');
+        }
+        const orderId = command.op === 'place' ? command.order.id : command.orderId;
+        const existing = runtime.findOrder(orderId);
+        if (command.op === 'place' && existing !== undefined) {
+            if (!sameOrder(existing, command.order)) {
+                return reject(res, 409, 'Paper order ID conflict');
+            }
+            return actionResponse(res, 200, auth, runtime.state(), 'place', false, existing);
+        }
+        if (command.op === 'cancel' && existing === undefined) {
+            return reject(res, 404, 'Paper order not found');
+        }
+        if (command.op === 'cancel' && existing!.status === 'cancelled') {
+            return actionResponse(res, 200, auth, runtime.state(), 'cancel', false, existing!);
+        }
+        if (command.op === 'cancel'
+            && (existing!.status === 'filled' || existing!.status === 'expired')) {
+            return reject(res, 409, 'Paper order is terminal');
+        }
+        const state = runtime.state();
+        const resync = exactResync(state, {
+            epoch: command.epoch,
+            cursor: command.cursor,
+            fact: command.fact,
+        });
+        if (resync) return sendResync(res, auth, resync);
+        if (state.busy || state.mutating || state.snapshot.status !== 'paused') {
+            return reject(res, 409, 'Replay must be paused');
+        }
+        const order = command.op === 'place'
+            ? runtime.place(command.order)
+            : runtime.cancel(command.orderId);
+        actionResponse(
+            res,
+            command.op === 'place' ? 201 : 200,
+            auth,
+            runtime.state(),
+            command.op,
+            true,
+            order
+        );
+    });
+};
+
+const handleControl = async (
+    runtime: ReplayRuntime,
+    auth: ReplayApiAuth,
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+    mutate: MutationGate
+): Promise<void> => {
+    if (req.method !== 'POST') {
+        res.setHeader('Allow', 'POST');
+        return reject(res, 405, 'Method not allowed');
+    }
+    if (url.search) return reject(res, 400, 'Replay control query is invalid');
+    const body = await readJson(req, res);
+    if (body === undefined) return;
+    const parsed = controlSchema.safeParse(body);
+    if (!parsed.success) return reject(res, 400, 'Replay control is invalid');
+    const command: ControlCommand = parsed.data;
+    await mutate(res, async () => {
+        const before = runtime.state();
+        const requested = {
+            epoch: command.epoch,
+            cursor: command.cursor,
+            fact: command.fact,
+        };
+        if (command.op === 'pause') {
+            if (command.epoch !== before.snapshot.epoch) {
+                const resync = exactResync(before, requested);
+                if (resync) return sendResync(res, auth, resync);
+            }
+            if (before.mutating) {
+                return reject(res, 409, 'Replay mutation is already active');
+            }
+            const applied = before.busy || before.snapshot.status === 'running';
+            return controlResponse(
+                res, 200, auth, command, applied, await runtime.pause()
+            );
+        }
+
+        const resync = exactResync(before, requested);
+        if (resync) return sendResync(res, auth, resync);
+        if (before.busy || before.mutating) {
+            return reject(res, 409, 'Replay must be paused');
+        }
+
+        if (command.op === 'play') {
+            if (before.snapshot.status !== 'paused') {
+                return reject(res, 409, 'Replay must be paused');
+            }
+            void runtime.play(command.speed);
+            return controlResponse(res, 202, auth, command, true, runtime.state());
+        }
+        if (command.op === 'step') {
+            if (before.snapshot.status !== 'paused'
+                && before.snapshot.status !== 'complete') {
+                return reject(res, 409, 'Replay cannot step');
+            }
+            const state = runtime.step();
+            const applied = state.snapshot.cursor !== before.snapshot.cursor
+                || state.paper.factCount !== before.paper.factCount;
+            return controlResponse(res, 200, auth, command, applied, state);
+        }
+        if (command.target > before.snapshot.total) {
+            return reject(res, 400, 'Replay seek cursor is outside the tape');
+        }
+        if (before.snapshot.status !== 'paused'
+            && before.snapshot.status !== 'complete') {
+            return reject(res, 409, 'Replay cannot seek');
+        }
+        if (command.target === before.snapshot.cursor) {
+            return controlResponse(res, 200, auth, command, false, before);
+        }
+        controlResponse(
+            res, 200, auth, command, true, await runtime.seek(command.target)
+        );
+    });
+};
+
 const handler = (
     runtime: ReplayRuntime,
     auth: ReplayApiAuth
 ): ((req: IncomingMessage, res: ServerResponse) => void) => {
     const base = `/api/replay/v1/runs/${auth.runId}`;
+    let mutating = false;
+    const mutate: MutationGate = async (res, task) => {
+        if (mutating) return reject(res, 409, 'Replay mutation is already active');
+        mutating = true;
+        try {
+            await task();
+        } finally {
+            mutating = false;
+        }
+    };
     return async (req, res) => {
         if (req.headers['x-fervor-mode'] !== replayApiMode) {
             return reject(res, 409, 'Historical replay mode required');
@@ -454,63 +667,17 @@ const handler = (
         }
         try {
             if (url.pathname === `${base}/paper/actions`) {
-                if (req.method !== 'POST') {
-                    res.setHeader('Allow', 'POST');
-                    return reject(res, 405, 'Method not allowed');
-                }
-                const body = await readJson(req, res);
-                if (body === undefined) return;
-                const parsed = paperActionSchema.safeParse(body);
-                if (!parsed.success) return reject(res, 400, 'Paper action is invalid');
-                const command = parsed.data;
-                const orderId = command.op === 'place' ? command.order.id : command.orderId;
-                const existing = runtime.findOrder(orderId);
-                if (command.op === 'place' && existing !== undefined) {
-                    if (!sameOrder(existing, command.order)) {
-                        return reject(res, 409, 'Paper order ID conflict');
-                    }
-                    return actionResponse(
-                        res, 200, auth, runtime.state(), 'place', false, existing
-                    );
-                }
-                if (command.op === 'cancel' && existing === undefined) {
-                    return reject(res, 404, 'Paper order not found');
-                }
-                if (command.op === 'cancel' && existing!.status === 'cancelled') {
-                    return actionResponse(
-                        res, 200, auth, runtime.state(), 'cancel', false, existing!
-                    );
-                }
-                if (command.op === 'cancel'
-                    && (existing!.status === 'filled' || existing!.status === 'expired')) {
-                    return reject(res, 409, 'Paper order is terminal');
-                }
-                const state = runtime.state();
-                const resync = exactResync(state, {
-                    epoch: command.epoch,
-                    cursor: command.cursor,
-                    fact: command.fact,
-                });
-                if (resync) return sendResync(res, auth, resync);
-                if (state.busy || state.snapshot.status !== 'paused') {
-                    return reject(res, 409, 'Replay must be paused');
-                }
-                const order = command.op === 'place'
-                    ? runtime.place(command.order)
-                    : runtime.cancel(command.orderId);
-                return actionResponse(
-                    res,
-                    command.op === 'place' ? 201 : 200,
-                    auth,
-                    runtime.state(),
-                    command.op,
-                    true,
-                    order
-                );
+                return handlePaperAction(runtime, auth, req, res, url, mutate);
+            }
+            if (url.pathname === `${base}/controls`) {
+                return handleControl(runtime, auth, req, res, url, mutate);
             }
             if (req.method !== 'GET') {
                 res.setHeader('Allow', 'GET');
                 return reject(res, 405, 'Method not allowed');
+            }
+            if (mutating || runtime.state().mutating) {
+                return reject(res, 409, 'Replay mutation is active');
             }
             if (url.pathname === `${base}/snapshot`) {
                 if (url.search) return reject(res, 400, 'Snapshot query is invalid');

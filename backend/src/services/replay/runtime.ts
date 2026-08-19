@@ -71,6 +71,7 @@ const deniedEnv = [
 
 export interface ReplayState {
     readonly busy: boolean;
+    readonly mutating: boolean;
     readonly failure: string | null;
     readonly snapshot: ReplaySnapshot;
     readonly projection: ProjectionView;
@@ -115,6 +116,7 @@ export class ReplayRuntime {
     private projection: ReplayProjection;
     private paper: ReplayPaperBroker;
     private active: ActiveRun | null = null;
+    private mutating = false;
     private failure: string | null = null;
     private sessionSeq = -1;
     private parentSha: string | null = null;
@@ -157,6 +159,7 @@ export class ReplayRuntime {
     state(): ReplayState {
         return {
             busy: this.active !== null,
+            mutating: this.mutating,
             failure: this.failure,
             snapshot: this.coordinator.snapshot(),
             projection: this.projection.view(),
@@ -191,13 +194,18 @@ export class ReplayRuntime {
     }
 
     async pause(): Promise<ReplayState> {
+        await this.mutate(() => this.pauseRun());
+        return this.state();
+    }
+
+    private async pauseRun(): Promise<void> {
         const task = this.active;
         if (task !== null) {
             task.abort.abort();
-            return task.done;
+            await task.done;
+            return;
         }
         if (this.coordinator.currentStatus() === 'running') this.coordinator.pause();
-        return this.state();
     }
 
     step(): ReplayState {
@@ -221,38 +229,45 @@ export class ReplayRuntime {
         if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > before.total) {
             throw new Error('Replay seek cursor is outside the tape');
         }
-        await this.pause();
-        if (this.coordinator.currentStatus() === 'stopped') {
-            throw new Error('Stopped replay cannot seek');
-        }
-        this.failure = null;
-        const saved = await this.store.nearest(before.sourceReplaySha256, cursor);
-        if (saved === null) {
-            this.coordinator.seek(0);
-            this.projection = ReplayProjection.start(this.coordinator);
-        } else {
-            this.projection = ReplayProjection.restore(this.coordinator, saved);
-        }
-        if (this.coordinator.snapshot().cursor < cursor) {
-            await new ReplayScheduler(
-                this.coordinator,
-                (event) => this.projection.apply(event)
-            ).run('max', undefined, cursor);
-        }
-        this.paper = new ReplayPaperBroker(this.coordinator.snapshot(), this.paperModel);
+        await this.mutate(async () => {
+            await this.pauseRun();
+            if (this.coordinator.currentStatus() === 'stopped') {
+                throw new Error('Stopped replay cannot seek');
+            }
+            this.failure = null;
+            const saved = await this.store.nearest(before.sourceReplaySha256, cursor);
+            if (saved === null) {
+                this.coordinator.seek(0);
+                this.projection = ReplayProjection.start(this.coordinator);
+            } else {
+                this.projection = ReplayProjection.restore(this.coordinator, saved);
+            }
+            if (this.coordinator.snapshot().cursor < cursor) {
+                await new ReplayScheduler(
+                    this.coordinator,
+                    (event) => this.projection.apply(event)
+                ).run('max', undefined, cursor);
+            }
+            this.paper = new ReplayPaperBroker(this.coordinator.snapshot(), this.paperModel);
+        });
         return this.state();
     }
 
     async checkpoint(): Promise<SavedReplay> {
-        this.requireIdle();
-        const replay = this.projection.checkpoint(this.coordinator);
-        const paper = this.paper.checkpoint(this.coordinator.snapshot());
-        const seq = this.sessionSeq + 1;
-        const checkpoint = createReplaySession(seq, this.parentSha, replay, paper);
-        await this.store.write(replay);
-        const key = await this.sessions.write(checkpoint);
-        this.sessionSeq = seq;
-        this.parentSha = checkpoint.checkpointSha256;
+        const key = await this.mutate(async (): Promise<SessionKey> => {
+            if (this.active !== null) {
+                throw new Error('Replay control requires a paused run');
+            }
+            const replay = this.projection.checkpoint(this.coordinator);
+            const paper = this.paper.checkpoint(this.coordinator.snapshot());
+            const seq = this.sessionSeq + 1;
+            const checkpoint = createReplaySession(seq, this.parentSha, replay, paper);
+            await this.store.write(replay);
+            const key = await this.sessions.write(checkpoint);
+            this.sessionSeq = seq;
+            this.parentSha = checkpoint.checkpointSha256;
+            return key;
+        });
         return { key, state: this.state() };
     }
 
@@ -310,8 +325,10 @@ export class ReplayRuntime {
     }
 
     async stop(): Promise<ReplayState> {
-        await this.pause();
-        if (this.coordinator.currentStatus() !== 'stopped') this.coordinator.stop();
+        await this.mutate(async () => {
+            await this.pauseRun();
+            if (this.coordinator.currentStatus() !== 'stopped') this.coordinator.stop();
+        });
         return this.state();
     }
 
@@ -322,7 +339,19 @@ export class ReplayRuntime {
     }
 
     private requireIdle(): void {
-        if (this.active !== null) throw new Error('Replay control requires a paused run');
+        if (this.active !== null || this.mutating) {
+            throw new Error('Replay control requires a paused run');
+        }
+    }
+
+    private async mutate<T>(task: () => T | Promise<T>): Promise<T> {
+        if (this.mutating) throw new Error('Replay mutation is already active');
+        this.mutating = true;
+        try {
+            return await task();
+        } finally {
+            this.mutating = false;
+        }
     }
 
     private requirePaperControl(): void {

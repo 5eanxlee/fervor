@@ -74,7 +74,11 @@ describe('replay runtime', () => {
         await expect(running).resolves.toMatchObject({ snapshot: { cursor: 512 } });
 
         expect(runtime.step()).toMatchObject({ snapshot: { cursor: 513, status: 'paused' } });
-        const saved = await runtime.checkpoint();
+        const saving = runtime.checkpoint();
+        expect(runtime.state()).toMatchObject({ busy: false, mutating: true });
+        expect(() => runtime.step()).toThrow('paused run');
+        await expect(runtime.pause()).rejects.toThrow('mutation is already active');
+        const saved = await saving;
         expect(saved).toMatchObject({ key: { cursor: 513 }, state: { busy: false } });
         await expect(runtime.play(10)).resolves.toMatchObject({
             failure: 'Replay speed is invalid',
