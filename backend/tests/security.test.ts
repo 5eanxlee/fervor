@@ -12,6 +12,7 @@ vi.mock('../src/config/database', () => {
 
 import app from '../src/index';
 import { query } from '../src/config/database';
+import { requestToken } from '../src/middleware/auth';
 import { consumeAuthNonce, extractAuthMessageFields, hashSecret } from '../src/services/authSecurity';
 import { parseEnv } from '../src/config/env';
 
@@ -50,6 +51,14 @@ describe('security hardening', () => {
             CORE_DATABASE_URL: 'postgres://core/fervor',
             MARKET_DATABASE_URL: 'postgres://market/fervor',
         } as NodeJS.ProcessEnv)).toThrow(/JWT_SECRET/);
+    });
+
+    it('limits the alternate session header to replay deployments', () => {
+        const token = 'a'.repeat(64);
+        expect(requestToken(undefined, token, false)).toBeUndefined();
+        expect(requestToken(undefined, token, true)).toBe(token);
+        expect(requestToken(undefined, 'not a token', true)).toBeUndefined();
+        expect(requestToken(`Bearer ${token}`, undefined, false)).toBe(token);
     });
 
     it('returns 404 for removed Discord debug endpoints', async () => {

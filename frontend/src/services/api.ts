@@ -2,6 +2,7 @@ import axios, { AxiosResponse } from 'axios';
 import type { ReplayControl, ReplayControlResult, ReplayState } from './replay';
 
 export const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3010/api';
+const replayMode = process.env.NEXT_PUBLIC_DATA_MODE === 'replay';
 
 const getApiNetworkErrorMessage = () => {
     const apiUrl = apiBase.startsWith('/')
@@ -465,7 +466,8 @@ class ApiService {
         };
 
         if (this.authToken) {
-            headers.Authorization = `Bearer ${this.authToken}`;
+            if (replayMode) headers['X-Fervor-Replay-Session'] = this.authToken;
+            else headers.Authorization = `Bearer ${this.authToken}`;
         }
         if (providerToken) headers['X-Order-Provider-Token'] = providerToken;
 

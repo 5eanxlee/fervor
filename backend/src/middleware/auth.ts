@@ -142,13 +142,26 @@ export const signIn = async (req: Request, res: Response) => {
     }
 };
 
+export const requestToken = (
+    authorization?: string,
+    replaySession?: string,
+    allowReplay = false
+): string | undefined => {
+    if (allowReplay && replaySession
+        && /^[A-Za-z0-9._~-]{32,4096}$/.test(replaySession)) return replaySession;
+    return authorization?.match(/^Bearer\s+(\S+)$/i)?.[1];
+};
+
 export const authenticateToken = async (
     req: AuthRequest,
     res: Response,
     next: NextFunction
 ) => {
-    const authHeader = req.get('authorization');
-    const token = authHeader?.match(/^Bearer\s+(\S+)$/i)?.[1];
+    const token = requestToken(
+        req.get('authorization'),
+        req.get('x-fervor-replay-session'),
+        Boolean(env.REPLAY_API_SOCKET)
+    );
     if (!token) {
         return res.status(401).json({ success: false, error: 'Access token required' });
     }
