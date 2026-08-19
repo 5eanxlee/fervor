@@ -134,6 +134,18 @@ describe('replay runtime', () => {
         expect(runtime.orders()[0]).toMatchObject({
             id: 'runtime-buy', status: 'filled', filledInputRaw: '50',
         });
+        expect(runtime.portfolio()).toMatchObject({
+            orderCount: 1,
+            factCount: 4,
+            fillCount: 1,
+            basisComplete: true,
+            positions: [{
+                tokenMint: replayMint,
+                quoteMint: replayQuoteMint,
+                openQuantityRaw: '50',
+                openCostRaw: '50',
+            }],
+        });
 
         const restored = await ReplayRuntime.open(
             source, 'paper-runtime', store, sessions, paperModel
@@ -143,6 +155,7 @@ describe('replay runtime', () => {
             paper: { factCount: 4, orderCount: 1 },
         });
         expect(restored.orders()).toEqual(runtime.orders());
+        expect(restored.portfolio()).toEqual(runtime.portfolio());
         expect(restored.state().snapshot.epoch).toBeGreaterThan(
             filled.state.snapshot.epoch
         );
@@ -152,6 +165,14 @@ describe('replay runtime', () => {
         expect(restored.state()).toMatchObject({
             snapshot: { cursor: 0 },
             paper: { factCount: 0, orderCount: 0 },
+        });
+        expect(restored.portfolio()).toMatchObject({
+            orderCount: 0,
+            factCount: 0,
+            fillCount: 0,
+            netFlows: [],
+            feeTotals: [],
+            positions: [],
         });
         await expect(restored.checkpoint()).resolves.toMatchObject({ key: { seq: 4, cursor: 0 } });
 

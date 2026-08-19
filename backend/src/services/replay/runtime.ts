@@ -10,6 +10,10 @@ import {
     type PaperFact,
     type PaperOrder,
 } from './paperBroker';
+import {
+    projectPaperPortfolio,
+    type PaperPortfolio,
+} from './paperPortfolio';
 import { normalizeModel, type PaperModel } from './paperTypes';
 import { ReplayProjection, type ProjectionView } from './projection';
 import { ReplayScheduler } from './scheduler';
@@ -231,6 +235,15 @@ export class ReplayRuntime {
 
     facts(after = 0, limit = 100): readonly PaperFact[] {
         return this.paper.facts(after, limit);
+    }
+
+    portfolio(): PaperPortfolio {
+        const snapshot = this.coordinator.snapshot();
+        return projectPaperPortfolio({
+            sourceReplaySha256: snapshot.sourceReplaySha256,
+            runId: snapshot.runId,
+            modelSha256: this.paper.modelSha256(),
+        }, this.paper.orders(), this.paper.facts());
     }
 
     async stop(): Promise<ReplayState> {

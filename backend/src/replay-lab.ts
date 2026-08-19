@@ -28,6 +28,7 @@ const commandSchema = z.discriminatedUnion('op', [
     z.object({ id: requestId, op: z.literal('seek'), cursor: z.number().int().nonnegative() }).strict(),
     z.object({ id: requestId, op: z.literal('place'), order: paperOrderSchema }).strict(),
     z.object({ id: requestId, op: z.literal('cancel'), orderId }).strict(),
+    z.object({ id: requestId, op: z.literal('portfolio') }).strict(),
     z.object({
         id: requestId,
         op: z.literal('orders'),
@@ -141,6 +142,9 @@ const main = async (): Promise<void> => {
             if (command.op === 'cancel') {
                 const order = runtime.cancel(command.orderId);
                 return success(command, runtime.state(), { order });
+            }
+            if (command.op === 'portfolio') {
+                return success(command, runtime.state(), { portfolio: runtime.portfolio() });
             }
             if (command.op === 'orders') {
                 return success(command, runtime.state(), {
