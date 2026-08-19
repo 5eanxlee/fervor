@@ -18,6 +18,7 @@ import {
     replayApiAuthContract,
     replayApiContract,
     replayApiMode,
+    replayPaperContract,
     startReplayApi,
     type ReplayApi,
 } from '../src/services/replay/replayApi';
@@ -27,7 +28,7 @@ import {
 } from '../src/services/replay/coordinator';
 import { replayAlertModelContract } from '../src/services/replay/replayAlerts';
 import { ReplayRuntime } from '../src/services/replay/runtime';
-import { replayMint, replaySha, replayTape } from './helpers/replayTape';
+import { replayMint, replayQuoteMint, replaySha, replayTape } from './helpers/replayTape';
 
 const tempDirs: string[] = [];
 const apis: ReplayApi[] = [];
@@ -355,6 +356,144 @@ describe('replay API', () => {
                 `/api/replay/v1/runs/api-run/deltas?${query}`,
                 headers
             )).resolves.toMatchObject({ status: 400 });
+        }
+    });
+
+    it('binds paper, wallet, and inbox reads to their exact product cut', async () => {
+        const { runtime, socketPath } = await openApi(1);
+        runtime.place({
+            id: 'api-order',
+            kind: 'market',
+            side: 'buy',
+            tokenMint: replayMint,
+            quoteMint: replayQuoteMint,
+            inputRaw: '50',
+            reference: { quoteRaw: '1', tokenRaw: '1' },
+        });
+        runtime.step();
+        expect(runtime.state()).toMatchObject({
+            snapshot: { epoch: 1, cursor: 2 },
+            paper: { orderCount: 1, factCount: 4 },
+        });
+
+        const paperRoute = (fact: number, factAfter = 0, orderAfter = 0) =>
+            `/api/replay/v1/runs/api-run/paper?epoch=1&cursor=2&fact=${fact}`
+            + `&orderAfter=${orderAfter}&factAfter=${factAfter}&limit=2`;
+        const paper = await call(socketPath, paperRoute(4), headers);
+        expect(paper).toMatchObject({
+            status: 200,
+            body: {
+                success: true,
+                session: { epoch: 1, cursor: 2 },
+                data: {
+                    page: {
+                        contract: replayPaperContract,
+                        epoch: 1,
+                        cutCursor: 2,
+                        fact: 4,
+                        orders: {
+                            after: 0,
+                            next: null,
+                            total: 1,
+                            items: [{ id: 'api-order', status: 'filled' }],
+                        },
+                        facts: {
+                            after: 0,
+                            next: 2,
+                            total: 4,
+                            items: [{ kind: 'intent' }, { kind: 'eligible' }],
+                        },
+                        portfolio: {
+                            orderCount: 1,
+                            factCount: 4,
+                            fillCount: 1,
+                            positions: [{ openQuantityRaw: '50', openCostRaw: '50' }],
+                        },
+                    },
+                },
+            },
+        });
+        await expect(call(socketPath, paperRoute(4, 2), headers)).resolves.toMatchObject({
+            status: 200,
+            body: {
+                data: {
+                    page: {
+                        facts: {
+                            after: 2,
+                            next: null,
+                            items: [{ kind: 'fill' }, { kind: 'filled' }],
+                        },
+                    },
+                },
+            },
+        });
+
+        const walletRoute = `/api/replay/v1/runs/api-run/wallets/${replayMint}`
+            + '?epoch=1&cursor=2&after=0&limit=1';
+        await expect(call(socketPath, walletRoute, headers)).resolves.toMatchObject({
+            status: 200,
+            body: {
+                session: { epoch: 1, cursor: 2 },
+                data: {
+                    page: { wallet: replayMint, cutCursor: 2, nextCursor: 1, items: [{ cursor: 0 }] },
+                    portfolio: { wallet: replayMint, cutCursor: 2, tradeCount: 2 },
+                },
+            },
+        });
+        await expect(call(
+            socketPath,
+            '/api/replay/v1/runs/api-run/notifications?epoch=1&cursor=2&after=0&limit=1',
+            headers
+        )).resolves.toMatchObject({
+            status: 200,
+            body: { session: { epoch: 1, cursor: 2 } },
+        });
+
+        runtime.place({
+            id: 'same-cut-order',
+            kind: 'limit',
+            side: 'sell',
+            tokenMint: replayMint,
+            quoteMint: replayQuoteMint,
+            inputRaw: '10',
+            limit: { quoteRaw: '1', tokenRaw: '1' },
+        });
+        await expect(call(socketPath, paperRoute(4), headers)).resolves.toMatchObject({
+            status: 409,
+            body: {
+                session: { epoch: 1, cursor: 2 },
+                data: {
+                    resync: {
+                        contract: replayResyncContract,
+                        reason: 'paper_changed',
+                        requested: { epoch: 1, cursor: 2, fact: 4 },
+                        cut: { epoch: 1, cursor: 2, fact: 5 },
+                    },
+                },
+            },
+        });
+
+        runtime.step();
+        await expect(call(socketPath, walletRoute, headers)).resolves.toMatchObject({
+            status: 409,
+            body: { data: { resync: { reason: 'cursor_changed' } } },
+        });
+        await expect(call(
+            socketPath,
+            '/api/replay/v1/runs/api-run/notifications?epoch=1&cursor=2',
+            headers
+        )).resolves.toMatchObject({
+            status: 409,
+            body: { data: { resync: { reason: 'cursor_changed' } } },
+        });
+
+        for (const route of [
+            '/api/replay/v1/runs/api-run/paper?epoch=1&cursor=3',
+            `/api/replay/v1/runs/api-run/wallets/${replayMint}?epoch=1&cursor=3&after=4`,
+            '/api/replay/v1/runs/api-run/wallets/not-a-wallet?epoch=1&cursor=3',
+            '/api/replay/v1/runs/api-run/notifications?epoch=1',
+        ]) {
+            await expect(call(socketPath, route, headers)).resolves.toMatchObject({ status: 400 });
         }
     });
 });

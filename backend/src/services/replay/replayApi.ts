@@ -4,13 +4,19 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createConnection } from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
-import type { ReplayDeltaPage, ReplayResync, ReplaySnapshot } from './coordinator';
-import type { ReplayNotificationPage } from './replayAlerts';
+import { addressSchema } from '../../types/execution';
+import {
+    replayResyncContract,
+    type ReplayDeltaPage,
+    type ReplayResync,
+    type ReplaySnapshot,
+} from './coordinator';
 import type { ReplayRuntime, ReplayState } from './runtime';
 
 export const replayApiAuthContract = 'fervor-replay-api-auth-v1' as const;
 export const replayApiContract = 'fervor-replay-api-v1' as const;
 export const replayApiMode = 'historical_replay' as const;
+export const replayPaperContract = 'fervor-replay-paper-page-v1' as const;
 
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
 const runId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
@@ -76,7 +82,13 @@ const identityOf = (snapshot: ReplaySnapshot): CutIdentity => ({
     now: snapshot.now,
 });
 
-const pageIdentity = (page: ReplayNotificationPage): CutIdentity => ({
+const pageIdentity = (page: {
+    sourceReplaySha256: string;
+    runId: string;
+    epoch: number;
+    cutCursor: number;
+    cutAt: string | null;
+}): CutIdentity => ({
     sourceReplaySha256: page.sourceReplaySha256,
     runId: page.runId,
     epoch: page.epoch,
@@ -133,6 +145,15 @@ const sendJson = (res: ServerResponse, status: number, value: unknown): void => 
 const reject = (res: ServerResponse, status: number, error: string): void =>
     sendJson(res, status, { success: false, error });
 
+const sendResync = (
+    res: ServerResponse,
+    auth: ReplayApiAuth,
+    resync: ReplayResync
+): void => sendJson(res, 409, {
+    success: false,
+    ...responseBody(auth, resyncIdentity(resync), { resync }),
+});
+
 const hasToken = (req: IncomingMessage, expected: string): boolean => {
     const token = req.headers.authorization?.match(/^Bearer ([A-Za-z0-9._~-]{32,256})$/)?.[1];
     if (!token) return false;
@@ -151,22 +172,37 @@ const intParam = (
     return Number.isSafeInteger(parsed) && parsed <= max ? parsed : undefined;
 };
 
-const notificationQuery = (url: URL): { after: number; limit: number } | undefined => {
+const hasOnly = (url: URL, allowed: readonly string[]): boolean => {
     const keys = [...url.searchParams.keys()];
-    if (keys.some((key) => key !== 'after' && key !== 'limit')
-        || new Set(keys).size !== keys.length) return undefined;
+    return !keys.some((key) => !allowed.includes(key))
+        && new Set(keys).size === keys.length;
+};
+
+interface NotificationQuery {
+    readonly after: number;
+    readonly limit: number;
+    readonly epoch?: number;
+    readonly cursor?: number;
+}
+
+const notificationQuery = (url: URL): NotificationQuery | undefined => {
+    if (!hasOnly(url, ['after', 'limit', 'epoch', 'cursor'])) return undefined;
     const after = intParam(url.searchParams.get('after'), 0, Number.MAX_SAFE_INTEGER);
     const limit = intParam(url.searchParams.get('limit'), 100, 500);
     if (after === undefined || limit === undefined || limit < 1) return undefined;
-    return { after, limit };
+    const hasCut = url.searchParams.has('epoch') || url.searchParams.has('cursor');
+    if (!hasCut) return { after, limit };
+    if (!url.searchParams.has('epoch') || !url.searchParams.has('cursor')) return undefined;
+    const epoch = intParam(url.searchParams.get('epoch'), 0, Number.MAX_SAFE_INTEGER);
+    const cursor = intParam(url.searchParams.get('cursor'), 0, Number.MAX_SAFE_INTEGER);
+    if (epoch === undefined || epoch < 1 || cursor === undefined) return undefined;
+    return { after, limit, epoch, cursor };
 };
 
 const deltaQuery = (
     url: URL
 ): { epoch: number; after: number; limit: number } | undefined => {
-    const keys = [...url.searchParams.keys()];
-    if (keys.some((key) => key !== 'epoch' && key !== 'after' && key !== 'limit')
-        || new Set(keys).size !== keys.length
+    if (!hasOnly(url, ['epoch', 'after', 'limit'])
         || !url.searchParams.has('epoch')
         || !url.searchParams.has('after')) return undefined;
     const epoch = intParam(url.searchParams.get('epoch'), 0, Number.MAX_SAFE_INTEGER);
@@ -177,6 +213,93 @@ const deltaQuery = (
         || limit === undefined || limit < 1) return undefined;
     return { epoch, after, limit };
 };
+
+interface PaperQuery {
+    readonly epoch: number;
+    readonly cursor: number;
+    readonly fact: number;
+    readonly orderAfter: number;
+    readonly factAfter: number;
+    readonly limit: number;
+}
+
+const paperQuery = (url: URL): PaperQuery | undefined => {
+    if (!hasOnly(url, ['epoch', 'cursor', 'fact', 'orderAfter', 'factAfter', 'limit'])
+        || !url.searchParams.has('epoch')
+        || !url.searchParams.has('cursor')
+        || !url.searchParams.has('fact')) return undefined;
+    const epoch = intParam(url.searchParams.get('epoch'), 0, Number.MAX_SAFE_INTEGER);
+    const cursor = intParam(url.searchParams.get('cursor'), 0, Number.MAX_SAFE_INTEGER);
+    const fact = intParam(url.searchParams.get('fact'), 0, Number.MAX_SAFE_INTEGER);
+    const orderAfter = intParam(
+        url.searchParams.get('orderAfter'), 0, Number.MAX_SAFE_INTEGER
+    );
+    const factAfter = intParam(
+        url.searchParams.get('factAfter'), 0, Number.MAX_SAFE_INTEGER
+    );
+    const limit = intParam(url.searchParams.get('limit'), 100, 100);
+    if (epoch === undefined || epoch < 1
+        || cursor === undefined || fact === undefined
+        || orderAfter === undefined || factAfter === undefined
+        || limit === undefined || limit < 1) return undefined;
+    return { epoch, cursor, fact, orderAfter, factAfter, limit };
+};
+
+interface WalletQuery {
+    readonly epoch: number;
+    readonly cursor: number;
+    readonly after: number;
+    readonly limit: number;
+}
+
+const walletQuery = (url: URL): WalletQuery | undefined => {
+    if (!hasOnly(url, ['epoch', 'cursor', 'after', 'limit'])
+        || !url.searchParams.has('epoch')
+        || !url.searchParams.has('cursor')) return undefined;
+    const epoch = intParam(url.searchParams.get('epoch'), 0, Number.MAX_SAFE_INTEGER);
+    const cursor = intParam(url.searchParams.get('cursor'), 0, Number.MAX_SAFE_INTEGER);
+    const after = intParam(url.searchParams.get('after'), 0, Number.MAX_SAFE_INTEGER);
+    const limit = intParam(url.searchParams.get('limit'), 100, 500);
+    if (epoch === undefined || epoch < 1
+        || cursor === undefined || after === undefined
+        || limit === undefined || limit < 1) return undefined;
+    return { epoch, cursor, after, limit };
+};
+
+const exactResync = (
+    state: ReplayState,
+    requested: Readonly<{ epoch: number; cursor: number; fact?: number }>
+): ReplayResync | undefined => {
+    const snapshot = state.snapshot;
+    const reason = requested.epoch !== snapshot.epoch
+        ? 'epoch_changed'
+        : requested.cursor !== snapshot.cursor
+            ? 'cursor_changed'
+            : requested.fact !== undefined && requested.fact !== state.paper.factCount
+                ? 'paper_changed'
+                : undefined;
+    if (reason === undefined) return undefined;
+    return Object.freeze({
+        contract: replayResyncContract,
+        reason,
+        sourceReplaySha256: snapshot.sourceReplaySha256,
+        runId: snapshot.runId,
+        requested: Object.freeze({ ...requested }),
+        cut: Object.freeze({
+            epoch: snapshot.epoch,
+            cursor: snapshot.cursor,
+            now: snapshot.now,
+            ...(requested.fact === undefined ? {} : { fact: state.paper.factCount }),
+        }),
+    });
+};
+
+const offsetPage = <T>(after: number, total: number, items: readonly T[]) => ({
+    after,
+    next: after + items.length < total ? after + items.length : null,
+    total,
+    items,
+});
 
 const handler = (
     runtime: ReplayRuntime,
@@ -213,6 +336,13 @@ const handler = (
             if (url.pathname === `${base}/notifications`) {
                 const query = notificationQuery(url);
                 if (!query) return reject(res, 400, 'Notification query is invalid');
+                if (query.epoch !== undefined && query.cursor !== undefined) {
+                    const resync = exactResync(runtime.state(), {
+                        epoch: query.epoch,
+                        cursor: query.cursor,
+                    });
+                    if (resync) return sendResync(res, auth, resync);
+                }
                 const page = runtime.notifications(query.after, query.limit);
                 return sendJson(res, 200, {
                     success: true,
@@ -223,17 +353,60 @@ const handler = (
                 const query = deltaQuery(url);
                 if (!query) return reject(res, 400, 'Delta query is invalid');
                 const result = runtime.deltas(query.epoch, query.after, query.limit);
-                if (result.resync) {
-                    return sendJson(res, 409, {
-                        success: false,
-                        ...responseBody(auth, resyncIdentity(result.resync), {
-                            resync: result.resync,
-                        }),
-                    });
-                }
+                if (result.resync) return sendResync(res, auth, result.resync);
                 return sendJson(res, 200, {
                     success: true,
                     ...responseBody(auth, deltaIdentity(result.page), { page: result.page }),
+                });
+            }
+            if (url.pathname === `${base}/paper`) {
+                const query = paperQuery(url);
+                if (!query) return reject(res, 400, 'Paper query is invalid');
+                const state = runtime.state();
+                const resync = exactResync(state, {
+                    epoch: query.epoch,
+                    cursor: query.cursor,
+                    fact: query.fact,
+                });
+                if (resync) return sendResync(res, auth, resync);
+                const portfolio = runtime.portfolio();
+                const orders = runtime.orders(query.orderAfter, query.limit);
+                const facts = runtime.facts(query.factAfter, query.limit);
+                const page = {
+                    contract: replayPaperContract,
+                    sourceReplaySha256: state.snapshot.sourceReplaySha256,
+                    runId: state.snapshot.runId,
+                    epoch: state.snapshot.epoch,
+                    cutCursor: state.snapshot.cursor,
+                    cutAt: state.snapshot.now,
+                    fact: state.paper.factCount,
+                    orders: offsetPage(query.orderAfter, portfolio.orderCount, orders),
+                    facts: offsetPage(query.factAfter, portfolio.factCount, facts),
+                    portfolio,
+                };
+                return sendJson(res, 200, {
+                    success: true,
+                    ...responseBody(auth, identityOf(state.snapshot), { page }),
+                });
+            }
+            const walletPrefix = `${base}/wallets/`;
+            if (url.pathname.startsWith(walletPrefix)) {
+                const wallet = addressSchema.safeParse(url.pathname.slice(walletPrefix.length));
+                const query = walletQuery(url);
+                if (!wallet.success || !query || query.after > query.cursor) {
+                    return reject(res, 400, 'Wallet query is invalid');
+                }
+                const state = runtime.state();
+                const resync = exactResync(state, {
+                    epoch: query.epoch,
+                    cursor: query.cursor,
+                });
+                if (resync) return sendResync(res, auth, resync);
+                const page = runtime.walletTrades(wallet.data, query.after, query.limit);
+                const portfolio = runtime.walletPortfolio(wallet.data);
+                return sendJson(res, 200, {
+                    success: true,
+                    ...responseBody(auth, pageIdentity(page), { page, portfolio }),
                 });
             }
             return reject(res, 404, 'Replay route not found');

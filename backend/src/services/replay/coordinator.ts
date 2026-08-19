@@ -57,17 +57,18 @@ export interface ReplayDeltaPage {
 
 export interface ReplayResync {
     readonly contract: typeof replayResyncContract;
-    readonly reason: 'epoch_changed' | 'cursor_ahead';
+    readonly reason: 'epoch_changed' | 'cursor_ahead' | 'cursor_changed' | 'paper_changed';
     readonly sourceReplaySha256: string;
     readonly runId: string;
-    readonly requested: {
-        readonly epoch: number;
-        readonly after: number;
-    };
+    readonly requested: Readonly<
+        { epoch: number; after: number }
+        | { epoch: number; cursor: number; fact?: number }
+    >;
     readonly cut: {
         readonly epoch: number;
         readonly cursor: number;
         readonly now: string | null;
+        readonly fact?: number;
     };
 }
 
