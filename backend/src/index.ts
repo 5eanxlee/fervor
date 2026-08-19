@@ -26,6 +26,7 @@ import { redisStreams } from './services/redisStreamService';
 import { createReplayGateway } from './services/replay/replayGateway';
 import { ReplayFeed } from './services/realtime/replayFeed';
 import { attachRealtime, type RealtimeServer } from './services/realtime/server';
+import { marketFanout } from './services/realtime/marketFanout';
 
 const app = express();
 const PORT = env.API_PORT;
@@ -162,6 +163,7 @@ const gracefulShutdown = async (signal: string): Promise<void> => {
     timeout.unref();
     try {
         await realtime?.close();
+        await marketFanout.close();
         if (server) {
             await new Promise<void>((resolve, reject) => server!.close((error) => error ? reject(error) : resolve()));
         }
