@@ -1,8 +1,8 @@
 //! Strict legacy Pump lifecycle events derived from canonical Anchor self-CPI records.
 //!
 //! This layout is pinned to the November 2024 chain frames in Fervor's qualified
-//! corpus. The first public Pump IDL later included an additional `creator` field
-//! in `CreateEvent`; this decoder deliberately rejects that newer shape.
+//! corpus. The first public Pump IDL later included `creator` and `timestamp`
+//! fields in `CreateEvent`; this decoder deliberately rejects that newer shape.
 
 use crate::fervor_tx::{
     opt_u64_text, u64_text, FervorTx, Quarantine, QuarantineReason, SourceError, TxIx,
@@ -65,7 +65,6 @@ pub struct PumpCreate {
     pub mint: String,
     pub bonding_curve: String,
     pub user: String,
-    pub timestamp: i64,
     pub decimals: u32,
     #[serde(with = "u64_text")]
     pub supply_raw: u64,
@@ -157,7 +156,7 @@ pub struct PumpState {
     pub first_slot: u64,
     #[serde(with = "u64_text")]
     pub last_slot: u64,
-    pub created_at: i64,
+    pub created_at: Option<i64>,
     pub completed_at: Option<i64>,
     pub migrated_at: Option<i64>,
     pub last_trade_at: Option<i64>,
@@ -221,7 +220,7 @@ impl PumpState {
                         sell_count: 0,
                         first_slot: event.origin.slot,
                         last_slot: event.origin.slot,
-                        created_at: create.timestamp,
+                        created_at: event.origin.block_time,
                         completed_at: None,
                         migrated_at: None,
                         last_trade_at: None,
@@ -414,7 +413,6 @@ fn parse_create(
     let mint = input.pubkey("mint")?;
     let bonding_curve = input.pubkey("bonding curve")?;
     let user = input.pubkey("user")?;
-    let timestamp = input.i64("timestamp")?;
     input.finish("create")?;
     let evidence = mint_evidence(tx, keys, outer, &mint)?;
     Ok(PumpCreate {
@@ -424,7 +422,6 @@ fn parse_create(
         mint,
         bonding_curve,
         user,
-        timestamp,
         decimals: evidence.decimals,
         supply_raw: evidence.supply_raw,
         supply_fixed: evidence.supply_fixed,
@@ -738,7 +735,6 @@ mod tests {
         create.extend_from_slice(&mint);
         create.extend_from_slice(&curve);
         create.extend_from_slice(&user);
-        create.extend_from_slice(&1_732_076_908_i64.to_le_bytes());
 
         let mut trade = Vec::new();
         trade.extend_from_slice(&mint);
@@ -889,7 +885,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_create_event_with_newer_creator_field() {
+    fn rejects_create_event_with_newer_fields() {
         let mut tx = sample();
         let create = tx
             .instructions
@@ -899,9 +895,10 @@ mod tests {
                     .starts_with(&[SELF_CPI.as_slice(), CREATE_EVENT.as_slice()].concat())
             })
             .unwrap();
-        let timestamp = create.data.split_off(create.data.len() - 8);
         create.data.extend_from_slice(&bytes(5));
-        create.data.extend_from_slice(&timestamp);
+        create
+            .data
+            .extend_from_slice(&1_732_076_908_i64.to_le_bytes());
         assert!(matches!(
             decode_pump_events(&tx),
             Err(Quarantine {
