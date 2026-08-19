@@ -7,11 +7,14 @@
 use crate::fervor_tx::{
     opt_u64_text, u64_text, FervorTx, Quarantine, QuarantineReason, SourceError, TxIx,
 };
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use std::str;
 
 pub const PUMP_PROGRAM: &str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 pub const PUMP_LAYOUT: &str = "pump-event-2024-11-v1";
+pub const PUMP_CURVE_CONTRACT: &str = "fervor-pump-curve-v1";
+pub const PUMP_LIQUIDITY_POLICY: &str = "fervor-pump-real-reserve-mark-v1";
 pub const SUPPLY_CONTRACT: &str = "fervor-supply-v1";
 
 const TOKEN_PROGRAM: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -194,11 +197,60 @@ pub struct PumpState {
     pub fdv_sol: Option<String>,
 }
 
-impl PumpState {
+/// The post-trade state of a Pump bonding curve.
+///
+/// Reserve fields are exact program-event values. `liquidity_sol` is a
+/// deterministic mark of both real reserves at the marginal virtual-reserve
+/// price; it is estimated because price impact makes that mark unrealizable.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PumpCurvePoint {
+    pub contract: &'static str,
+    pub liquidity_policy: &'static str,
+    pub source_event_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion_event_id: Option<String>,
+    pub mint: String,
+    pub bonding_curve: String,
+    #[serde(with = "u64_text")]
+    pub slot: u64,
+    #[serde(with = "u64_text")]
+    pub tx_index: u64,
+    pub signature: String,
+    pub instruction_index: u32,
+    pub event_index: u32,
+    pub observed_at: String,
+    pub complete: bool,
+    pub decimals: u32,
+    #[serde(with = "u64_text")]
+    pub supply_raw: u64,
+    #[serde(with = "u64_text")]
+    pub virtual_sol_raw: u64,
+    #[serde(with = "u64_text")]
+    pub virtual_token_raw: u64,
+    #[serde(with = "u64_text")]
+    pub real_sol_raw: u64,
+    #[serde(with = "u64_text")]
+    pub real_token_raw: u64,
+    pub price_sol: String,
+    pub fdv_sol: String,
+    pub liquidity_sol: String,
+    pub liquidity_estimated: bool,
+}
+
+#[derive(Debug)]
+pub struct PumpProjection {
+    pub state: PumpState,
+    pub curve: Vec<PumpCurvePoint>,
+}
+
+impl PumpProjection {
     pub fn reconstruct(mint: &str, events: &[PumpEvent]) -> Result<Self, SourceError> {
-        let mut state = None;
+        let mut state = None::<PumpState>;
         let mut last_order = None;
         let mut pending = None;
+        let mut last_trade_origin = None;
+        let mut curve = Vec::new();
 
         for event in events.iter().filter(|event| event.mint() == mint) {
             let tx_index = event.origin.tx_index.ok_or_else(|| {
@@ -224,7 +276,7 @@ impl PumpState {
                             "Pump create transaction does not prove fixed supply".to_string(),
                         ));
                     }
-                    state = Some(Self {
+                    state = Some(PumpState {
                         version: VERSION,
                         layout: PUMP_LAYOUT.to_string(),
                         mint: create.mint.clone(),
@@ -258,8 +310,7 @@ impl PumpState {
                 PumpData::Trade(trade) => {
                     let complete = pending.take();
                     if complete.is_some_and(|(origin, _): (&PumpOrigin, &PumpComplete)| {
-                        origin.signature != event.origin.signature
-                            || origin.instruction_index != event.origin.instruction_index
+                        !same_instruction(origin, &event.origin)
                     }) {
                         return Err(SourceError(
                             "Pump completion is not paired with its final trade".to_string(),
@@ -269,9 +320,18 @@ impl PumpState {
                         SourceError("Pump trade precedes its create event".to_string())
                     })?;
                     state.apply_trade(trade, event.origin.slot)?;
+                    let mut completion_origin = None;
                     if let Some((origin, complete)) = complete {
                         state.apply_complete(complete, origin.slot)?;
+                        completion_origin = Some(origin);
                     }
+                    curve.push(PumpCurvePoint::from_state(
+                        state,
+                        event,
+                        trade,
+                        completion_origin,
+                    )?);
+                    last_trade_origin = Some(&event.origin);
                 }
                 PumpData::Complete(complete) => {
                     let state = state.as_mut().ok_or_else(|| {
@@ -285,7 +345,20 @@ impl PumpState {
                         ));
                     }
                     if state.real_token_raw == Some(0) {
+                        let trade_origin = last_trade_origin.ok_or_else(|| {
+                            SourceError("Pump completion has no final curve trade".to_string())
+                        })?;
+                        if !same_instruction(trade_origin, &event.origin) {
+                            return Err(SourceError(
+                                "Pump completion is not paired with its final trade".to_string(),
+                            ));
+                        }
                         state.apply_complete(complete, event.origin.slot)?;
+                        let point = curve.last_mut().ok_or_else(|| {
+                            SourceError("Pump completion has no curve state".to_string())
+                        })?;
+                        point.complete = true;
+                        point.completion_event_id = Some(pump_event_id(&event.origin));
                     } else if pending.replace((&event.origin, complete)).is_some() {
                         return Err(SourceError(
                             "Pump lifecycle contains overlapping completions".to_string(),
@@ -321,9 +394,20 @@ impl PumpState {
                 "Pump completion has no final curve trade".to_string(),
             ));
         }
-        state.ok_or_else(|| SourceError(format!("Pump lifecycle has no create event for {mint}")))
+        let state = state
+            .ok_or_else(|| SourceError(format!("Pump lifecycle has no create event for {mint}")))?;
+        let point_count = u64::try_from(curve.len())
+            .map_err(|_| SourceError("Pump curve point count overflow".to_string()))?;
+        if state.trade_count != point_count {
+            return Err(SourceError(
+                "Pump curve point count differs from its trade count".to_string(),
+            ));
+        }
+        Ok(Self { state, curve })
     }
+}
 
+impl PumpState {
     fn apply_trade(&mut self, trade: &PumpTrade, slot: u64) -> Result<(), SourceError> {
         if self.phase != PumpPhase::Curve {
             return Err(SourceError(
@@ -386,6 +470,66 @@ impl PumpState {
         self.price_sol = Some(decimal_ratio(price_num, denominator)?);
         self.fdv_sol = Some(decimal_ratio(fdv_num, denominator)?);
         Ok(())
+    }
+}
+
+impl PumpCurvePoint {
+    fn from_state(
+        state: &PumpState,
+        event: &PumpEvent,
+        trade: &PumpTrade,
+        completion: Option<&PumpOrigin>,
+    ) -> Result<Self, SourceError> {
+        let tx_index = event
+            .origin
+            .tx_index
+            .ok_or_else(|| SourceError("Pump curve event has no transaction index".to_string()))?;
+        let virtual_token = u128::from(trade.virtual_token_raw);
+        let real_mark_num = u128::from(trade.real_sol_raw)
+            .checked_mul(virtual_token)
+            .and_then(|sol| {
+                u128::from(trade.real_token_raw)
+                    .checked_mul(u128::from(trade.virtual_sol_raw))
+                    .and_then(|token| sol.checked_add(token))
+            })
+            .ok_or_else(|| SourceError("Pump liquidity numerator overflow".to_string()))?;
+        let real_mark_den = virtual_token
+            .checked_mul(LAMPORTS_PER_SOL)
+            .ok_or_else(|| SourceError("Pump liquidity denominator overflow".to_string()))?;
+        let observed_at = DateTime::<Utc>::from_timestamp(trade.timestamp, 0)
+            .ok_or_else(|| SourceError("Pump trade timestamp is out of range".to_string()))?
+            .to_rfc3339_opts(SecondsFormat::Secs, true);
+        Ok(Self {
+            contract: PUMP_CURVE_CONTRACT,
+            liquidity_policy: PUMP_LIQUIDITY_POLICY,
+            source_event_id: pump_event_id(&event.origin),
+            completion_event_id: completion.map(pump_event_id),
+            mint: state.mint.clone(),
+            bonding_curve: state.bonding_curve.clone(),
+            slot: event.origin.slot,
+            tx_index,
+            signature: event.origin.signature.clone(),
+            instruction_index: event.origin.instruction_index,
+            event_index: event.origin.event_index,
+            observed_at,
+            complete: state.phase == PumpPhase::Complete,
+            decimals: state.decimals,
+            supply_raw: state.supply_raw,
+            virtual_sol_raw: trade.virtual_sol_raw,
+            virtual_token_raw: trade.virtual_token_raw,
+            real_sol_raw: trade.real_sol_raw,
+            real_token_raw: trade.real_token_raw,
+            price_sol: state
+                .price_sol
+                .clone()
+                .ok_or_else(|| SourceError("Pump curve price is missing".to_string()))?,
+            fdv_sol: state
+                .fdv_sol
+                .clone()
+                .ok_or_else(|| SourceError("Pump curve FDV is missing".to_string()))?,
+            liquidity_sol: decimal_ratio(real_mark_num, real_mark_den)?,
+            liquidity_estimated: true,
+        })
     }
 }
 
@@ -708,6 +852,20 @@ fn validate_reserves(state: &PumpState, trade: &PumpTrade) -> Result<(), SourceE
     Ok(())
 }
 
+fn same_instruction(left: &PumpOrigin, right: &PumpOrigin) -> bool {
+    left.slot == right.slot
+        && left.tx_index == right.tx_index
+        && left.signature == right.signature
+        && left.instruction_index == right.instruction_index
+}
+
+fn pump_event_id(origin: &PumpOrigin) -> String {
+    format!(
+        "{PUMP_LAYOUT}:{}:{}:{}:{}",
+        origin.slot, origin.signature, origin.instruction_index, origin.event_index
+    )
+}
+
 fn decimal_ratio(numerator: u128, denominator: u128) -> Result<String, SourceError> {
     if denominator == 0 {
         return Err(SourceError("Pump decimal denominator is zero".to_string()));
@@ -984,7 +1142,8 @@ mod tests {
             vec![key(2); 4]
         );
 
-        let state = PumpState::reconstruct(&key(2), &events).unwrap();
+        let projection = PumpProjection::reconstruct(&key(2), &events).unwrap();
+        let state = projection.state;
         assert_eq!(state.phase, PumpPhase::Migrated);
         assert_eq!(state.supply_raw, 1_000_000_000_000_000);
         assert_eq!(state.decimals, 6);
@@ -992,6 +1151,16 @@ mod tests {
         assert_eq!(state.real_token_raw, Some(0));
         assert_eq!(state.price_sol.as_deref(), Some("0.000000031000000000"));
         assert_eq!(state.fdv_sol.as_deref(), Some("31.000000000000000000"));
+        assert_eq!(projection.curve.len(), 1);
+        assert_eq!(projection.curve[0].contract, PUMP_CURVE_CONTRACT);
+        assert_eq!(projection.curve[0].liquidity_policy, PUMP_LIQUIDITY_POLICY);
+        assert!(projection.curve[0].liquidity_estimated);
+        assert_eq!(projection.curve[0].liquidity_sol, "1.000000000000000000");
+        assert!(projection.curve[0].complete);
+        assert!(projection.curve[0].completion_event_id.is_some());
+        let curve_json = serde_json::to_value(&projection.curve[0]).unwrap();
+        assert_eq!(curve_json["virtualSolRaw"], "31000000000");
+        assert_eq!(curve_json["liquidityEstimated"], true);
 
         let json = serde_json::to_value(&events[0]).unwrap();
         assert_eq!(json["type"], "create");
@@ -1073,7 +1242,7 @@ mod tests {
             .unwrap()
             .data = vec![6, 0, 1, 7];
         let events = decode_pump_events(&tx).unwrap();
-        assert!(PumpState::reconstruct(&key(2), &events)
+        assert!(PumpProjection::reconstruct(&key(2), &events)
             .unwrap_err()
             .to_string()
             .contains("fixed supply"));
@@ -1106,9 +1275,51 @@ mod tests {
             .find(|event| matches!(event.data, PumpData::Trade(_)))
             .unwrap();
         trade.origin.signature = bs58::encode([8_u8; 64]).into_string();
-        assert!(PumpState::reconstruct(&key(2), &events)
+        assert!(PumpProjection::reconstruct(&key(2), &events)
             .unwrap_err()
             .to_string()
             .contains("not paired"));
+    }
+
+    #[test]
+    fn completion_after_trade_must_share_its_instruction() {
+        let mut events = decode_pump_events(&sample()).unwrap();
+        let complete = events
+            .iter()
+            .position(|event| matches!(event.data, PumpData::Complete(_)))
+            .unwrap();
+        let trade = events
+            .iter()
+            .position(|event| matches!(event.data, PumpData::Trade(_)))
+            .unwrap();
+        events.swap(complete, trade);
+        events[1].origin.event_index = 1;
+        events[2].origin.event_index = 2;
+        events[2].origin.signature = bs58::encode([8_u8; 64]).into_string();
+        assert!(PumpProjection::reconstruct(&key(2), &events)
+            .unwrap_err()
+            .to_string()
+            .contains("not paired"));
+    }
+
+    #[test]
+    fn marks_only_real_curve_reserves_as_estimated_liquidity() {
+        let mut events = decode_pump_events(&sample()).unwrap();
+        events.retain(|event| matches!(event.data, PumpData::Create(_) | PumpData::Trade(_)));
+        let trade = events
+            .iter_mut()
+            .find_map(|event| match &mut event.data {
+                PumpData::Trade(trade) => Some(trade),
+                _ => None,
+            })
+            .unwrap();
+        trade.real_token_raw = 500_000_000_000_000;
+
+        let projection = PumpProjection::reconstruct(&key(2), &events).unwrap();
+        assert_eq!(projection.state.phase, PumpPhase::Curve);
+        assert_eq!(projection.curve.len(), 1);
+        assert_eq!(projection.curve[0].liquidity_sol, "16.500000000000000000");
+        assert_eq!(projection.curve[0].real_sol_raw, 1_000_000_000);
+        assert_eq!(projection.curve[0].real_token_raw, 500_000_000_000_000);
     }
 }

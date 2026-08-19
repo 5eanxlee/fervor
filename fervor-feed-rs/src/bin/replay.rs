@@ -9,8 +9,8 @@ use fervor_feed_rs::{
     market_decoder::decode_swap,
     old_faithful::{ArchiveReader, OldFaithfulAdapter},
     pump::{
-        decode_pump_events, pump_supply, PumpEvent, PumpState, SupplyEvidence, PUMP_LAYOUT,
-        SUPPLY_CONTRACT,
+        decode_pump_events, pump_supply, PumpEvent, PumpProjection, SupplyEvidence,
+        PUMP_CURVE_CONTRACT, PUMP_LAYOUT, PUMP_LIQUIDITY_POLICY, SUPPLY_CONTRACT,
     },
     trade_event::{TradeEvent, TRADE_CONTRACT},
 };
@@ -23,12 +23,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SCHEMA: &str = "fervor-replay-v6";
+const SCHEMA: &str = "fervor-replay-v7";
 const TX_FILE: &str = "transactions.ndjson";
 const SWAP_FILE: &str = "swaps.ndjson";
 const TRADE_FILE: &str = "trades.ndjson";
 const PUMP_FILE: &str = "pump-events.ndjson";
 const STATE_FILE: &str = "pump-state.json";
+const CURVE_FILE: &str = "pump-curve.ndjson";
 const SUPPLY_FILE: &str = "supply.json";
 const FX_FILE: &str = "fx-observations.ndjson";
 const FX_TAPE_FILE: &str = "fx-tape.ndjson";
@@ -76,6 +77,11 @@ struct ReplayManifest {
     pump_event_sha256: String,
     pump_state_file: &'static str,
     pump_state_sha256: String,
+    pump_curve_contract: &'static str,
+    pump_liquidity_policy: &'static str,
+    pump_curve_points: u64,
+    pump_curve_file: &'static str,
+    pump_curve_sha256: String,
     supply_contract: &'static str,
     supply_file: &'static str,
     supply_sha256: String,
@@ -148,6 +154,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     let mut swap_out = Output::new(&out.join(SWAP_FILE))?;
     let mut trade_out = Output::new(&out.join(TRADE_FILE))?;
     let mut pump_out = Output::new(&out.join(PUMP_FILE))?;
+    let mut curve_out = Output::new(&out.join(CURVE_FILE))?;
     let mut fx_out = Output::new(&out.join(FX_FILE))?;
     let mut fx_tape_out = Output::new(&out.join(FX_TAPE_FILE))?;
     let mut blocks = 0_u64;
@@ -248,7 +255,16 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         bail!("replay found no Pump lifecycle events for mint {mint}");
     }
 
-    let pump_state = PumpState::reconstruct(mint, &pump_events)?;
+    let projection = PumpProjection::reconstruct(mint, &pump_events)?;
+    let curve_points =
+        u64::try_from(projection.curve.len()).context("Pump curve count overflow")?;
+    for point in &projection.curve {
+        curve_out.write_json(point)?;
+    }
+    let pump_state = projection.state;
+    if curve_points != pump_state.trade_count {
+        bail!("Pump curve count differs from reconstructed trade count");
+    }
     let supply =
         supply.ok_or_else(|| anyhow!("replay found no qualified supply event for {mint}"))?;
     if supply.token_mint != pump_state.mint
@@ -271,6 +287,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     let swap_sha256 = swap_out.finish()?;
     let trade_sha256 = trade_out.finish()?;
     let pump_event_sha256 = pump_out.finish()?;
+    let pump_curve_sha256 = curve_out.finish()?;
     let fx_sha256 = fx_out.finish()?;
     let fx_tape_sha256 = fx_tape_out.finish()?;
     let pump_state_sha256 = write_json(&out.join(STATE_FILE), &pump_state)?;
@@ -281,6 +298,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         &trade_sha256,
         &pump_event_sha256,
         &pump_state_sha256,
+        &pump_curve_sha256,
         &supply_sha256,
         &fx_sha256,
         &fx_tape_sha256,
@@ -316,6 +334,11 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         pump_event_sha256,
         pump_state_file: STATE_FILE,
         pump_state_sha256,
+        pump_curve_contract: PUMP_CURVE_CONTRACT,
+        pump_liquidity_policy: PUMP_LIQUIDITY_POLICY,
+        pump_curve_points: curve_points,
+        pump_curve_file: CURVE_FILE,
+        pump_curve_sha256,
         supply_contract: SUPPLY_CONTRACT,
         supply_file: SUPPLY_FILE,
         supply_sha256,
