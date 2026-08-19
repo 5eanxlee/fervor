@@ -1,0 +1,167 @@
+{
+  "schema": "fervor-replay-api-evidence-v1",
+  "recordedAt": "2026-08-19T06:45:36Z",
+  "runtimeCommit": "de28bc894b61e37d96a11380d7d7796c277ec3c2",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a",
+    "machine": "n2-standard-16",
+    "callerUid": 1001,
+    "callerGroups": [1000, 1002]
+  },
+  "image": {
+    "configSha256": "36f71f645973d4393252728ace85bac2a4bd44fafe8a20fc9bed5b57f7da1a08",
+    "builtAt": "2026-08-19T06:35:41.054970132Z"
+  },
+  "source": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "events": 5516
+  },
+  "run": {
+    "runId": "portfolio-gcp",
+    "epoch": 3,
+    "cursor": 60,
+    "now": "2024-11-20T03:49:32.000Z",
+    "status": "paused"
+  },
+  "api": {
+    "contract": "fervor-replay-api-v1",
+    "mode": "historical_replay",
+    "sessionId": "e6c3b2aac1547371b26385a6b5eab321ae004488b5aaaf7e2c9a2c4c795a39e5",
+    "socket": {
+      "containerPath": "/checkpoints/replay-api.sock",
+      "hostPath": "/home/sean/replay-portfolio-runtime/replay-api.sock",
+      "mode": "0660",
+      "uid": 1000,
+      "gid": 1000
+    },
+    "auth": {
+      "contract": "fervor-replay-api-auth-v1",
+      "descriptorSha256": "8c3725ef29b6a37e34191178bebdaea4812029515793c1a30f3535e21143ebac",
+      "descriptorMode": "0444",
+      "tokenFileMode": "0600",
+      "rawTokenInDescriptor": false,
+      "rawTokenMounted": false,
+      "rawTokenRecorded": false
+    },
+    "responses": {
+      "missingMode": 409,
+      "missingToken": 401,
+      "wrongRun": 404,
+      "snapshot": 200,
+      "notifications": 200
+    },
+    "headers": {
+      "cacheControl": "no-store",
+      "contentType": "application/json; charset=utf-8",
+      "nosniff": true,
+      "datePresent": false
+    }
+  },
+  "inbox": {
+    "modelSha256": "d9dbfe3fe8d1fd3cb0f1f32c4f6e86064667d543821da98e4d704fbdbd29c09b",
+    "definitionCount": 5,
+    "triggeredCount": 4,
+    "armedCount": 0,
+    "unavailableTypes": [
+      "market_cap"
+    ],
+    "notificationsSha256": "2a4c6edfada8ccd57beac72945240f3d24c15c6f77dd3b5440e061f34fd68944",
+    "order": [
+      {
+        "contract": "fervor-replay-wallet-in-app-v1",
+        "alertId": "44444444-4444-4444-8444-444444444444",
+        "cursor": 14,
+        "activityKey": "65d46bff73d5e17036666c0e74b47e9f21642859d48b1ed660cc1175954b2f74",
+        "notificationKey": "2d8cb0e5cadb34733bed44be64af447e2a3ecc6992e68059d5499fdd3da704e3",
+        "external": false
+      },
+      {
+        "contract": "fervor-replay-in-app-v1",
+        "alertId": "11111111-1111-4111-8111-111111111111",
+        "cursor": 22,
+        "notificationKey": "3870eaac27404859046c3de290e15c2b5692b8b57e2fb854bb90d2dfe401002b",
+        "external": false
+      },
+      {
+        "contract": "fervor-replay-wallet-in-app-v1",
+        "alertId": "55555555-5555-4555-8555-555555555555",
+        "cursor": 47,
+        "activityKey": "3fa55e10285563a28d36181a404fa820416a9a2c364ffb052be30d3470941b41",
+        "notificationKey": "d33903083bd19a12cc891d3214ed48bf34f5d320125391d8e5693ceabcb04916",
+        "external": false
+      },
+      {
+        "contract": "fervor-replay-in-app-v1",
+        "alertId": "22222222-2222-4222-8222-222222222222",
+        "cursor": 51,
+        "notificationKey": "4b6681bd7acda86965f385743aa3fe855db9886a4afcaecf56df0ec6f1e0341b",
+        "external": false
+      }
+    ]
+  },
+  "isolation": {
+    "networkMode": "none",
+    "egressProbe": "ENETUNREACH",
+    "readOnlyRoot": true,
+    "capDrop": ["ALL"],
+    "noNewPrivileges": true,
+    "environment": [
+      "NODE_ENV",
+      "NODE_VERSION",
+      "PATH",
+      "YARN_VERSION"
+    ],
+    "liveEnvironmentPresent": false
+  },
+  "recovery": {
+    "priorContainer": "replay-api-gcp-live-a",
+    "priorExitCode": 0,
+    "socketRemovedOnStop": true,
+    "activeContainer": "replay-api-gcp-live-c",
+    "restoredEpoch": 3,
+    "restoredCursor": 60,
+    "sessionIdStable": true,
+    "activeContainerRetained": true
+  },
+  "collisions": {
+    "container": "replay-api-gcp-collision",
+    "exitCode": 1,
+    "error": "Replay API socket is already in use",
+    "primaryStatusAfter": 200,
+    "primarySocketReplaced": false
+  },
+  "negativeStartup": {
+    "container": "replay-api-gcp-a",
+    "exitCode": 1,
+    "cause": "unreadable mounted auth descriptor",
+    "failedClosed": true,
+    "rawTokenExposed": false
+  },
+  "tests": {
+    "build": true,
+    "backendFilesPassed": 57,
+    "backendFilesSkipped": 14,
+    "backendTestsPassed": 363,
+    "backendTestsSkipped": 60,
+    "composeOverlay": true,
+    "databaseIntegrationRun": false
+  },
+  "result": {
+    "modeBound": true,
+    "runBound": true,
+    "sourceBound": true,
+    "epochBound": true,
+    "authRequired": true,
+    "cutConsistent": true,
+    "ownerGroupSocket": true,
+    "collisionFenced": true,
+    "externalDeliveryAttempted": false,
+    "databaseUsed": false,
+    "redisUsed": false,
+    "liveProviderUsed": false,
+    "liveTransactionSubmitted": false
+  }
+}
