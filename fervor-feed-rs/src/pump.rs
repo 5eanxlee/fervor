@@ -582,15 +582,19 @@ fn decimal_ratio(numerator: u128, denominator: u128) -> Result<String, SourceErr
     if denominator == 0 {
         return Err(SourceError("Pump decimal denominator is zero".to_string()));
     }
-    let scale = 10_u128
-        .checked_pow(PRICE_SCALE)
-        .ok_or_else(|| SourceError("Pump decimal scale overflow".to_string()))?;
     let whole = numerator / denominator;
-    let fraction = (numerator % denominator)
-        .checked_mul(scale)
-        .ok_or_else(|| SourceError("Pump decimal fraction overflow".to_string()))?
-        / denominator;
-    Ok(format!("{whole}.{fraction:018}"))
+    let mut remainder = numerator % denominator;
+    let mut fraction = String::with_capacity(PRICE_SCALE as usize);
+    for _ in 0..PRICE_SCALE {
+        remainder = remainder
+            .checked_mul(10)
+            .ok_or_else(|| SourceError("Pump decimal remainder overflow".to_string()))?;
+        let digit = u8::try_from(remainder / denominator)
+            .map_err(|_| SourceError("Pump decimal digit overflow".to_string()))?;
+        fraction.push(char::from(b'0' + digit));
+        remainder %= denominator;
+    }
+    Ok(format!("{whole}.{fraction}"))
 }
 
 fn add_one(value: u64, name: &str) -> Result<u64, SourceError> {
@@ -928,5 +932,17 @@ mod tests {
         let mut tx = sample();
         tx.error = Some(b"InstructionError(2, Custom(1))".to_vec());
         assert!(decode_pump_events(&tx).unwrap().is_empty());
+    }
+
+    #[test]
+    fn formats_large_fdv_without_intermediate_overflow() {
+        assert_eq!(
+            decimal_ratio(
+                80_000_000_000_000_000_000_000_000,
+                280_000_000_000_000_000_000_000,
+            )
+            .unwrap(),
+            "285.714285714285714285"
+        );
     }
 }
