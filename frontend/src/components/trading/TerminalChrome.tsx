@@ -263,7 +263,7 @@ export function TerminalHeader({ onSettings, settings }: { onSettings: (section?
                         <span className="text-[clamp(1rem,1.3vw,1.2rem)] font-[680] tracking-[-0.025em] text-white">FERVOR</span>
                     </Link>
 
-                    <nav className="hidden h-full min-w-0 items-center lg:flex">
+                    <nav className="terminal-nav hidden h-full min-w-0 items-center lg:flex">
                         {links.map(({ href, label }) => {
                             const active = label === 'Replay'
                                 ? pathname === '/replay'
@@ -271,7 +271,17 @@ export function TerminalHeader({ onSettings, settings }: { onSettings: (section?
                                 ? pathname === '/dashboard' || pathname.startsWith('/trade/')
                                 : label === 'Track' ? pathname === '/tracker'
                                     : pathname === href;
-                            return <Link key={`${href}:${label}`} href={href} className={`terminal-nav-link flex h-full items-center px-[clamp(.65rem,1.1vw,1rem)] ${active ? 'text-[var(--term-accent)]' : 'text-[var(--term-text)] hover:text-white'}`}>{label}</Link>;
+                            return (
+                                <Link
+                                    key={`${href}:${label}`}
+                                    href={href}
+                                    className="terminal-nav-link"
+                                    data-active={active}
+                                    aria-current={active ? 'page' : undefined}
+                                >
+                                    {label}
+                                </Link>
+                            );
                         })}
                     </nav>
 
