@@ -68,3 +68,23 @@ At commit `21382ed`, the shared TypeScript engines project the verified v7 tape 
 The final state is timestamped `2024-11-20T03:59:53Z`: native price `0.000011717442528638452` SOL, USD price `0.0027406250200343965`, fixed total supply `1,000,000,000`, and FDV `$2,740,625.0200343966`. Circulating market cap remains unavailable. Current liquidity is also unavailable after migration; the last supported curve estimate is preserved separately as `85.005359175000000000` SOL, or `$19,817.997363471935` using the contemporaneous tape.
 
 The projection runs completed in 2.31 and 2.18 seconds with 365,640 and 338,188 KiB peak RSS. Exact compact outputs are committed under `golden/`. The canonical 8.2 MiB projection and both timing records are retained in the private versioned GCS prefix `metrics/quant-2024-11-19/v1/`.
+
+At commit `3f85107`, `fervor-trade-v2` restores the archive's proven transaction index to every normalized trade. Replay schema v8 and all TypeScript consumers now share slot, transaction, instruction, and event ordering. This corrects equal-time close-price selection that previously fell back to an arbitrary identity order.
+
+Both independent raw extracts produced byte-identical v8 directories in 40.96 seconds, with 355,344 and 354,276 KiB peak RSS:
+
+- source manifest: `baa006f8a0a39e3fc7fbdc7967c3bf11be5a9e3a7a35e8cafe9a6e47d79e3600`;
+- normalized trade tape: `de9ec9f7d65feb395f97b495781ec0d9a772b845f5ec390f9e73fe64aaf09800`;
+- domain-separated replay: `804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702`.
+
+Independent TypeScript projections were again byte-identical. They completed in 2.51 and 2.38 seconds with 373,348 and 374,948 KiB peak RSS:
+
+- projection manifest file: `841dc68ceb9713561caf76091e742d6371828fd8ec64d18f2b44301a33add34b`;
+- enriched trades: `7215950af408d21b0a47b86b4c161de0384bfc57e893398a0d78e8834bfeb5ba`;
+- candles: `b8803f3115875dbe1d81e2cf559761b2bb036854b86693444dacd2f07dcf3c4e`;
+- market state: `427692352d825e07eedad9b347711027958f37d92075b3f47b0c5dde2b643b93`;
+- complete projection: `c14a97d75bb7193b2d65588ca9c2845767fb8f6585e1cc5b201dd1d0348cf9d8`.
+
+The corrected final trade price is `0.00001598430820249391` SOL or `$0.003738614026109172`, giving FDV `$3,738,614.026109172`. Counts, USD coverage, rolling windows, curve metrics, and supported-liquidity semantics are unchanged.
+
+A portable checkpoint at cursor 2,500 was 147,884 bytes, took 4.54 ms to create, and restored in 8.20 ms. Replaying its tail produced the exact clean-run checkpoint: final SHA-256 `2fc9338c7fba87e6cc9c7897ea00677201f88ebb1056549cc44bbe8bb48f8559` with source-prefix SHA-256 `facbe4572faccab8ec758d685998050e8f7f6f396304d5f95bd8f1bdea208e9c`. Rolling state and both terminal prices match the corrected golden output. The full v8 replay, metric v2 projection, and timing evidence are retained under the private GCS prefixes `replays/quant-2024-11-19/v8/`, `metrics/quant-2024-11-19/v2/`, and `evidence/quant-2024-11-19/v8/`.

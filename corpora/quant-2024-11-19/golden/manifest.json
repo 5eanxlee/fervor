@@ -1,19 +1,19 @@
 {
   "schema": "fervor-metric-replay-v1",
   "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
-  "sourceReplaySchema": "fervor-replay-v7",
-  "sourceReplaySha256": "b09fae64903dfab5b818a0b05bc307e4d219336f5f95f38848653f71febd0b3d",
-  "sourceManifestSha256": "99cb792662e1e9417f3c55608d54b648a05666d1ba5b5603dd81fb3590919dea",
+  "sourceReplaySchema": "fervor-replay-v8",
+  "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+  "sourceManifestSha256": "baa006f8a0a39e3fc7fbdc7967c3bf11be5a9e3a7a35e8cafe9a6e47d79e3600",
   "tradeFile": "trades.ndjson",
   "trades": 5494,
-  "tradeSha256": "c3dffe27e5b53a40788ab63fccd4175f2f97900b53b24b62fe5416dc56bf37b2",
+  "tradeSha256": "7215950af408d21b0a47b86b4c161de0384bfc57e893398a0d78e8834bfeb5ba",
   "curveFile": "curve-metrics.ndjson",
   "curvePoints": 250,
   "curveSha256": "c26ce92c6a25231ffcb8672bdaebe2263d5780cf7873ac08307bfe34981b9e64",
   "candleFile": "candles.ndjson",
   "candles": 597,
-  "candleSha256": "a8b7641718bd88e9c6de4c69957425d02bbb5974aff80f7e968444aae542c83b",
+  "candleSha256": "b8803f3115875dbe1d81e2cf559761b2bb036854b86693444dacd2f07dcf3c4e",
   "stateFile": "market-state.json",
-  "stateSha256": "8dc0645fd4cfcf6306d5218d6f465cef1c490703a649d29f663f62eab212ef2d",
-  "projectionSha256": "8b0de39397738de6609f56f15637751db1ead7ba3f4e783f0ec1e364757f7038"
+  "stateSha256": "427692352d825e07eedad9b347711027958f37d92075b3f47b0c5dde2b643b93",
+  "projectionSha256": "c14a97d75bb7193b2d65588ca9c2845767fb8f6585e1cc5b201dd1d0348cf9d8"
 }
