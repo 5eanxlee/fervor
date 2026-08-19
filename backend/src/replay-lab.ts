@@ -16,7 +16,7 @@ import {
     type ReplayState,
 } from './services/replay/runtime';
 
-const usage = 'Usage: replay-lab --replay <replay-dir> --checkpoints <checkpoint-dir> --model <paper-model.json> --run <run-id>';
+const usage = 'Usage: replay-lab --replay <replay-dir> --checkpoints <checkpoint-dir> --model <paper-model.json> --run <run-id> [--alerts <alert-model.json>]';
 const requestId = z.string().min(1).max(64).optional();
 const orderId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
 const commandSchema = z.discriminatedUnion('op', [
@@ -31,6 +31,12 @@ const commandSchema = z.discriminatedUnion('op', [
     z.object({ id: requestId, op: z.literal('cancel'), orderId }).strict(),
     z.object({ id: requestId, op: z.literal('portfolio') }).strict(),
     z.object({ id: requestId, op: z.literal('wallet_portfolio'), wallet: addressSchema }).strict(),
+    z.object({
+        id: requestId,
+        op: z.literal('notifications'),
+        after: z.number().int().nonnegative().optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+    }).strict(),
     z.object({
         id: requestId,
         op: z.literal('wallet_trades'),
@@ -56,12 +62,18 @@ const commandSchema = z.discriminatedUnion('op', [
 
 type Command = z.infer<typeof commandSchema>;
 
-const parseArgs = (): { replay: string; checkpoints: string; model: string; runId: string } => {
+const parseArgs = (): {
+    replay: string;
+    checkpoints: string;
+    model: string;
+    alerts?: string;
+    runId: string;
+} => {
     const values = new Map<string, string>();
     for (let index = 2; index < process.argv.length; index += 2) {
         const name = process.argv[index];
         const value = process.argv[index + 1];
-        if (!['--replay', '--checkpoints', '--model', '--run'].includes(name)
+        if (!['--replay', '--checkpoints', '--model', '--alerts', '--run'].includes(name)
             || !value
             || values.has(name)) {
             throw new Error(usage);
@@ -72,24 +84,32 @@ const parseArgs = (): { replay: string; checkpoints: string; model: string; runI
     const checkpoints = values.get('--checkpoints');
     const model = values.get('--model');
     const runId = values.get('--run');
-    if (!replay || !checkpoints || !model || !runId || values.size !== 4) throw new Error(usage);
+    if (!replay || !checkpoints || !model || !runId
+        || (values.size !== 4 && values.size !== 5)) throw new Error(usage);
     const replayPath = path.resolve(replay);
     const checkpointPath = path.resolve(checkpoints);
     if (checkpointPath === replayPath || checkpointPath.startsWith(`${replayPath}${path.sep}`)) {
         throw new Error('Replay checkpoints must be outside the immutable corpus directory');
     }
-    return { replay: replayPath, checkpoints: checkpointPath, model: path.resolve(model), runId };
+    const alerts = values.get('--alerts');
+    return {
+        replay: replayPath,
+        checkpoints: checkpointPath,
+        model: path.resolve(model),
+        ...(alerts === undefined ? {} : { alerts: path.resolve(alerts) }),
+        runId,
+    };
 };
 
-const readModel = async (file: string): Promise<unknown> => {
+const readJson = async (file: string, maxBytes: number, label: string): Promise<unknown> => {
     const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
         const info = await handle.stat();
-        if (!info.isFile() || info.size === 0 || info.size > 16_384) {
-            throw new Error('Paper model file has an invalid shape or size');
+        if (!info.isFile() || info.size === 0 || info.size > maxBytes) {
+            throw new Error(`${label} file has an invalid shape or size`);
         }
         const bytes = await handle.readFile();
-        if (bytes.length !== info.size) throw new Error('Paper model changed while being read');
+        if (bytes.length !== info.size) throw new Error(`${label} changed while being read`);
         return JSON.parse(bytes.toString('utf8')) as unknown;
     } finally {
         await handle.close();
@@ -110,16 +130,20 @@ const success = (command: Command, state: ReplayState, extra = {}): void => {
 const main = async (): Promise<void> => {
     assertReplayIsolation(process.env);
     const args = parseArgs();
-    const [replay, paperModel] = await Promise.all([
+    const [replay, paperModel, alertModel] = await Promise.all([
         buildMetricReplay(args.replay),
-        readModel(args.model),
+        readJson(args.model, 16_384, 'Paper model'),
+        args.alerts === undefined
+            ? Promise.resolve(undefined)
+            : readJson(args.alerts, 65_536, 'Alert model'),
     ]);
     const runtime = await ReplayRuntime.open(
         replay,
         args.runId,
         new CheckpointStore(args.checkpoints),
         new ReplaySessionStore(args.checkpoints),
-        paperModel
+        paperModel,
+        alertModel
     );
     const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
     let queue = Promise.resolve();
@@ -158,6 +182,11 @@ const main = async (): Promise<void> => {
             if (command.op === 'wallet_portfolio') {
                 return success(command, runtime.state(), {
                     portfolio: runtime.walletPortfolio(command.wallet),
+                });
+            }
+            if (command.op === 'notifications') {
+                return success(command, runtime.state(), {
+                    page: runtime.notifications(command.after, command.limit),
                 });
             }
             if (command.op === 'wallet_trades') {

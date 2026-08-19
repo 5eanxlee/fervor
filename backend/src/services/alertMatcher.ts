@@ -5,7 +5,7 @@ import { AlertEventWriter, alertEventKey, candidateFromAlertTick } from './alert
 import { metrics } from './metrics';
 import { redisStreams, STREAMS, tickStream } from './redisStreamService';
 import { shardForToken, type AlertIndexUpdate } from './subscriptionRegistry';
-import { qualityForThreshold, valueForThreshold } from './alertValue';
+import { qualityForThreshold, thresholdMatches, valueForThreshold } from './alertValue';
 
 interface Thresholds {
     above: TokenAlert[];
@@ -78,8 +78,10 @@ export class AlertIndex {
             if (value === undefined || !Number.isFinite(value) || !quality
                 || quality.stale || !Number.isFinite(quality.confidence)
                 || quality.confidence < 0 || quality.confidence > 1) continue;
-            const above = this.partition(thresholds.above, (alert) => numeric(alert.threshold_value) <= value);
-            const below = this.partition(thresholds.below, (alert) => numeric(alert.threshold_value) >= value);
+            const above = this.partition(thresholds.above, (alert) =>
+                thresholdMatches('above', numeric(alert.threshold_value), value));
+            const below = this.partition(thresholds.below, (alert) =>
+                thresholdMatches('below', numeric(alert.threshold_value), value));
             matches.push(
                 ...thresholds.above.slice(0, above),
                 ...thresholds.below.slice(0, below)

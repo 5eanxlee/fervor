@@ -17,6 +17,12 @@ import {
 import { normalizeModel, type PaperModel } from './paperTypes';
 import { ReplayProjection, type ProjectionView } from './projection';
 import {
+    normalizeReplayAlertModel,
+    projectReplayNotifications,
+    type ReplayAlertModel,
+    type ReplayNotificationPage,
+} from './replayAlerts';
+import {
     replayWalletPage,
     type ReplayWalletPage,
 } from './replayWallet';
@@ -68,6 +74,10 @@ export interface ReplayState {
         readonly orderCount: number;
         readonly factCount: number;
     };
+    readonly alerts: {
+        readonly modelSha256: string;
+        readonly definitionCount: number;
+    };
 }
 
 export interface SavedReplay {
@@ -94,7 +104,9 @@ const errorText = (error: unknown): string =>
 
 export class ReplayRuntime {
     private readonly coordinator: ReplayCoordinator;
+    private readonly replay: MetricReplay;
     private readonly paperModel: PaperModel;
+    private readonly alertModel: ReplayAlertModel;
     private projection: ReplayProjection;
     private paper: ReplayPaperBroker;
     private active: ActiveRun | null = null;
@@ -108,12 +120,17 @@ export class ReplayRuntime {
         runId: string,
         private readonly store: CheckpointStore,
         private readonly sessions: ReplaySessionStore,
-        paperModel: unknown
+        paperModel: unknown,
+        alertModel?: unknown
     ) {
+        this.replay = replay;
         this.coordinator = new ReplayCoordinator(replay, runId);
         this.trades = replay.sourceTrades;
         this.projection = ReplayProjection.start(this.coordinator);
         this.paperModel = normalizeModel(paperModel);
+        this.alertModel = normalizeReplayAlertModel(
+            alertModel, replay.source.replaySha256, replay.source.mint
+        );
         this.paper = new ReplayPaperBroker(this.coordinator.snapshot(), this.paperModel);
     }
 
@@ -122,9 +139,12 @@ export class ReplayRuntime {
         runId: string,
         store: CheckpointStore,
         sessions: ReplaySessionStore,
-        paperModel: unknown
+        paperModel: unknown,
+        alertModel?: unknown
     ): Promise<ReplayRuntime> {
-        const runtime = new ReplayRuntime(replay, runId, store, sessions, paperModel);
+        const runtime = new ReplayRuntime(
+            replay, runId, store, sessions, paperModel, alertModel
+        );
         await runtime.restoreLatest();
         return runtime;
     }
@@ -139,6 +159,10 @@ export class ReplayRuntime {
                 modelSha256: this.paper.modelSha256(),
                 orderCount: this.paper.orderCount(),
                 factCount: this.paper.factCount(),
+            },
+            alerts: {
+                modelSha256: this.alertModel.modelSha256,
+                definitionCount: this.alertModel.alerts.length,
             },
         };
     }
@@ -264,6 +288,12 @@ export class ReplayRuntime {
 
     walletPortfolio(wallet: unknown): WalletPortfolio {
         return projectWalletPortfolio(this.coordinator.snapshot(), this.trades, wallet);
+    }
+
+    notifications(after = 0, limit = 100): ReplayNotificationPage {
+        return projectReplayNotifications(
+            this.replay, this.coordinator.snapshot(), this.alertModel, after, limit
+        );
     }
 
     async stop(): Promise<ReplayState> {

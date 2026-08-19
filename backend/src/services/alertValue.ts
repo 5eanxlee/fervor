@@ -23,3 +23,9 @@ export const qualityForThreshold = (type: AlertThresholdType, tick: FeedTick): M
     if (type === 'liquidity') return tick.metricQuality?.liquidity;
     return tick.metricQuality?.rolling;
 };
+
+export const thresholdMatches = (
+    condition: 'above' | 'below',
+    threshold: number,
+    value: number
+): boolean => condition === 'above' ? value >= threshold : value <= threshold;

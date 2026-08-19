@@ -1,0 +1,36 @@
+{
+  "contract": "fervor-replay-alert-model-v1",
+  "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+  "alerts": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "userId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+      "thresholdType": "price",
+      "thresholdValue": 0.00001,
+      "condition": "above",
+      "generation": 1,
+      "policy": "one_shot"
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "userId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+      "thresholdType": "volume_1m",
+      "thresholdValue": 5000,
+      "condition": "above",
+      "generation": 1,
+      "policy": "one_shot"
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "userId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+      "thresholdType": "market_cap",
+      "thresholdValue": 1000000,
+      "condition": "above",
+      "generation": 1,
+      "policy": "one_shot"
+    }
+  ]
+}
