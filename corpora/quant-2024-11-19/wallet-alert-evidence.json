@@ -1,0 +1,152 @@
+{
+  "schema": "fervor-replay-wallet-alert-evidence-v1",
+  "recordedAt": "2026-08-19T06:09:28Z",
+  "runtimeCommit": "5dcbe625dfb4ba12cc9e11f85f391584bb636588",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a",
+    "machine": "n2-standard-16"
+  },
+  "image": {
+    "configSha256": "308bf202ccd32589abc841596f5a85174e50e2fe201b723f2574eb046423410d",
+    "builtAt": "2026-08-19T06:06:14.755121299Z"
+  },
+  "source": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "events": 5516,
+    "windowStart": "2024-11-20T03:48:37Z",
+    "windowEnd": "2024-11-20T03:59:53Z"
+  },
+  "run": {
+    "runId": "portfolio-gcp",
+    "epoch": 2,
+    "cursor": 60,
+    "now": "2024-11-20T03:49:32.000Z"
+  },
+  "model": {
+    "contract": "fervor-replay-alert-model-v1",
+    "fileSha256": "63bb71e719943a984f12ae2c01c56e7e6de4b90ddaa9514c2dbcead8a1395011",
+    "modelSha256": "d9dbfe3fe8d1fd3cb0f1f32c4f6e86064667d543821da98e4d704fbdbd29c09b",
+    "metricOnlyModelSha256": "5c71c6d688a648115878174534e53936e54e0a13f3efc20c5def8fffee3f24ea",
+    "definitionCount": 5,
+    "walletDefinitionCount": 2,
+    "policy": "one_shot"
+  },
+  "page": {
+    "contract": "fervor-replay-notification-page-v1",
+    "triggeredCount": 4,
+    "armedCount": 0,
+    "unavailableCount": 1,
+    "unavailableTypes": [
+      "market_cap"
+    ],
+    "notificationsSha256": "b9743e2805b40834d4b6cd09c1dda30c5823622a68958f381596478455674cb0",
+    "walletItems": [
+      {
+        "contract": "fervor-replay-wallet-in-app-v1",
+        "notificationKey": "5f48d9c61453fc2918582260d6d8ef0bb269afdd1a31f44d6d3776244b1a547c",
+        "alertId": "44444444-4444-4444-8444-444444444444",
+        "watchSide": "buy",
+        "wallet": "7m6dSzdhFpZMke5fWo4he6tPQzCAoS5UKjtVJpKdDmLA",
+        "activity": {
+          "contract": "fervor-replay-wallet-trade-v1",
+          "activityKey": "65d46bff73d5e17036666c0e74b47e9f21642859d48b1ed660cc1175954b2f74",
+          "cursor": 14,
+          "tradeId": "0756f98031c799a02c24c93c5fe46263ca5dacf6fe5dc0b6e4c5dad14a98ef91",
+          "sourceEventId": "old_faithful:mainnet-beta:302459645:2r58swE3b1SVa1KmgzxqLSK88eGTXy8mpbcRAm3U1EFo9aouRHi5Tb1npdTRBZiiimKLNwtudze82nuUMQXropS7:4:0",
+          "side": "buy",
+          "tokenAmountRaw": "5823332677562",
+          "quoteAmountRaw": "314593360",
+          "tokenDeltaRaw": "5823332677562",
+          "quoteDeltaRaw": "-314593360",
+          "signature": "2r58swE3b1SVa1KmgzxqLSK88eGTXy8mpbcRAm3U1EFo9aouRHi5Tb1npdTRBZiiimKLNwtudze82nuUMQXropS7",
+          "slot": 302459645,
+          "txIndex": 168,
+          "instructionIndex": 4,
+          "eventIndex": 0,
+          "observedAt": "2024-11-20T03:48:46Z",
+          "commitment": "finalized"
+        },
+        "matchedAt": "2024-11-20T03:48:46.000Z",
+        "delivery": {
+          "channel": "in_app",
+          "status": "available",
+          "attempts": 0,
+          "availableAt": "2024-11-20T03:48:46.000Z",
+          "external": false
+        }
+      },
+      {
+        "contract": "fervor-replay-wallet-in-app-v1",
+        "notificationKey": "0130cd0de62546ab2f72cc8ffba9e30065f73018e9af49153d28288abeaae188",
+        "alertId": "55555555-5555-4555-8555-555555555555",
+        "watchSide": "sell",
+        "wallet": "7m6dSzdhFpZMke5fWo4he6tPQzCAoS5UKjtVJpKdDmLA",
+        "activity": {
+          "contract": "fervor-replay-wallet-trade-v1",
+          "activityKey": "3fa55e10285563a28d36181a404fa820416a9a2c364ffb052be30d3470941b41",
+          "cursor": 47,
+          "tradeId": "a602b877bb8533e5695b2fa4cde0cb2c438e9d79bfa2a67ce85a4dee9c67ff45",
+          "sourceEventId": "old_faithful:mainnet-beta:302459716:5TkDA8RYWvdDKhmtxXHynjk9yZgmkz522dwv4eaFWYHUQ6jDn1Bm2tXmyh4bzrcknzrqC8g5niEzUn26ePtZb6mk:3:0",
+          "side": "sell",
+          "tokenAmountRaw": "1164666535512",
+          "quoteAmountRaw": "122750287",
+          "tokenDeltaRaw": "-1164666535512",
+          "quoteDeltaRaw": "122750287",
+          "signature": "5TkDA8RYWvdDKhmtxXHynjk9yZgmkz522dwv4eaFWYHUQ6jDn1Bm2tXmyh4bzrcknzrqC8g5niEzUn26ePtZb6mk",
+          "slot": 302459716,
+          "txIndex": 1943,
+          "instructionIndex": 3,
+          "eventIndex": 0,
+          "observedAt": "2024-11-20T03:49:16Z",
+          "commitment": "finalized"
+        },
+        "matchedAt": "2024-11-20T03:49:16.000Z",
+        "delivery": {
+          "channel": "in_app",
+          "status": "available",
+          "attempts": 0,
+          "availableAt": "2024-11-20T03:49:16.000Z",
+          "external": false
+        }
+      }
+    ]
+  },
+  "coldRecovery": {
+    "firstContainer": "wallet-alert-gcp-a",
+    "secondContainer": "wallet-alert-gcp-b",
+    "epoch": 2,
+    "cursor": 60,
+    "notificationsSha256": "b9743e2805b40834d4b6cd09c1dda30c5823622a68958f381596478455674cb0",
+    "digestMatch": true,
+    "itemsMatch": true,
+    "walletActivityKeysMatch": true
+  },
+  "tests": {
+    "build": true,
+    "backendFilesPassed": 56,
+    "backendFilesSkipped": 14,
+    "backendTestsPassed": 361,
+    "backendTestsSkipped": 60,
+    "compose": true,
+    "databaseIntegrationRun": false
+  },
+  "result": {
+    "activityIdentityReused": true,
+    "rawDeltasPreserved": true,
+    "sideFilterQualified": true,
+    "oneShot": true,
+    "virtualEventTime": true,
+    "epochFenced": true,
+    "metricModelCompatible": true,
+    "stableNotificationDigest": true,
+    "externalDeliveryAttempted": false,
+    "durableAlertStoreAdded": false,
+    "databaseUsed": false,
+    "redisUsed": false,
+    "liveProviderUsed": false,
+    "liveTransactionSubmitted": false
+  }
+}
