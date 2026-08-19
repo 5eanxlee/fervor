@@ -16,6 +16,8 @@ A caller supplies the run ID. Every seek treats its target as the next event ind
 
 `runtime.ts` is the single control owner. It serializes play, pause, step, seek, checkpoint, and stop over one coordinator and projection; seek restores the nearest source-and-contract checkpoint on the same epoch-fenced coordinator before replaying to the exact target. The runtime refuses inherited database, Redis, live-provider, wallet, KMS, transaction, Telegram, Discord, and cloud-credential environment variables without reading or logging their values.
 
+`paperBroker.ts` is the provider-free execution model. It records intent at the current replay cursor, applies a pinned latency and look-ahead window, and consumes only later opposite-side trades from the exact mint pair. Market price guards and limit comparisons use rational raw-unit prices; all active orders share one participation-capped slice of each trade. Fills use conservative integer rounding, keep modeled fees separate, and emit epoch-bound facts that identify every partial fill, completion, expiry, and cancellation. It never reads candles, future trades, USD display values, AMM reserves, credentials, or provider IDs.
+
 `replay-lab.ts` exposes that owner as newline-delimited JSON over stdin and stdout, not an HTTP listener. It imports no application environment loader and starts paused after verifying the corpus. Launch it from a clean environment with `npm run replay:lab --workspace backend -- --replay <dir> --checkpoints <dir> --run <id>`. Commands are `status`, `play`, `pause`, `step`, `seek`, `checkpoint`, and `stop`; graceful EOF or a termination signal pauses and checkpoints before exit.
 
 `docker-compose.replay.yml` is the portable OS sandbox. It attaches no network, env file, or secret; mounts the immutable corpus read-only and a separate checkpoint directory read-write; makes the container root read-only; drops every capability; denies privilege escalation; and bounds memory, CPU, PIDs, file descriptors, and temporary storage. Both host directories must already exist. Run it with `FERVOR_REPLAY_DIR=<dir> FERVOR_CHECKPOINT_DIR=<dir> FERVOR_REPLAY_RUN=<id> docker compose -f docker-compose.replay.yml run --rm replay`.
@@ -24,4 +26,5 @@ Run its focused verification with:
 
 ```bash
 npm test -- --run tests/metric-replay.test.ts tests/replay-projection.test.ts
+npm test -- --run tests/replay-paper-broker.test.ts
 ```
