@@ -72,6 +72,8 @@ export interface NormalizedTradeEvent extends SourceProvenance {
     usdSource?: string;
     usdObservedAt?: string;
     usdBlockId?: number;
+    usdSourceEventId?: string;
+    usdEstimated?: boolean;
     instructionIndex?: number;
     eventIndex?: number;
     programId?: string;

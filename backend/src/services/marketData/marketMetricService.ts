@@ -56,6 +56,8 @@ const inputHash = (trade: NormalizedTradeEvent): string => crypto.createHash('sh
     trade.usdSource ?? null,
     trade.usdObservedAt ?? null,
     trade.usdBlockId ?? null,
+    trade.usdSourceEventId ?? null,
+    trade.usdEstimated ?? null,
     trade.signature ?? null,
     trade.slot ?? null,
     trade.instructionIndex ?? null,
@@ -164,14 +166,20 @@ export class MarketMetricService {
                 const latestSlot = later ? trade.slot ?? null : base.latestSlot;
                 const latestEventKey = later ? trade.idempotencyKey : base.latestEventKey!;
                 const priceSourceEventId = later
-                    ? stableHash([trade.sourceEventId, trade.usdSource, trade.usdBlockId, trade.usdObservedAt])
+                    ? stableHash([
+                        trade.sourceEventId,
+                        trade.usdSourceEventId,
+                        trade.usdSource,
+                        trade.usdBlockId,
+                        trade.usdObservedAt,
+                    ])
                     : prior?.priceSourceEventId || prior?.sourceEventId || trade.sourceEventId;
                 const priceQuality = later ? {
                     sourceEventId: priceSourceEventId,
                     observedAt: trade.observedAt,
                     confidence: trade.confidence,
                     stale: trade.stale,
-                    estimated: Boolean(trade.usdSource),
+                    estimated: trade.usdEstimated ?? Boolean(trade.usdSource),
                     commitment: trade.commitment,
                 } : prior?.metricQuality?.price || {
                     sourceEventId: prior?.priceSourceEventId || trade.sourceEventId,

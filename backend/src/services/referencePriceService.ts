@@ -17,8 +17,14 @@ export interface RefPrice {
     blockId?: number;
     fetchedAt: string;
     stale: boolean;
-    source: 'jupiter_price_v3';
+    source: string;
+    sourceEventId?: string;
     confidence: number;
+    estimated?: boolean;
+}
+
+export interface PriceSource {
+    getUsd(mint: string, at?: string): Promise<RefPrice | null>;
 }
 
 interface CacheEntry {
@@ -26,17 +32,17 @@ interface CacheEntry {
     fetchedMs: number;
 }
 
-export class ReferencePriceService {
+export class ReferencePriceService implements PriceSource {
     private readonly cache = new Map<string, CacheEntry>();
     private readonly inFlight = new Map<string, Promise<RefPrice | null>>();
 
     constructor(private readonly http: AxiosInstance = axios) {}
 
-    async getSolUsd(): Promise<RefPrice | null> {
-        return this.getUsd(SOL_MINT);
+    async getSolUsd(at?: string): Promise<RefPrice | null> {
+        return this.getUsd(SOL_MINT, at);
     }
 
-    async getUsd(mint: string): Promise<RefPrice | null> {
+    async getUsd(mint: string, _at?: string): Promise<RefPrice | null> {
         const cached = this.cache.get(mint);
         const now = Date.now();
         if (cached && now - cached.fetchedMs <= env.REF_PRICE_TTL_MS) return cached.value;
@@ -75,6 +81,7 @@ export class ReferencePriceService {
                 stale: false,
                 source: 'jupiter_price_v3',
                 confidence: 0.8,
+                estimated: true,
             };
             this.cache.set(mint, { value, fetchedMs });
             return value;
