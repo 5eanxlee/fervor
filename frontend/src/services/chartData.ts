@@ -60,7 +60,7 @@ export interface ChartDataset {
     candles: ChartCandle[];
     markers: ChartTradeMarker[];
     alertLines: ChartAlertLine[];
-    source: { mode: 'live' };
+    source: { mode: 'live' | 'historical_replay' };
     metrics: {
         candleCount: number;
         tradeCount: number;

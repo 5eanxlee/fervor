@@ -1,0 +1,241 @@
+name: fervor-replay-cloud
+
+x-db: &db
+  FLYWAY_URL: jdbc:postgresql://postgres:5432/fervor
+  FLYWAY_USER: fervor
+  FLYWAY_PASSWORD: ${FERVOR_DB_PASSWORD:?set FERVOR_DB_PASSWORD}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: fervor
+      POSTGRES_USER: fervor
+      POSTGRES_PASSWORD: ${FERVOR_DB_PASSWORD:?set FERVOR_DB_PASSWORD}
+    volumes:
+      - replay-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fervor -d fervor"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [private]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - replay-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [private]
+
+  migrate-core:
+    image: flyway/flyway:13.0.0@sha256:db6195c21e90872063ff257ec38edcb8d3c77259b25a7a8fee67189511079511
+    entrypoint: ["/flyway/flyway"]
+    command: ["-configFiles=/flyway/db/flyway/core.conf", "migrate"]
+    environment: *db
+    volumes:
+      - ../../db:/flyway/db:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks: [private]
+
+  migrate-market:
+    image: flyway/flyway:13.0.0@sha256:db6195c21e90872063ff257ec38edcb8d3c77259b25a7a8fee67189511079511
+    entrypoint: ["/flyway/flyway"]
+    command: ["-configFiles=/flyway/db/flyway/market.conf", "migrate"]
+    environment: *db
+    volumes:
+      - ../../db:/flyway/db:ro
+    depends_on:
+      migrate-core:
+        condition: service_completed_successfully
+    restart: "no"
+    networks: [private]
+
+  replay:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    image: fervor-backend:replay-cloud
+    command:
+      - node
+      - dist/replay-lab.js
+      - --replay
+      - /replay
+      - --checkpoints
+      - /runtime
+      - --model
+      - /replay/paper-model.json
+      - --alerts
+      - /replay/alert-model.json
+      - --run
+      - ${FERVOR_REPLAY_RUN:-cloud}
+      - --socket
+      - /runtime/replay-api.sock
+      - --auth
+      - /run/secrets/replay-auth.json
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    pids_limit: 128
+    cpus: ${FERVOR_REPLAY_CPUS:-4.0}
+    mem_limit: ${FERVOR_REPLAY_MEMORY:-2g}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    volumes:
+      - type: bind
+        source: ${FERVOR_REPLAY_DIR:?set FERVOR_REPLAY_DIR}
+        target: /replay
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${FERVOR_REPLAY_RUNTIME:?set FERVOR_REPLAY_RUNTIME}
+        target: /runtime
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${FERVOR_REPLAY_AUTH_FILE:?set FERVOR_REPLAY_AUTH_FILE}
+        target: /run/secrets/replay-auth.json
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /runtime/replay-api.sock"]
+      interval: 3s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+
+  api:
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
+    image: fervor-backend:replay-cloud
+    environment:
+      NODE_ENV: development
+      API_PORT: 3010
+      DATABASE_URL: postgresql://fervor:${FERVOR_DB_PASSWORD}@postgres:5432/fervor
+      DB_COLOCATED: "true"
+      DB_POOL_MAX: 12
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${FERVOR_JWT_SECRET:?set FERVOR_JWT_SECRET}
+      FRONTEND_URL: ${FERVOR_FRONTEND_URL:?set FERVOR_FRONTEND_URL}
+      TRUST_PROXY_HOPS: 1
+      REPLAY_API_SOCKET: /runtime/replay-api.sock
+      REPLAY_API_AUTH_FILE: /run/secrets/replay-auth.json
+      REPLAY_API_TOKEN_FILE: /run/secrets/replay-token
+      REPLAY_API_USER_ID: ${FERVOR_REPLAY_USER_ID:?set FERVOR_REPLAY_USER_ID}
+      RT_POLL_MS: 20
+      RT_RESUME_EVENTS: 20000
+      RT_QUEUE_FRAMES: 1024
+      RT_QUEUE_BYTES: 2097152
+      TRADING_MODE: disabled
+      ORDER_MODE: disabled
+      WALLET_TRACKING_MODE: disabled
+      ENABLE_NOTIFICATION_RETRY_WORKER: "false"
+      ENABLE_TELEGRAM_NOTIFICATIONS: "false"
+      ENABLE_DISCORD_NOTIFICATIONS: "false"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    volumes:
+      - type: bind
+        source: ${FERVOR_REPLAY_RUNTIME:?set FERVOR_REPLAY_RUNTIME}
+        target: /runtime
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${FERVOR_REPLAY_AUTH_FILE:?set FERVOR_REPLAY_AUTH_FILE}
+        target: /run/secrets/replay-auth.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${FERVOR_REPLAY_TOKEN_FILE:?set FERVOR_REPLAY_TOKEN_FILE}
+        target: /run/secrets/replay-token
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      replay:
+        condition: service_healthy
+      migrate-market:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3010/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    networks: [private]
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api
+        NEXT_PUBLIC_SOLANA_NETWORK: mainnet-beta
+        NEXT_PUBLIC_DATA_MODE: replay
+        NEXT_PUBLIC_REPLAY_SYMBOL: ${FERVOR_REPLAY_SYMBOL:-REPLAY}
+        NEXT_PUBLIC_REPLAY_NAME: ${FERVOR_REPLAY_NAME:-Historical replay}
+        NEXT_PUBLIC_REPLAY_SUPPLY: ${FERVOR_REPLAY_SUPPLY:-}
+    image: fervor-frontend:replay-cloud
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [private]
+
+  edge:
+    image: nginx:1.27-alpine
+    ports:
+      - 127.0.0.1:${FERVOR_EDGE_PORT:-8080}:8080
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [private]
+
+networks:
+  private:
+    internal: true
+
+volumes:
+  replay-db:
+  replay-redis:

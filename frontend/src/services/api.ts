@@ -1,11 +1,12 @@
 import axios, { AxiosResponse } from 'axios';
+import type { ReplayControl, ReplayControlResult, ReplayState } from './replay';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3010/api';
+export const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3010/api';
 
 const getApiNetworkErrorMessage = () => {
-    const apiUrl = API_BASE_URL.startsWith('/')
-        ? `same-origin ${API_BASE_URL}`
-        : API_BASE_URL;
+    const apiUrl = apiBase.startsWith('/')
+        ? `same-origin ${apiBase}`
+        : apiBase;
 
     return `Unable to reach the FERVOR API at ${apiUrl}. Start the backend, then try again.`;
 };
@@ -478,7 +479,7 @@ class ApiService {
         providerToken?: string
     ): Promise<ApiResponse<T>> {
         try {
-            const fullUrl = `${API_BASE_URL}${endpoint}`;
+            const fullUrl = `${apiBase}${endpoint}`;
             const response: AxiosResponse<ApiResponse<T>> = await axios({
                 method,
                 url: fullUrl,
@@ -676,11 +677,19 @@ class ApiService {
     }
 
     getTokenStreamUrl(tokenAddress: string): string {
-        return `${API_BASE_URL}/stream/tokens/${encodeURIComponent(tokenAddress)}`;
+        return `${apiBase}/stream/tokens/${encodeURIComponent(tokenAddress)}`;
     }
 
     async getCandles(tokenMint: string, interval = '1m', limit = 500): Promise<ApiResponse<TokenCandle[]>> {
         return this.request<TokenCandle[]>('GET', `/tokens/${encodeURIComponent(tokenMint)}/candles?interval=${encodeURIComponent(interval)}&limit=${limit}`);
+    }
+
+    async getReplaySnapshot(): Promise<ApiResponse<{ state: ReplayState }>> {
+        return this.request('GET', '/replay/v1/snapshot');
+    }
+
+    async controlReplay(command: ReplayControl): Promise<ApiResponse<ReplayControlResult>> {
+        return this.request('POST', '/replay/v1/controls', command);
     }
 
     async getExecutionCapabilities(): Promise<ApiResponse<ExecutionCapabilities>> {

@@ -60,12 +60,14 @@ export default function TerminalActivity({
     trades,
     initialTab = 'trades',
     onInstantTrade,
+    now,
 }: {
     tokenMint: string;
     tokenDecimals: number;
     trades: ActivityTrade[];
     initialTab?: ActivityTab;
     onInstantTrade?: () => void;
+    now?: string | null;
 }) {
     const [tab, setTab] = useState<ActivityTab>(initialTab);
     const [positions, setPositions] = useState<PositionRow[]>([]);
@@ -176,7 +178,7 @@ export default function TerminalActivity({
                 </div>
             </div>
 
-            {tab === 'trades' && <TradeTable trades={trades} />}
+            {tab === 'trades' && <TradeTable trades={trades} now={now} />}
             {tab === 'positions' && <PositionTable rows={positions} state={positionState} />}
             {tab === 'orders' && (
                 <OrderTable
@@ -196,15 +198,16 @@ export default function TerminalActivity({
     );
 }
 
-function TradeTable({ trades }: { trades: ActivityTrade[] }) {
+function TradeTable({ trades, now }: { trades: ActivityTrade[]; now?: string | null }) {
+    const clock = now ? new Date(now).getTime() : Date.now();
     return (
         <>
             <TableHead columns="grid-cols-[70px_90px_70px_1fr_1fr_1fr_1fr_105px_28px]" labels={['Age ↓', 'Tip & Prio', 'Side', 'MCap ↔', 'Amount', 'Total USD', 'Total SOL', 'Maker', '']} />
             <div className="min-h-0 flex-1 overflow-y-auto">
                 {trades.map((trade) => (
                     <div key={trade.id} className="activity-row grid grid-cols-[70px_90px_70px_1fr_1fr_1fr_1fr_105px_28px] items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums">
-                        <span className="text-[var(--term-dim)]">{Math.max(0, Math.floor((Date.now() - new Date(trade.observedAt).getTime()) / 1000))}s</span>
-                        <span className="text-[var(--term-danger)]">0.002</span>
+                        <span className="text-[var(--term-dim)]">{Math.max(0, Math.floor((clock - new Date(trade.observedAt).getTime()) / 1000))}s</span>
+                        <span className="text-[var(--term-dim)]">—</span>
                         <span className={trade.side === 'buy' ? 'text-[var(--term-buy)]' : 'text-[var(--term-sell)]'}>{trade.side === 'buy' ? 'Buy' : 'Sell'}</span>
                         <span>{money(trade.marketCapUsd)}</span><span>{compact(trade.tokenAmount)}</span>
                         <span>{money(trade.usdAmount)}</span><span>{compact(trade.solAmount)}</span>
