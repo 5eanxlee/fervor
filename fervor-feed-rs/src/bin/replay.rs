@@ -3,7 +3,7 @@ use clap::Parser;
 use fervor_feed_rs::{
     archive::{verify_extract, ExtractManifest},
     fervor_tx::{Network, Quarantine},
-    fx::{decode_fx, FX_CONTRACT, FX_POLICY, SOL_USDC_POOL},
+    fx::{decode_fx, FX_CONTRACT, FX_POLICY, FX_POOLS},
     market_decoder::decode_swap,
     old_faithful::{ArchiveReader, OldFaithfulAdapter},
     pump::{
@@ -153,7 +153,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
             transactions = checked_count(transactions, "transaction")?;
             // Old Faithful cannot filter remotely; unrelated records are archive scan noise.
             let mint_match = record.references(mint);
-            let fx_match = record.references(SOL_USDC_POOL);
+            let fx_match = FX_POOLS.iter().any(|pool| record.references(pool.address));
             if !mint_match && !fx_match {
                 continue;
             }

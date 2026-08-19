@@ -1,12 +1,41 @@
 use crate::{
     fervor_tx::{Commitment, FervorTx, Quarantine, QuarantineReason},
-    market_decoder::{owner_delta, single_pool_swap, Venue, USDC_MINT, WSOL_MINT},
+    market_decoder::{owner_delta, single_pool_swap, Venue, USDC_MINT, USDT_MINT, WSOL_MINT},
 };
 use serde::Serialize;
 
 pub const FX_CONTRACT: &str = "fervor-fx-observation-v1";
-pub const FX_POLICY: &str = "raydium-sol-usdc-v1";
-pub const SOL_USDC_POOL: &str = "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2";
+pub const FX_POLICY: &str = "fervor-sol-usd-v1";
+
+#[derive(Clone, Copy)]
+pub struct FxPool {
+    pub address: &'static str,
+    pub venue: Venue,
+    pub stable_mint: &'static str,
+}
+
+pub const FX_POOLS: &[FxPool] = &[
+    FxPool {
+        address: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2",
+        venue: Venue::RaydiumAmmV4,
+        stable_mint: USDC_MINT,
+    },
+    FxPool {
+        address: "7XawhbbxtsRcQA8KTkHT9f9nc6d69UwqCDh6U5EEbEmX",
+        venue: Venue::RaydiumAmmV4,
+        stable_mint: USDT_MINT,
+    },
+    FxPool {
+        address: "3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv",
+        venue: Venue::RaydiumClmm,
+        stable_mint: USDC_MINT,
+    },
+    FxPool {
+        address: "3nMFwZXwY1s1M5s8vYAHqd4wGs4iSxXE4LRoUMMYqEgF",
+        venue: Venue::RaydiumClmm,
+        stable_mint: USDT_MINT,
+    },
+];
 
 const SOL_DECIMALS: u32 = 9;
 const USDC_DECIMALS: u32 = 6;
@@ -56,8 +85,10 @@ fn decode_v1(tx: &FervorTx) -> Option<FxObservation> {
         return None;
     }
     let trader = tx.static_keys.first()?;
-    let instruction_index = single_pool_swap(tx, Venue::RaydiumAmmV4, SOL_USDC_POOL)?;
-    let (stable_delta, stable_decimals) = owner_delta(tx, trader, USDC_MINT)?;
+    let (pool, instruction_index) = FX_POOLS.iter().find_map(|pool| {
+        single_pool_swap(tx, pool.venue, pool.address).map(|index| (pool, index))
+    })?;
+    let (stable_delta, stable_decimals) = owner_delta(tx, trader, pool.stable_mint)?;
     if stable_decimals != USDC_DECIMALS {
         return None;
     }
@@ -79,11 +110,11 @@ fn decode_v1(tx: &FervorTx) -> Option<FxObservation> {
             "{source}:fx:{}:{}:{instruction_index}",
             tx.occurrence.slot, tx.signed_id.signature
         ),
-        pool_address: SOL_USDC_POOL,
-        protocol: Venue::RaydiumAmmV4,
-        program_id: Venue::RaydiumAmmV4.program_id(),
+        pool_address: pool.address,
+        protocol: pool.venue,
+        program_id: pool.venue.program_id(),
         trader: trader.clone(),
-        stable_mint: USDC_MINT,
+        stable_mint: pool.stable_mint,
         sol_raw: sol_raw.to_string(),
         stable_raw: stable_raw.to_string(),
         sol_decimals,
@@ -102,6 +133,7 @@ fn decode_v1(tx: &FervorTx) -> Option<FxObservation> {
 mod tests {
     use super::*;
     use crate::fervor_tx::{FervorTx, TokenBalance, TxIx};
+    use sha2::{Digest, Sha256};
 
     fn balance(index: u32, mint: &str, owner: &str, raw: &str, decimals: u32) -> TokenBalance {
         TokenBalance {
@@ -114,36 +146,48 @@ mod tests {
         }
     }
 
-    fn sample() -> FervorTx {
+    fn sample_for(pool: &FxPool) -> FervorTx {
         let mut tx: FervorTx =
             serde_json::from_str(include_str!("../../tests/contracts/fervor-tx-v1.json")).unwrap();
         let trader = tx.static_keys[0].clone();
         tx.static_keys = vec![
             trader.clone(),
-            Venue::RaydiumAmmV4.program_id().to_string(),
+            pool.venue.program_id().to_string(),
             WSOL_MINT.to_string(),
-            SOL_USDC_POOL.to_string(),
-            USDC_MINT.to_string(),
+            pool.address.to_string(),
+            pool.stable_mint.to_string(),
         ];
+        let (accounts, data) = match pool.venue {
+            Venue::RaydiumAmmV4 => (vec![0, 3, 2, 4], vec![9]),
+            Venue::RaydiumClmm => (
+                vec![0, 2, 3, 4],
+                Sha256::digest("global:swap")[..8].to_vec(),
+            ),
+            _ => unreachable!("reference pool venue is statically constrained"),
+        };
         tx.instructions = vec![TxIx {
             outer_index: 0,
             inner_index: None,
             stack_height: None,
             program_index: 1,
-            accounts: vec![0, 3, 2, 4],
-            data: vec![9],
+            accounts,
+            data,
         }];
         tx.pre_balances = vec![1_000_000_000; tx.static_keys.len()];
         tx.post_balances = tx.pre_balances.clone();
         tx.pre_tokens = vec![
             balance(2, WSOL_MINT, &trader, "2000000000", 9),
-            balance(4, USDC_MINT, &trader, "0", 6),
+            balance(4, pool.stable_mint, &trader, "0", 6),
         ];
         tx.post_tokens = vec![
             balance(2, WSOL_MINT, &trader, "1000000000", 9),
-            balance(4, USDC_MINT, &trader, "240000000", 6),
+            balance(4, pool.stable_mint, &trader, "240000000", 6),
         ];
         tx
+    }
+
+    fn sample() -> FervorTx {
+        sample_for(&FX_POOLS[0])
     }
 
     #[test]
@@ -151,6 +195,7 @@ mod tests {
         let observation = decode_fx(&sample()).unwrap().unwrap();
         assert_eq!(observation.contract, FX_CONTRACT);
         assert_eq!(observation.policy, FX_POLICY);
+        assert_eq!(observation.pool_address, FX_POOLS[0].address);
         assert_eq!(observation.sol_raw, "1000000000");
         assert_eq!(observation.stable_raw, "240000000");
         assert_eq!(observation.instruction_index, 0);
@@ -175,5 +220,18 @@ mod tests {
             .post_tokens
             .retain(|balance| balance.mint != WSOL_MINT);
         assert_eq!(decode_fx(&native_only), Ok(None));
+    }
+
+    #[test]
+    fn allowlist_contains_valid_distinct_pools() {
+        let mut seen = std::collections::HashSet::new();
+        for pool in FX_POOLS {
+            assert_eq!(bs58::decode(pool.address).into_vec().unwrap().len(), 32);
+            assert!(seen.insert(pool.address));
+            assert!(matches!(pool.stable_mint, USDC_MINT | USDT_MINT));
+            let observation = decode_fx(&sample_for(pool)).unwrap().unwrap();
+            assert_eq!(observation.pool_address, pool.address);
+            assert_eq!(observation.stable_mint, pool.stable_mint);
+        }
     }
 }
