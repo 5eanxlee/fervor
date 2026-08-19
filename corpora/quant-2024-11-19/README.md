@@ -42,3 +42,17 @@ Both independent extracts again produced byte-identical directories:
 - domain-separated replay: `545b3c5dffe645387ecebc55a5267c6464810d91ab9267b9c550a85b9b42cacd`.
 
 The v3 runs completed in 38.77 and 38.44 seconds at 381% and 384% average CPU, with 353,132 and 352,632 KiB peak RSS. The verified raw extracts and each qualified replay revision are retained in separate private, versioned GCP object-storage prefixes together with timing and build evidence.
+
+At commit `0e9814f`, replay schema v7 includes the shared `fervor-trade-v1` tape, the owned `fervor-sol-usd-v1` reference tape, and 250 post-trade `fervor-pump-curve-v1` points. Every curve point preserves exact real and virtual reserve integers. Virtual reserves determine marginal price but are not called liquidity; `fervor-pump-real-reserve-mark-v1` marks only the two real reserves at that price and explicitly labels the result estimated.
+
+The two independent extracts produced byte-identical v7 directories:
+
+- manifest: `99cb792662e1e9417f3c55608d54b648a05666d1ba5b5603dd81fb3590919dea`;
+- normalized trades: `0868a6e0be01eba91d2c7e75ab64e3d9e5f48a062362c5d761c8326404da1d28`;
+- Pump curve: `72fc76254250383f47c6c2cebd29cfca86ee9f62e8a0cff76130c5a719e9929c`;
+- SOL/USD tape: `1d19c086d4685334d9e40cc071c1aaf9fb4efc93fcafa95002715bba9716a906`;
+- domain-separated replay: `b09fae64903dfab5b818a0b05bc307e4d219336f5f95f38848653f71febd0b3d`.
+
+The curve points have 250 unique source-event IDs and exactly one completion. The first point is slot `302459624` at `2024-11-20T03:48:37Z`, with price `0.000000030824790307` SOL, FDV `30.824790307548925365` SOL, and estimated real-reserve mark `24.372141192917055790` SOL. The terminal point is slot `302460024` at `2024-11-20T03:51:29Z`, with price `0.000000410880168542` SOL, FDV `410.880168542336548767` SOL, and estimated real-reserve mark `85.005359175000000000` SOL.
+
+The v7 runs completed in 40.32 and 40.38 seconds with 354,436 and 353,280 KiB peak RSS. The compact manifest, curve tape, and timing evidence are retained at the private versioned GCS prefix `replays/quant-2024-11-19/v7/`; both full replay directories and both source extracts remain on the replay VM.
