@@ -20,6 +20,7 @@
         "test:migrations": "node tests/system/check-backend-migrations.mjs",
         "test:migration-race": "node tests/system/test-migration-race.mjs",
         "test:index-recovery": "node tests/system/test-index-recovery.mjs",
+        "bench:realtime": "npm run build:backend && node tests/performance/realtime-throughput.mjs",
         "test:order-schema": "node tests/system/test-order-schema.mjs",
         "test:migration-legacy": "node tests/system/test-legacy-migration.mjs",
         "test:migration-custody": "node tests/system/test-custody-upgrade.mjs",

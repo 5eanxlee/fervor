@@ -95,6 +95,7 @@ class RtPeer {
     constructor(
         private readonly socket: WebSocket,
         private readonly options: RtServerOptions,
+        private readonly encode: (frame: RtFrame) => Buffer,
         private readonly onClose: () => void
     ) {
         this.queue = new FrameQueue(
@@ -288,7 +289,7 @@ class RtPeer {
 
     private enqueue(frame: RtFrame): void {
         if (this.closed || this.closing) return;
-        const data = encodeFrame(frame);
+        const data = this.encode(frame);
         const result = this.queue.push({ data, ...frameMeta(frame) });
         if (result === 'overflow') {
             this.lag();
@@ -395,6 +396,14 @@ export const attachRealtime = (
         clientTracking: false,
     });
     const peers = new Set<RtPeer>();
+    const encoded = new WeakMap<object, Buffer>();
+    const encode = (frame: RtFrame): Buffer => {
+        const cached = encoded.get(frame);
+        if (cached) return cached;
+        const data = encodeFrame(frame);
+        encoded.set(frame, data);
+        return data;
+    };
     let closed = false;
 
     const upgrade = (request: IncomingMessage, socket: Duplex, head: Buffer): void => {
@@ -411,7 +420,7 @@ export const attachRealtime = (
         }
         webSockets.handleUpgrade(request, socket, head, (webSocket) => {
             let peer: RtPeer;
-            peer = new RtPeer(webSocket, options, () => {
+            peer = new RtPeer(webSocket, options, encode, () => {
                 peers.delete(peer);
                 metrics.gauge('fervor_rt_connections', peers.size);
             });

@@ -230,4 +230,51 @@ describe('realtime WebSocket server', () => {
         });
         expect(test.feed.ready).not.toHaveBeenCalled();
     });
+
+    it('encodes one immutable source frame once for every subscriber', async () => {
+        const test = await createHarness();
+        const sockets = await Promise.all([connect(test.url), connect(test.url)]);
+        for (const socket of sockets) {
+            const helloReply = nextFrame(socket);
+            send(socket, { contract: rtContract, op: 'auth', token });
+            await helloReply;
+            const snapshotReply = nextFrame(socket);
+            send(socket, {
+                contract: rtContract,
+                op: 'subscribe',
+                tokenMint: mint,
+                streams: ['trade'],
+            });
+            await snapshotReply;
+        }
+
+        let reads = 0;
+        const delta: RtDelta = {
+            contract: rtContract,
+            type: 'delta',
+            mode: 'historical_replay',
+            sessionId: hello.sessionId,
+            epoch: 1,
+            sentAt: hello.sentAt,
+            stream: 'trade',
+            delivery: 'ordered',
+            cursor: '1',
+            prior: '0',
+            scope: { tokenMint: mint },
+            observedAt: hello.sentAt,
+            data: Object.defineProperty({}, 'side', {
+                enumerable: true,
+                get: () => {
+                    reads += 1;
+                    return 'buy';
+                },
+            }),
+        };
+        const replies = sockets.map((socket) => nextFrame(socket));
+        test.feed.emit(delta);
+        await Promise.all(replies);
+
+        expect(reads).toBe(1);
+        for (const socket of sockets) socket.close();
+    });
 });
