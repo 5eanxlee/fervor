@@ -27,4 +27,18 @@ At commit `c21e448`, replay schema v2 also decodes the exact November 2024 Pump 
 
 The qualified lifecycle contains one create, 250 committed trades, one complete, and one legacy withdraw. Nine Pump event CPIs from failed transactions are intentionally excluded because their state never committed. Creation CPIs prove six decimals, an initial raw supply of `1000000000000000`, and revoked mint authority. The final state is migrated with zero real token reserves, a price of `0.000000410880168542` SOL, and an FDV of `410.880168542336548767` SOL.
 
-The independent v2 runs completed in 37.93 and 38.02 seconds at 384% average CPU, with 352,400 and 354,640 KiB peak RSS. The verified raw extracts, v1 replay, v2 replay, and both v2 timing records are retained in separate private, versioned object-storage prefixes.
+The independent v2 runs completed in 37.93 and 38.02 seconds at 384% average CPU, with 352,400 and 354,640 KiB peak RSS.
+
+At commit `9c5ed16`, replay schema v3 emits the same `fervor-supply-v1` evidence contract consumed by the live and TypeScript metric paths. The event is anchored to Pump creation at slot `302459624`, signature `4mhRTtkQZLF6CL7joHwWwWdaSLP38or5WfhVY6DtZC4vKG3je1sxrDUbNtr2gyTvMXHGTynEUPC6M1NpQF7mbS8d`, instruction index 3, event index 0. It proves raw supply `1000000000000000`, six decimals, the `pump-event-2024-11-v1` layout, finalized commitment, and exact Old Faithful provenance. No RPC or metadata provider supplies this value.
+
+Both independent extracts again produced byte-identical directories:
+
+- manifest: `e0257286de86cde1382e4bb396ff2a5913c15037e3966f31f92050ea579d13a3`;
+- transactions: `478a4336d26f0778681830d92e89890175d39a07cbf1a4d6c933e2dd4da3706e`;
+- swaps: `39f0bab13b0bab28bcd7f92fb6c4768a707bab2e7ab1314aadae5e6e25a7aa75`;
+- Pump events: `9ec4b7440554e4cc1b4994009b6cb5d6b82f72dee2e8193fac80dda1302c3f2b`;
+- Pump state: `15f54ac175b27e8270791645f4f6d018309cd4ec9db1d2ea4489f7fcfb518a03`;
+- supply: `b6a84094d265ea6ec2e68b10ffa9e6ae4f36f9c03bac9f834b80fbff76269e42`;
+- domain-separated replay: `545b3c5dffe645387ecebc55a5267c6464810d91ab9267b9c550a85b9b42cacd`.
+
+The v3 runs completed in 38.77 and 38.44 seconds at 381% and 384% average CPU, with 353,132 and 352,632 KiB peak RSS. The verified raw extracts and each qualified replay revision are retained in separate private, versioned GCP object-storage prefixes together with timing and build evidence.
