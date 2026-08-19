@@ -4,7 +4,12 @@ import {
     ReplaySessionStore,
     type SessionKey,
 } from './checkpointStore';
-import { ReplayCoordinator, type ReplayEvent, type ReplaySnapshot } from './coordinator';
+import {
+    ReplayCoordinator,
+    type ReplayDeltaResult,
+    type ReplayEvent,
+    type ReplaySnapshot,
+} from './coordinator';
 import {
     ReplayPaperBroker,
     type PaperFact,
@@ -294,6 +299,10 @@ export class ReplayRuntime {
         return projectReplayNotifications(
             this.replay, this.coordinator.snapshot(), this.alertModel, after, limit
         );
+    }
+
+    deltas(epoch: number, after: number, limit = 100): ReplayDeltaResult {
+        return this.coordinator.deltas(epoch, after, limit);
     }
 
     async stop(): Promise<ReplayState> {

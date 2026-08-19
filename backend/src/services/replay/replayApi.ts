@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createConnection } from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
-import type { ReplaySnapshot } from './coordinator';
+import type { ReplayDeltaPage, ReplayResync, ReplaySnapshot } from './coordinator';
 import type { ReplayNotificationPage } from './replayAlerts';
 import type { ReplayRuntime, ReplayState } from './runtime';
 
@@ -84,6 +84,22 @@ const pageIdentity = (page: ReplayNotificationPage): CutIdentity => ({
     now: page.cutAt,
 });
 
+const deltaIdentity = (page: ReplayDeltaPage): CutIdentity => ({
+    sourceReplaySha256: page.sourceReplaySha256,
+    runId: page.runId,
+    epoch: page.epoch,
+    cursor: page.cutCursor,
+    now: page.cutAt,
+});
+
+const resyncIdentity = (resync: ReplayResync): CutIdentity => ({
+    sourceReplaySha256: resync.sourceReplaySha256,
+    runId: resync.runId,
+    epoch: resync.cut.epoch,
+    cursor: resync.cut.cursor,
+    now: resync.cut.now,
+});
+
 const responseBody = (auth: ReplayApiAuth, cut: CutIdentity, data: unknown): ApiEnvelope => {
     if (cut.sourceReplaySha256 !== auth.sourceReplaySha256 || cut.runId !== auth.runId) {
         throw new Error('Replay API cut escaped its authenticated run');
@@ -145,6 +161,23 @@ const notificationQuery = (url: URL): { after: number; limit: number } | undefin
     return { after, limit };
 };
 
+const deltaQuery = (
+    url: URL
+): { epoch: number; after: number; limit: number } | undefined => {
+    const keys = [...url.searchParams.keys()];
+    if (keys.some((key) => key !== 'epoch' && key !== 'after' && key !== 'limit')
+        || new Set(keys).size !== keys.length
+        || !url.searchParams.has('epoch')
+        || !url.searchParams.has('after')) return undefined;
+    const epoch = intParam(url.searchParams.get('epoch'), 0, Number.MAX_SAFE_INTEGER);
+    const after = intParam(url.searchParams.get('after'), 0, Number.MAX_SAFE_INTEGER);
+    const limit = intParam(url.searchParams.get('limit'), 100, 500);
+    if (epoch === undefined || epoch < 1
+        || after === undefined
+        || limit === undefined || limit < 1) return undefined;
+    return { epoch, after, limit };
+};
+
 const handler = (
     runtime: ReplayRuntime,
     auth: ReplayApiAuth
@@ -184,6 +217,23 @@ const handler = (
                 return sendJson(res, 200, {
                     success: true,
                     ...responseBody(auth, pageIdentity(page), { page }),
+                });
+            }
+            if (url.pathname === `${base}/deltas`) {
+                const query = deltaQuery(url);
+                if (!query) return reject(res, 400, 'Delta query is invalid');
+                const result = runtime.deltas(query.epoch, query.after, query.limit);
+                if (result.resync) {
+                    return sendJson(res, 409, {
+                        success: false,
+                        ...responseBody(auth, resyncIdentity(result.resync), {
+                            resync: result.resync,
+                        }),
+                    });
+                }
+                return sendJson(res, 200, {
+                    success: true,
+                    ...responseBody(auth, deltaIdentity(result.page), { page: result.page }),
                 });
             }
             return reject(res, 404, 'Replay route not found');

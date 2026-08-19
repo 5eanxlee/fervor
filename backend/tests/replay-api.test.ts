@@ -21,6 +21,10 @@ import {
     startReplayApi,
     type ReplayApi,
 } from '../src/services/replay/replayApi';
+import {
+    replayDeltaContract,
+    replayResyncContract,
+} from '../src/services/replay/coordinator';
 import { replayAlertModelContract } from '../src/services/replay/replayAlerts';
 import { ReplayRuntime } from '../src/services/replay/runtime';
 import { replayMint, replaySha, replayTape } from './helpers/replayTape';
@@ -115,7 +119,7 @@ const call = (
         req.end();
     });
 
-const openApi = async (): Promise<{
+const openApi = async (steps = 3): Promise<{
     api: ReplayApi;
     runtime: ReplayRuntime;
     root: string;
@@ -132,9 +136,7 @@ const openApi = async (): Promise<{
         paperModel,
         alertModel
     );
-    runtime.step();
-    runtime.step();
-    runtime.step();
+    for (let step = 0; step < steps; step += 1) runtime.step();
     const socketPath = path.join(root, 'replay-api.sock');
     const api = await startReplayApi(runtime, root, socketPath, auth());
     apis.push(api);
@@ -257,5 +259,102 @@ describe('replay API', () => {
         await expect(startReplayApi(runtime, root, socketPath, auth()))
             .rejects.toThrow('not a socket');
         await expect(readFile(socketPath, 'utf8')).resolves.toBe('preserve-me');
+    });
+
+    it('continues from an exact cut and fences stale or impossible cursors', async () => {
+        const { runtime, socketPath } = await openApi(1);
+        const route = (epoch: number, after: number, limit = 1) =>
+            `/api/replay/v1/runs/api-run/deltas?epoch=${epoch}&after=${after}&limit=${limit}`;
+
+        const caughtUp = await call(socketPath, route(1, 1), headers);
+        expect(caughtUp).toMatchObject({
+            status: 200,
+            body: {
+                success: true,
+                session: { epoch: 1, cursor: 1 },
+                data: {
+                    page: {
+                        contract: replayDeltaContract,
+                        epoch: 1,
+                        after: 1,
+                        cutCursor: 1,
+                        next: null,
+                        items: [],
+                    },
+                },
+            },
+        });
+
+        runtime.step();
+        runtime.step();
+        const first = await call(socketPath, route(1, 1), headers);
+        expect(first).toMatchObject({
+            status: 200,
+            body: {
+                session: { epoch: 1, cursor: 3 },
+                data: {
+                    page: {
+                        after: 1,
+                        cutCursor: 3,
+                        next: 2,
+                        items: [{
+                            runId: 'api-run',
+                            epoch: 1,
+                            sourceReplaySha256: replaySha,
+                            cursor: 1,
+                        }],
+                    },
+                },
+            },
+        });
+        const tail = await call(socketPath, route(1, first.body.data.page.next, 1), headers);
+        expect(tail).toMatchObject({
+            status: 200,
+            body: {
+                data: { page: { after: 2, cutCursor: 3, next: null, items: [{ cursor: 2 }] } },
+            },
+        });
+
+        await runtime.seek(1);
+        const stale = await call(socketPath, route(1, 3), headers);
+        expect(stale).toMatchObject({
+            status: 409,
+            body: {
+                success: false,
+                session: { epoch: 2, cursor: 1 },
+                data: {
+                    resync: {
+                        contract: replayResyncContract,
+                        reason: 'epoch_changed',
+                        requested: { epoch: 1, after: 3 },
+                        cut: { epoch: 2, cursor: 1 },
+                    },
+                },
+            },
+        });
+        const ahead = await call(socketPath, route(2, 2), headers);
+        expect(ahead).toMatchObject({
+            status: 409,
+            body: {
+                session: { epoch: 2, cursor: 1 },
+                data: { resync: { reason: 'cursor_ahead' } },
+            },
+        });
+
+        for (const query of [
+            'after=1',
+            'epoch=2',
+            'epoch=2&after=01',
+            'epoch=2&after=1&limit=0',
+            'epoch=2&after=1&limit=501',
+            'epoch=2&after=1&after=2',
+            'epoch=2&after=1&other=1',
+        ]) {
+            await expect(call(
+                socketPath,
+                `/api/replay/v1/runs/api-run/deltas?${query}`,
+                headers
+            )).resolves.toMatchObject({ status: 400 });
+        }
     });
 });

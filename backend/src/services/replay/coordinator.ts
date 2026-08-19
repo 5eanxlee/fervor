@@ -6,6 +6,8 @@ import { hasTradeOrder, tradeOrder } from '../marketData/tradeOrder';
 
 export type ReplayStatus = 'paused' | 'running' | 'complete' | 'stopped';
 export const replayCutContract = 'fervor-replay-cut-v1' as const;
+export const replayDeltaContract = 'fervor-replay-delta-v1' as const;
+export const replayResyncContract = 'fervor-replay-resync-v1' as const;
 
 export interface ReplayEvent {
     readonly runId: string;
@@ -40,6 +42,38 @@ export interface ReplayHead {
     readonly usdTradeId: string | null;
     readonly solTradeId: string | null;
 }
+
+export interface ReplayDeltaPage {
+    readonly contract: typeof replayDeltaContract;
+    readonly sourceReplaySha256: string;
+    readonly runId: string;
+    readonly epoch: number;
+    readonly after: number;
+    readonly cutCursor: number;
+    readonly cutAt: string | null;
+    readonly next: number | null;
+    readonly items: readonly ReplayEvent[];
+}
+
+export interface ReplayResync {
+    readonly contract: typeof replayResyncContract;
+    readonly reason: 'epoch_changed' | 'cursor_ahead';
+    readonly sourceReplaySha256: string;
+    readonly runId: string;
+    readonly requested: {
+        readonly epoch: number;
+        readonly after: number;
+    };
+    readonly cut: {
+        readonly epoch: number;
+        readonly cursor: number;
+        readonly now: string | null;
+    };
+}
+
+export type ReplayDeltaResult =
+    | { readonly page: ReplayDeltaPage; readonly resync?: never }
+    | { readonly page?: never; readonly resync: ReplayResync };
 
 const hashPattern = /^[0-9a-f]{64}$/;
 
@@ -195,6 +229,48 @@ export class ReplayCoordinator {
         };
     }
 
+    deltas(epoch: number, after: number, limit: number): ReplayDeltaResult {
+        if (!Number.isSafeInteger(epoch) || epoch < 1
+            || !Number.isSafeInteger(after) || after < 0
+            || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+            throw new Error('Replay delta page is invalid');
+        }
+        const cut = this.snapshot();
+        const reason = epoch !== cut.epoch
+            ? 'epoch_changed'
+            : after > cut.cursor ? 'cursor_ahead' : null;
+        if (reason !== null) {
+            return {
+                resync: Object.freeze({
+                    contract: replayResyncContract,
+                    reason,
+                    sourceReplaySha256: cut.sourceReplaySha256,
+                    runId: cut.runId,
+                    requested: Object.freeze({ epoch, after }),
+                    cut: Object.freeze({ epoch: cut.epoch, cursor: cut.cursor, now: cut.now }),
+                }),
+            };
+        }
+        const end = Math.min(cut.cursor, after + limit);
+        const items: ReplayEvent[] = [];
+        for (let cursor = after; cursor < end; cursor += 1) {
+            items.push(this.eventAt(cursor, cut.epoch));
+        }
+        return {
+            page: Object.freeze({
+                contract: replayDeltaContract,
+                sourceReplaySha256: cut.sourceReplaySha256,
+                runId: cut.runId,
+                epoch: cut.epoch,
+                after,
+                cutCursor: cut.cursor,
+                cutAt: cut.now,
+                next: end < cut.cursor ? end : null,
+                items: Object.freeze(items),
+            }),
+        };
+    }
+
     restore(value: unknown, afterEpoch: number = this.epoch): ReplaySnapshot {
         if (!Number.isSafeInteger(afterEpoch) || afterEpoch < 1) {
             throw new Error('Replay restore epoch is invalid');
@@ -227,19 +303,24 @@ export class ReplayCoordinator {
     }
 
     private take(): ReplayEvent {
-        const trade = this.events[this.cursor];
+        const event = this.eventAt(this.cursor, this.epoch);
+        const trade = event.trade;
         this.clock.advanceTo(this.times[this.cursor]);
-        const event: ReplayEvent = Object.freeze({
-            runId: this.runId,
-            epoch: this.epoch,
-            sourceReplaySha256: this.sourceSha,
-            cursor: this.cursor,
-            usdPriced: trade.priceUsd !== undefined && trade.usdAmount !== undefined,
-            trade,
-        });
         this.cursor += 1;
         if (this.cursor === this.events.length) this.status = 'complete';
         return event;
+    }
+
+    private eventAt(cursor: number, epoch: number): ReplayEvent {
+        const trade = this.events[cursor];
+        return Object.freeze({
+            runId: this.runId,
+            epoch,
+            sourceReplaySha256: this.sourceSha,
+            cursor,
+            usdPriced: trade.priceUsd !== undefined && trade.usdAmount !== undefined,
+            trade,
+        });
     }
 
     private timeAt(cursor: number): string | null {
