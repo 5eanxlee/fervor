@@ -1,0 +1,132 @@
+{
+  "schema": "fervor-replay-alert-evidence-v1",
+  "recordedAt": "2026-08-19T05:57:20Z",
+  "runtimeCommit": "32d9055a30212e1aa659d6c87ee9708a78ec7749",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a",
+    "machine": "n2-standard-16"
+  },
+  "image": {
+    "configSha256": "de747c9404b5f0b580eb7cc5c504dab8b222b130a440a87a6bf2bf2de9758654",
+    "builtAt": "2026-08-19T05:49:51.630221185Z"
+  },
+  "source": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "events": 5516,
+    "windowStart": "2024-11-20T03:48:37Z",
+    "windowEnd": "2024-11-20T03:59:53Z"
+  },
+  "run": {
+    "runId": "portfolio-gcp",
+    "epoch": 2,
+    "cursor": 60,
+    "now": "2024-11-20T03:49:32.000Z"
+  },
+  "model": {
+    "contract": "fervor-replay-alert-model-v1",
+    "fileSha256": "c03cc388946acadc8a1a9d0975339bd50c6ff25880da81d8de731cf796ce5769",
+    "modelSha256": "5c71c6d688a648115878174534e53936e54e0a13f3efc20c5def8fffee3f24ea",
+    "definitionCount": 3,
+    "policy": "one_shot"
+  },
+  "page": {
+    "contract": "fervor-replay-notification-page-v1",
+    "triggeredCount": 2,
+    "armedCount": 0,
+    "unavailableCount": 1,
+    "unavailableTypes": [
+      "market_cap"
+    ],
+    "notificationsSha256": "8a8b9f0a31fd64cc14ddce1112e64fbcfaf478c57dfc064be289b2eed627f597",
+    "items": [
+      {
+        "contract": "fervor-replay-in-app-v1",
+        "notificationKey": "6af208b24ed30fb950bd02f23b15a753b36aac638de1d5131a373f7a1d7bb0a1",
+        "alertId": "11111111-1111-4111-8111-111111111111",
+        "thresholdType": "price",
+        "thresholdValue": 0.00001,
+        "condition": "above",
+        "currentValue": 0.000014347444416713535,
+        "metricCursor": 22,
+        "metricEventId": "27e21ca77ded79da8aeef19afa7e2f9854af7b750602097ee1562f8ff1d3e54b",
+        "qualitySourceEventId": "fervor-sol-usd-v1:1732074510000",
+        "signature": "4yxbKaLWy396WdiZhcfvyHwYVJpx2S3sDms67rcD2MU9a8qwcmaahYD2LKokdmwT3AkoWhMu3afFchiktvWBLbDK",
+        "slot": 302459671,
+        "observedAt": "2024-11-20T03:48:57.000Z",
+        "matchedAt": "2024-11-20T03:48:57.000Z",
+        "metricConfidence": 0.82,
+        "metricEstimated": true,
+        "basisCommitment": "finalized",
+        "delivery": {
+          "channel": "in_app",
+          "status": "available",
+          "attempts": 0,
+          "availableAt": "2024-11-20T03:48:57.000Z",
+          "external": false
+        }
+      },
+      {
+        "contract": "fervor-replay-in-app-v1",
+        "notificationKey": "ca58c1eb044a3f2f2f04605ec461f62335f63cc27aa8afbd25993dda7abd871a",
+        "alertId": "22222222-2222-4222-8222-222222222222",
+        "thresholdType": "volume_1m",
+        "thresholdValue": 5000,
+        "condition": "above",
+        "currentValue": 5216.293389,
+        "metricCursor": 51,
+        "metricEventId": "a3b5fcd44cbf9025721b64fd3b9d26ceb5a621747496e8520b1e3e70132f25dc",
+        "qualitySourceEventId": "a3b5fcd44cbf9025721b64fd3b9d26ceb5a621747496e8520b1e3e70132f25dc",
+        "signature": "3LT3ECq5QKpGpbcPR16Gzm91AuqFFobcvAb8Z2qzRbkCLTkCLD8yvJpdtjqhidYcbZsg44bywL73mhvDDc4tnfHr",
+        "slot": 302459731,
+        "observedAt": "2024-11-20T03:49:23.000Z",
+        "matchedAt": "2024-11-20T03:49:23.000Z",
+        "metricConfidence": 0.82,
+        "metricEstimated": true,
+        "basisCommitment": "finalized",
+        "delivery": {
+          "channel": "in_app",
+          "status": "available",
+          "attempts": 0,
+          "availableAt": "2024-11-20T03:49:23.000Z",
+          "external": false
+        }
+      }
+    ]
+  },
+  "coldRecovery": {
+    "firstContainer": "alert-gcp-a",
+    "secondContainer": "alert-gcp-b",
+    "epoch": 2,
+    "cursor": 60,
+    "notificationsSha256": "8a8b9f0a31fd64cc14ddce1112e64fbcfaf478c57dfc064be289b2eed627f597",
+    "digestMatch": true,
+    "itemsMatch": true
+  },
+  "tests": {
+    "build": true,
+    "backendFilesPassed": 56,
+    "backendFilesSkipped": 14,
+    "backendTestsPassed": 360,
+    "backendTestsSkipped": 60,
+    "rustAlertTestsPassed": 7,
+    "compose": true,
+    "databaseIntegrationRun": false
+  },
+  "result": {
+    "sharedThresholdAuthority": true,
+    "oneShot": true,
+    "virtualEventTime": true,
+    "epochFenced": true,
+    "unavailableMetricExposed": true,
+    "stableNotificationDigest": true,
+    "externalDeliveryAttempted": false,
+    "durableAlertStoreAdded": false,
+    "databaseUsed": false,
+    "redisUsed": false,
+    "liveProviderUsed": false,
+    "liveTransactionSubmitted": false
+  }
+}
