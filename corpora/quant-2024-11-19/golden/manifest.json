@@ -1,0 +1,19 @@
+{
+  "schema": "fervor-metric-replay-v1",
+  "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+  "sourceReplaySchema": "fervor-replay-v7",
+  "sourceReplaySha256": "b09fae64903dfab5b818a0b05bc307e4d219336f5f95f38848653f71febd0b3d",
+  "sourceManifestSha256": "99cb792662e1e9417f3c55608d54b648a05666d1ba5b5603dd81fb3590919dea",
+  "tradeFile": "trades.ndjson",
+  "trades": 5494,
+  "tradeSha256": "c3dffe27e5b53a40788ab63fccd4175f2f97900b53b24b62fe5416dc56bf37b2",
+  "curveFile": "curve-metrics.ndjson",
+  "curvePoints": 250,
+  "curveSha256": "c26ce92c6a25231ffcb8672bdaebe2263d5780cf7873ac08307bfe34981b9e64",
+  "candleFile": "candles.ndjson",
+  "candles": 597,
+  "candleSha256": "a8b7641718bd88e9c6de4c69957425d02bbb5974aff80f7e968444aae542c83b",
+  "stateFile": "market-state.json",
+  "stateSha256": "8dc0645fd4cfcf6306d5218d6f465cef1c490703a649d29f663f62eab212ef2d",
+  "projectionSha256": "8b0de39397738de6609f56f15637751db1ead7ba3f4e783f0ec1e364757f7038"
+}

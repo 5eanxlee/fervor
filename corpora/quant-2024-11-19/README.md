@@ -56,3 +56,15 @@ The two independent extracts produced byte-identical v7 directories:
 The curve points have 250 unique source-event IDs and exactly one completion. The first point is slot `302459624` at `2024-11-20T03:48:37Z`, with price `0.000000030824790307` SOL, FDV `30.824790307548925365` SOL, and estimated real-reserve mark `24.372141192917055790` SOL. The terminal point is slot `302460024` at `2024-11-20T03:51:29Z`, with price `0.000000410880168542` SOL, FDV `410.880168542336548767` SOL, and estimated real-reserve mark `85.005359175000000000` SOL.
 
 The v7 runs completed in 40.32 and 40.38 seconds with 354,436 and 353,280 KiB peak RSS. The compact manifest, curve tape, and timing evidence are retained at the private versioned GCS prefix `replays/quant-2024-11-19/v7/`; both full replay directories and both source extracts remain on the replay VM.
+
+At commit `21382ed`, the shared TypeScript engines project the verified v7 tape without network, database, or wall-clock access. Independent projections from the two source extracts produced byte-identical output with:
+
+- 5,516 decoded trades, of which 5,494 have eligible historical USD evidence and 22 remain explicitly unpriced;
+- 250 Pump curve states, of which 228 have eligible historical USD evidence, and 597 OHLCV candles across all supported intervals;
+- projection SHA-256 `8b0de39397738de6609f56f15637751db1ead7ba3f4e783f0ec1e364757f7038`;
+- manifest SHA-256 `4b477826be268b04858ac646f5864c855e45d84126965f1ce7b94c8ce77ca07d`;
+- market-state SHA-256 `8dc0645fd4cfcf6306d5218d6f465cef1c490703a649d29f663f62eab212ef2d`.
+
+The final state is timestamped `2024-11-20T03:59:53Z`: native price `0.000011717442528638452` SOL, USD price `0.0027406250200343965`, fixed total supply `1,000,000,000`, and FDV `$2,740,625.0200343966`. Circulating market cap remains unavailable. Current liquidity is also unavailable after migration; the last supported curve estimate is preserved separately as `85.005359175000000000` SOL, or `$19,817.997363471935` using the contemporaneous tape.
+
+The projection runs completed in 2.31 and 2.18 seconds with 365,640 and 338,188 KiB peak RSS. Exact compact outputs are committed under `golden/`. The canonical 8.2 MiB projection and both timing records are retained in the private versioned GCS prefix `metrics/quant-2024-11-19/v1/`.

@@ -1,0 +1,104 @@
+{
+  "contract": "fervor-market-golden-v1",
+  "inputContract": "fervor-market-input-v2",
+  "metricSource": "fervor_engine",
+  "metricVersion": "fervor-market-v2",
+  "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+  "asOf": "2024-11-20T03:59:53.000Z",
+  "phase": "migrated",
+  "tradeCount": 5516,
+  "pricedTradeCount": 5494,
+  "unpricedTradeCount": 22,
+  "priceCoverageBps": 9960,
+  "priceUsd": 0.0027406250200343965,
+  "priceObservedAt": "2024-11-20T03:59:53Z",
+  "priceSourceEventId": "fervor-sol-usd-v1:1732075170000",
+  "priceSol": 0.000011717442528638452,
+  "priceSolObservedAt": "2024-11-20T03:59:53Z",
+  "totalSupply": 1000000000,
+  "supplySourceEventId": "old_faithful:supply:302459624:4mhRTtkQZLF6CL7joHwWwWdaSLP38or5WfhVY6DtZC4vKG3je1sxrDUbNtr2gyTvMXHGTynEUPC6M1NpQF7mbS8d:3:0",
+  "marketCapUsd": null,
+  "fdvUsd": 2740625.0200343966,
+  "liquidityUsd": null,
+  "liquidityStatus": "unsupported_after_migration",
+  "lastCurve": {
+    "sourceEventId": "pump-event-2024-11-v1:302460024:v3AemLB8YFx95crn5YrQ2CowLbCH3dzzK5VXrXa3k6y7cGybZQqnySYEfk2JKVAqZ3AeLDGyQmFSR8Pvu3av8Np:3:1",
+    "observedAt": "2024-11-20T03:51:29Z",
+    "liquiditySol": "85.005359175000000000",
+    "liquidityUsd": 19817.997363471935,
+    "estimated": true
+  },
+  "rolling": {
+    "volumeUsd": {
+      "1m": 604680.357249,
+      "5m": 3494578.518146,
+      "1h": 3564379.512567,
+      "6h": 3564379.512567,
+      "24h": 3564379.512567
+    },
+    "buyCount": {
+      "1m": 543,
+      "5m": 3004,
+      "1h": 3229,
+      "6h": 3229,
+      "24h": 3229
+    },
+    "sellCount": {
+      "1m": 432,
+      "5m": 2214,
+      "1h": 2287,
+      "6h": 2287,
+      "24h": 2287
+    },
+    "txCount": {
+      "1m": 975,
+      "5m": 5218,
+      "1h": 5516,
+      "6h": 5516,
+      "24h": 5516
+    },
+    "uniqueBuyers": {
+      "1m": 428,
+      "5m": 1890,
+      "1h": 1961,
+      "6h": 1961,
+      "24h": 1961
+    },
+    "uniqueSellers": {
+      "1m": 361,
+      "5m": 1225,
+      "1h": 1225,
+      "6h": 1225,
+      "24h": 1225
+    },
+    "uniqueExact": {
+      "1m": false,
+      "5m": false,
+      "1h": false,
+      "6h": false,
+      "24h": false
+    },
+    "uniqueErrorPct": {
+      "1m": 9.19,
+      "5m": 9.19,
+      "1h": 9.19,
+      "6h": 9.19,
+      "24h": 9.19
+    }
+  },
+  "usdPricedCount": {
+    "1m": 975,
+    "5m": 5218,
+    "1h": 5494,
+    "6h": 5494,
+    "24h": 5494
+  },
+  "usdCoverageBps": {
+    "1m": 10000,
+    "5m": 10000,
+    "1h": 9960,
+    "6h": 9960,
+    "24h": 9960
+  },
+  "rollingEstimated": true
+}

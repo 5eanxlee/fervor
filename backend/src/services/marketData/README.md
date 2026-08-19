@@ -17,6 +17,7 @@ fervor-trade-v1
 - `tradeEnricher.ts` is the shared quote-to-USD enrichment boundary.
 - `fxTape.ts` validates and reads the historical `fervor-fx-tape-v1` contract. It never returns a point observed after the trade and never carries a point beyond `validUntil`.
 - `metricEngine.ts` is the canonical FDV and supported-liquidity derivation boundary. Circulating market cap remains unavailable.
+- `metricReplay.ts` verifies every source artifact and deterministically drives the same enrichment, candle, rolling-window, and metric engines under event time. It publishes through an atomic directory rename and refuses existing output.
 - `rollingMetricBook.ts` owns bounded rolling counts, volume, and wallet cardinality.
 - `candleProjector.ts` owns event-time OHLCV aggregation and durable candle projection.
 - Repositories persist projections; they must not reinterpret metric semantics.
@@ -30,6 +31,12 @@ Live enrichment still uses the configured reference-price adapter. Replacing tha
 ```bash
 npm test -- --run tests/fx-tape.test.ts tests/reference-price.test.ts \
   tests/metric-engine.test.ts tests/rolling-metric-book.test.ts \
-  tests/candle-projector.test.ts
+  tests/candle-projector.test.ts tests/metric-replay.test.ts
 npm run build
+```
+
+After building, a verified replay is projected with:
+
+```bash
+npm run project:replay -- --replay <replay-dir> --out <new-output-dir>
 ```
