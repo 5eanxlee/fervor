@@ -283,7 +283,7 @@ export const startReplayApi = async (
     try {
         await listen(server, socketPath);
         owned = await socketId(socketPath);
-        await chmod(socketPath, 0o600);
+        await chmod(socketPath, 0o660);
     } catch (error) {
         if (server.listening) {
             await new Promise<void>((resolve) => server.close(() => resolve()));

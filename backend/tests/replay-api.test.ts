@@ -224,7 +224,7 @@ describe('replay API', () => {
             headers
         )).resolves.toMatchObject({ status: 400 });
 
-        expect((await lstat(socketPath)).mode & 0o777).toBe(0o600);
+        expect((await lstat(socketPath)).mode & 0o777).toBe(0o660);
         await expect(startReplayApi(runtime, root, socketPath, auth()))
             .rejects.toThrow('already in use');
         await expect(call(socketPath, '/api/replay/v1/runs/api-run/snapshot', headers))
