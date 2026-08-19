@@ -1,0 +1,120 @@
+{
+  "schema": "fervor-replay-wallet-evidence-v1",
+  "recordedAt": "2026-08-19T05:30:00Z",
+  "runtimeCommit": "d35166e133e664e8c2706ff8260a6d85ad016762",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a",
+    "machine": "n2-standard-16"
+  },
+  "image": {
+    "configSha256": "bce1e889da4329195ece7fc3e2eee113430800aae59bfa529856c4517e3a6a12",
+    "builtAt": "2026-08-19T05:25:39.029278347Z"
+  },
+  "source": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "events": 5516,
+    "windowStart": "2024-11-20T03:48:37Z",
+    "windowEnd": "2024-11-20T03:59:53Z"
+  },
+  "run": {
+    "runId": "portfolio-gcp",
+    "epoch": 2,
+    "cursor": 60,
+    "now": "2024-11-20T03:49:32.000Z"
+  },
+  "wallet": {
+    "address": "7m6dSzdhFpZMke5fWo4he6tPQzCAoS5UKjtVJpKdDmLA",
+    "contract": "fervor-replay-wallet-trade-v1",
+    "pageContract": "fervor-replay-wallet-page-v1",
+    "coverage": {
+      "source": "verified_trade_tape",
+      "scope": "trade_only",
+      "history": "selected_window",
+      "historyComplete": false,
+      "balanceComplete": false,
+      "feeComplete": false
+    },
+    "pages": [
+      {
+        "afterCursor": 0,
+        "nextCursor": 48,
+        "itemCursors": [14, 47]
+      },
+      {
+        "afterCursor": 48,
+        "nextCursor": 60,
+        "itemCursors": [58]
+      }
+    ],
+    "items": [
+      {
+        "cursor": 14,
+        "activityKey": "65d46bff73d5e17036666c0e74b47e9f21642859d48b1ed660cc1175954b2f74",
+        "tradeId": "0756f98031c799a02c24c93c5fe46263ca5dacf6fe5dc0b6e4c5dad14a98ef91",
+        "side": "buy",
+        "tokenDeltaRaw": "5823332677562",
+        "quoteDeltaRaw": "-314593360",
+        "slot": 302459645,
+        "txIndex": 168,
+        "instructionIndex": 4,
+        "eventIndex": 0,
+        "observedAt": "2024-11-20T03:48:46Z"
+      },
+      {
+        "cursor": 47,
+        "activityKey": "3fa55e10285563a28d36181a404fa820416a9a2c364ffb052be30d3470941b41",
+        "tradeId": "a602b877bb8533e5695b2fa4cde0cb2c438e9d79bfa2a67ce85a4dee9c67ff45",
+        "side": "sell",
+        "tokenDeltaRaw": "-1164666535512",
+        "quoteDeltaRaw": "122750287",
+        "slot": 302459716,
+        "txIndex": 1943,
+        "instructionIndex": 3,
+        "eventIndex": 0,
+        "observedAt": "2024-11-20T03:49:16Z"
+      },
+      {
+        "cursor": 58,
+        "activityKey": "de5de39212211eda2ee8f9f5a9829c4a46aedb2bc4fc9b4d95ab5c7d6a5aa552",
+        "tradeId": "ef93a67415f6d19a8cb0b902840ce0562b32008cc305ab6fbfc90a35b16d8735",
+        "side": "sell",
+        "tokenDeltaRaw": "-931733228410",
+        "quoteDeltaRaw": "73220177",
+        "slot": 302459748,
+        "txIndex": 411,
+        "instructionIndex": 3,
+        "eventIndex": 0,
+        "observedAt": "2024-11-20T03:49:31Z"
+      }
+    ],
+    "itemsSha256": "8d234b30ce5d92852ef1ee43965147989345a1dc39ada9c105911a895d6f7919"
+  },
+  "coldRecovery": {
+    "firstContainer": "wallet-gcp-a",
+    "secondContainer": "wallet-gcp-b",
+    "epoch": 2,
+    "cursor": 60,
+    "items": 3,
+    "activityKeysMatch": true
+  },
+  "tests": {
+    "build": true,
+    "backendFilesPassed": 55,
+    "backendFilesSkipped": 14,
+    "backendTestsPassed": 355,
+    "backendTestsSkipped": 60,
+    "compose": true
+  },
+  "result": {
+    "cursorPaging": true,
+    "exactRawDeltas": true,
+    "stableActivityKeys": true,
+    "walletCheckpointAdded": false,
+    "completeBalanceClaimed": false,
+    "liveProviderUsed": false,
+    "liveTransactionSubmitted": false
+  }
+}
