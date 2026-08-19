@@ -1,0 +1,70 @@
+{
+  "schema": "fervor-replay-sandbox-evidence-v1",
+  "recordedAt": "2026-08-19T04:01:19Z",
+  "commit": "b57e4ef01f32b6822f72aed58983a92058ec11c5",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a",
+    "kernel": "6.17.0-1022-gcp",
+    "docker": "29.1.3",
+    "compose": "2.40.3+ds1-0ubuntu1~24.04.1"
+  },
+  "image": {
+    "id": "sha256:ec11eba809b3077717c7b0cb9d2a61d4897c80c51ce3abfc8444f185dc136492",
+    "bytes": 212130095,
+    "user": "node",
+    "env": [
+      "NODE_ENV=production"
+    ],
+    "dockerfileSha256": "0ec50342410460eaa3abb8a5cf9d6402c8107b048d83167d22fee7c99eec4d52",
+    "composeSha256": "d05747c2709e889f77ac0028e931749f944c5640a841393f715d8ba8ecde5a25"
+  },
+  "sandbox": {
+    "container": "14e92665782dd51281a1ce1e21a414f8a01250ee6e541b1e10ea571ab588e400",
+    "network": "none",
+    "readonlyRoot": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "securityOpt": [
+      "no-new-privileges:true"
+    ],
+    "init": true,
+    "pids": 128,
+    "cpus": 4,
+    "memoryBytes": 2147483648,
+    "nofile": 4096,
+    "tmpfs": "/tmp:rw,noexec,nosuid,nodev,size=64m",
+    "corpusMount": "read-only",
+    "checkpointMount": "read-write"
+  },
+  "probes": {
+    "network": "wget http://1.1.1.1: Network unreachable",
+    "root": "touch /app/probe: Read-only file system",
+    "corpus": "touch /replay/probe: Read-only file system"
+  },
+  "replay": {
+    "sourceSha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "events": 5516,
+    "cursor2500": {
+      "stateSha256": "921e3de915c2391f9fb3859a4d4aed55fd8690567a19104744ac7c4f8da0d8b8",
+      "fileSha256": "d66a3b400ff58872fbca650cfbc91de978b5cf50b258e4bd1862426c756bc245"
+    },
+    "final": {
+      "stateSha256": "c4cf96bf76e34047b5427e7a57cd1853f23c6559f5c7f79561b16d63e5976f05",
+      "fileSha256": "c293e9cd6bb3ac8694dee00571d346c653d7ee9b86333ec13a998a92f4e289ef",
+      "priceUsd": 0.003738614026109172,
+      "priceSol": 0.00001598430820249391,
+      "trades": 5516,
+      "priced": 5494,
+      "unpriced": 22
+    },
+    "freshRestore": {
+      "run": "container-restore",
+      "cursor": 5516,
+      "stateSha256": "c4cf96bf76e34047b5427e7a57cd1853f23c6559f5c7f79561b16d63e5976f05",
+      "status": "stopped"
+    }
+  }
+}
