@@ -1,6 +1,6 @@
 use crate::{
     fervor_tx::{Commitment, FervorTx, Quarantine, QuarantineReason},
-    market_decoder::{economic_sol_delta, owner_delta, single_pool_swap, Venue, USDC_MINT},
+    market_decoder::{owner_delta, single_pool_swap, Venue, USDC_MINT, WSOL_MINT},
 };
 use serde::Serialize;
 
@@ -10,13 +10,6 @@ pub const SOL_USDC_POOL: &str = "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2";
 
 const SOL_DECIMALS: u32 = 9;
 const USDC_DECIMALS: u32 = 6;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SolSource {
-    WsolBalance,
-    NativeBalance,
-}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,7 +27,6 @@ pub struct FxObservation {
     pub stable_raw: String,
     pub sol_decimals: u32,
     pub stable_decimals: u32,
-    pub sol_source: SolSource,
     pub slot: u64,
     pub signature: String,
     pub instruction_index: u32,
@@ -69,18 +61,7 @@ fn decode_v1(tx: &FervorTx) -> Option<FxObservation> {
     if stable_decimals != USDC_DECIMALS {
         return None;
     }
-    let (sol_delta, sol_decimals, sol_source, confidence) = if let Some((delta, decimals)) =
-        owner_delta(tx, trader, crate::market_decoder::WSOL_MINT)
-    {
-        (delta, decimals, SolSource::WsolBalance, 0.99)
-    } else {
-        (
-            economic_sol_delta(tx)?,
-            SOL_DECIMALS,
-            SolSource::NativeBalance,
-            0.82,
-        )
-    };
+    let (sol_delta, sol_decimals) = owner_delta(tx, trader, WSOL_MINT)?;
     if sol_decimals != SOL_DECIMALS || sol_delta.signum() == stable_delta.signum() {
         return None;
     }
@@ -107,12 +88,11 @@ fn decode_v1(tx: &FervorTx) -> Option<FxObservation> {
         stable_raw: stable_raw.to_string(),
         sol_decimals,
         stable_decimals,
-        sol_source,
         slot: tx.occurrence.slot,
         signature: tx.signed_id.signature.clone(),
         instruction_index,
         observed_at: tx.observed_at.clone(),
-        confidence,
+        confidence: 0.99,
         stale: false,
         commitment: tx.commitment,
     })
@@ -141,7 +121,7 @@ mod tests {
         tx.static_keys = vec![
             trader.clone(),
             Venue::RaydiumAmmV4.program_id().to_string(),
-            crate::market_decoder::WSOL_MINT.to_string(),
+            WSOL_MINT.to_string(),
             SOL_USDC_POOL.to_string(),
             USDC_MINT.to_string(),
         ];
@@ -156,23 +136,11 @@ mod tests {
         tx.pre_balances = vec![1_000_000_000; tx.static_keys.len()];
         tx.post_balances = tx.pre_balances.clone();
         tx.pre_tokens = vec![
-            balance(
-                2,
-                crate::market_decoder::WSOL_MINT,
-                &trader,
-                "2000000000",
-                9,
-            ),
+            balance(2, WSOL_MINT, &trader, "2000000000", 9),
             balance(4, USDC_MINT, &trader, "0", 6),
         ];
         tx.post_tokens = vec![
-            balance(
-                2,
-                crate::market_decoder::WSOL_MINT,
-                &trader,
-                "1000000000",
-                9,
-            ),
+            balance(2, WSOL_MINT, &trader, "1000000000", 9),
             balance(4, USDC_MINT, &trader, "240000000", 6),
         ];
         tx
@@ -185,23 +153,7 @@ mod tests {
         assert_eq!(observation.policy, FX_POLICY);
         assert_eq!(observation.sol_raw, "1000000000");
         assert_eq!(observation.stable_raw, "240000000");
-        assert_eq!(observation.sol_source, SolSource::WsolBalance);
         assert_eq!(observation.instruction_index, 0);
-    }
-
-    #[test]
-    fn removes_the_fee_from_native_sol_evidence() {
-        let mut tx = sample();
-        tx.pre_tokens.retain(|balance| balance.mint == USDC_MINT);
-        tx.post_tokens.retain(|balance| balance.mint == USDC_MINT);
-        tx.fee = 5_000;
-        tx.pre_balances[0] = 2_000_000_000;
-        tx.post_balances[0] = 999_995_000;
-
-        let observation = decode_fx(&tx).unwrap().unwrap();
-        assert_eq!(observation.sol_raw, "1000000000");
-        assert_eq!(observation.sol_source, SolSource::NativeBalance);
-        assert_eq!(observation.confidence, 0.82);
     }
 
     #[test]
@@ -214,5 +166,14 @@ mod tests {
         let mut unknown = sample();
         unknown.static_keys[3] = bs58::encode([7_u8; 32]).into_string();
         assert_eq!(decode_fx(&unknown), Ok(None));
+
+        let mut native_only = sample();
+        native_only
+            .pre_tokens
+            .retain(|balance| balance.mint != WSOL_MINT);
+        native_only
+            .post_tokens
+            .retain(|balance| balance.mint != WSOL_MINT);
+        assert_eq!(decode_fx(&native_only), Ok(None));
     }
 }

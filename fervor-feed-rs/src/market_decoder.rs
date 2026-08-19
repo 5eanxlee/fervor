@@ -282,10 +282,6 @@ pub(crate) fn owner_delta(tx: &FervorTx, owner: &str, mint: &str) -> Option<(i12
         .then_some((delta.raw, delta.decimals))
 }
 
-pub(crate) fn economic_sol_delta(tx: &FervorTx) -> Option<i128> {
-    native_sol_delta(tx)
-}
-
 fn swap_instructions(instructions: &[TxIx], keys: &[String]) -> Vec<SwapIx> {
     instructions
         .iter()
