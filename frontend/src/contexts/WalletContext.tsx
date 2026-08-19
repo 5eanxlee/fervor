@@ -25,6 +25,7 @@ import {
     SolanaSignTransactionFeature,
 } from '@solana/wallet-standard-features';
 import { VersionedTransaction } from '@solana/web3.js';
+import { createReplayWallet } from '../services/replayWallet';
 
 type SignMessage = (message: Uint8Array, display?: 'utf8' | 'hex') =>
     Promise<Uint8Array | { signature: Uint8Array }>;
@@ -58,6 +59,8 @@ type SolanaWallet = Wallet;
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
 const walletKey = 'fervor_wallet';
+const replayMode = process.env.NEXT_PUBLIC_DATA_MODE === 'replay';
+const replayName = 'Replay wallet';
 const walletRegistry = () => getWallets();
 const supportsSolana = (wallet: Wallet): wallet is SolanaWallet =>
     StandardConnect in wallet.features && wallet.chains.some((chain) => chain.startsWith('solana:'));
@@ -95,8 +98,9 @@ const getConnection = (wallet: SolanaWallet, account: WalletAccount): WalletConn
 
 export const WalletContextProvider = ({ children }: { children: ReactNode }) => {
     const [available, setAvailable] = useState<SolanaWallet[]>([]);
-    const [walletName, setWalletName] = useState<string | null>(null);
+    const [walletName, setWalletName] = useState<string | null>(replayMode ? replayName : null);
     const [account, setAccount] = useState<WalletAccount | null>(null);
+    const [replay, setReplay] = useState<WalletConnection | null>(null);
     const [connecting, setConnecting] = useState(false);
 
     useEffect(() => {
@@ -105,9 +109,11 @@ export const WalletContextProvider = ({ children }: { children: ReactNode }) => 
             const next = registry.get().filter(supportsSolana);
             setAvailable(next);
             setWalletName((current) => {
+                if (replayMode && current === replayName) return current;
                 if (current && next.some((wallet) => wallet.name === current)) return current;
                 const stored = localStorage.getItem(walletKey) || localStorage.getItem('fervor_wallet');
-                return next.find((wallet) => wallet.name === stored)?.name || next[0]?.name || null;
+                return next.find((wallet) => wallet.name === stored)?.name
+                    || (replayMode ? replayName : next[0]?.name || null);
             });
         };
         refresh();
@@ -122,6 +128,10 @@ export const WalletContextProvider = ({ children }: { children: ReactNode }) => 
     const selected = available.find((wallet) => wallet.name === walletName) || null;
 
     useEffect(() => {
+        if (walletName === replayName) {
+            setAccount(null);
+            return;
+        }
         if (!selected) {
             setAccount(null);
             return;
@@ -133,16 +143,28 @@ export const WalletContextProvider = ({ children }: { children: ReactNode }) => 
         return events.on('change', (change) => {
             if (change.accounts) setAccount(solanaAccount(change.accounts) || null);
         });
-    }, [selected]);
+    }, [selected, walletName]);
 
     const selectWallet = (name: string) => {
-        if (!available.some((wallet) => wallet.name === name)) return;
+        if ((name === replayName && !replayMode)
+            || (name !== replayName && !available.some((wallet) => wallet.name === name))) return;
         setAccount(null);
+        setReplay(null);
         setWalletName(name);
         localStorage.setItem(walletKey, name);
     };
 
     const connect = async (): Promise<WalletConnection> => {
+        if (replayMode && walletName === replayName) {
+            setConnecting(true);
+            try {
+                const next = replay || await createReplayWallet();
+                setReplay(next);
+                return next;
+            } finally {
+                setConnecting(false);
+            }
+        }
         if (!selected) throw new Error('No compatible Solana wallet was found');
         setConnecting(true);
         try {
@@ -163,6 +185,10 @@ export const WalletContextProvider = ({ children }: { children: ReactNode }) => 
     };
 
     const disconnect = async () => {
+        if (replay) {
+            setReplay(null);
+            return;
+        }
         const disconnectFeature = selected?.features[StandardDisconnect] as
             StandardDisconnectFeature[typeof StandardDisconnect] | undefined;
         if (disconnectFeature) await disconnectFeature.disconnect();
@@ -170,8 +196,8 @@ export const WalletContextProvider = ({ children }: { children: ReactNode }) => 
     };
 
     const connection = useMemo(
-        () => selected && account ? getConnection(selected, account) : null,
-        [selected, account]
+        () => replay || (selected && account ? getConnection(selected, account) : null),
+        [selected, account, replay]
     );
 
     return (
@@ -180,7 +206,10 @@ export const WalletContextProvider = ({ children }: { children: ReactNode }) => 
             connecting,
             publicKey: connection?.publicKey || null,
             walletName,
-            wallets: available.map((wallet) => ({ name: wallet.name, icon: wallet.icon })),
+            wallets: [
+                ...(replayMode ? [{ name: replayName, icon: '' }] : []),
+                ...available.map((wallet) => ({ name: wallet.name, icon: wallet.icon })),
+            ],
             signMessage: connection?.signMessage,
             signTransaction: connection?.signTransaction,
             selectWallet,
