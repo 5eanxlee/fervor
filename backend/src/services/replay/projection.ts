@@ -203,7 +203,11 @@ export class ReplayProjection {
         );
     }
 
-    static restore(coordinator: ReplayCoordinator, value: unknown): ReplayProjection {
+    static restore(
+        coordinator: ReplayCoordinator,
+        value: unknown,
+        afterEpoch?: number
+    ): ReplayProjection {
         const decoded = decodeCheckpoint(value);
         if (decoded.checkpoint.tokenMint !== coordinator.tokenMint
             || decoded.checkpoint.cut.sourceReplaySha256 !== coordinator.snapshot().sourceReplaySha256) {
@@ -215,7 +219,7 @@ export class ReplayProjection {
             || decoded.checkpoint.latestSol?.tradeId !== (head.solTradeId ?? undefined)) {
             throw new Error('Replay checkpoint head differs from the verified tape');
         }
-        const snapshot = coordinator.restore(decoded.checkpoint.cut);
+        const snapshot = coordinator.restore(decoded.checkpoint.cut, afterEpoch);
         return new ReplayProjection(
             snapshot,
             decoded.checkpoint.tokenMint,

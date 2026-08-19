@@ -2,14 +2,31 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { CheckpointStore } from '../src/services/replay/checkpointStore';
+import {
+    CheckpointStore,
+    ReplaySessionStore,
+} from '../src/services/replay/checkpointStore';
+import {
+    paperModelContract,
+    type PaperModelInput,
+} from '../src/services/replay/paperBroker';
 import {
     assertReplayIsolation,
     ReplayRuntime,
 } from '../src/services/replay/runtime';
-import { replayTape } from './helpers/replayTape';
+import { replayMint, replayQuoteMint, replayTape } from './helpers/replayTape';
 
 const tempDirs: string[] = [];
+const paperModel: PaperModelInput = {
+    contract: paperModelContract,
+    latency: { clientMs: 0, buildMs: 0, submitMs: 0 },
+    participationBps: 10_000,
+    maxLookaheadMs: 60_000,
+    priceGuardBps: 0,
+    protocolFeeBps: 0,
+    fixedFees: [],
+    partialFill: 'allow',
+};
 
 afterEach(async () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -38,7 +55,10 @@ describe('replay runtime', () => {
         tempDirs.push(temp);
         const source = replayTape(1_025);
         const store = new CheckpointStore(path.join(temp, 'checkpoints'));
-        const runtime = new ReplayRuntime(source, 'runtime-a', store);
+        const sessions = new ReplaySessionStore(store.root);
+        const runtime = await ReplayRuntime.open(
+            source, 'runtime-a', store, sessions, paperModel
+        );
 
         const running = runtime.play('max');
         expect(runtime.state()).toMatchObject({
@@ -69,7 +89,9 @@ describe('replay runtime', () => {
             busy: false,
             snapshot: { cursor: 600, status: 'paused' },
         });
-        const restored = new ReplayRuntime(source, 'runtime-b', store);
+        const restored = await ReplayRuntime.open(
+            source, 'runtime-b', store, sessions, paperModel
+        );
         const second = await restored.seek(600);
         expect(second.projection).toEqual(first.projection);
         expect(second.snapshot.epoch).toBeGreaterThan(1);
@@ -81,5 +103,63 @@ describe('replay runtime', () => {
             snapshot: { cursor: 100, status: 'stopped' },
         });
         await expect(restored.checkpoint()).rejects.toThrow('stopped replay');
+    });
+
+    it('recovers paper orders atomically and resets them on an explicit seek', async () => {
+        const temp = await mkdtemp(path.join(os.tmpdir(), 'fervor-paper-runtime-'));
+        tempDirs.push(temp);
+        const source = replayTape();
+        const store = new CheckpointStore(path.join(temp, 'checkpoints'));
+        const sessions = new ReplaySessionStore(store.root);
+        const runtime = await ReplayRuntime.open(
+            source, 'paper-runtime', store, sessions, paperModel
+        );
+
+        runtime.place({
+            id: 'runtime-buy',
+            kind: 'market',
+            side: 'buy',
+            tokenMint: replayMint,
+            quoteMint: replayQuoteMint,
+            inputRaw: '50',
+            reference: { quoteRaw: '1', tokenRaw: '1' },
+        });
+        await expect(runtime.checkpoint()).resolves.toMatchObject({ key: { seq: 0, cursor: 0 } });
+        runtime.step();
+        await runtime.checkpoint();
+        runtime.step();
+        const filled = await runtime.checkpoint();
+        expect(filled).toMatchObject({ key: { seq: 2, cursor: 2 } });
+        expect(runtime.orders()[0]).toMatchObject({
+            id: 'runtime-buy', status: 'filled', filledInputRaw: '50',
+        });
+
+        const restored = await ReplayRuntime.open(
+            source, 'paper-runtime', store, sessions, paperModel
+        );
+        expect(restored.state()).toMatchObject({
+            snapshot: { cursor: 2 },
+            paper: { factCount: 4, orderCount: 1 },
+        });
+        expect(restored.orders()).toEqual(runtime.orders());
+        expect(restored.state().snapshot.epoch).toBeGreaterThan(
+            filled.state.snapshot.epoch
+        );
+        await expect(restored.checkpoint()).resolves.toMatchObject({ key: { seq: 3 } });
+
+        await restored.seek(0);
+        expect(restored.state()).toMatchObject({
+            snapshot: { cursor: 0 },
+            paper: { factCount: 0, orderCount: 0 },
+        });
+        await expect(restored.checkpoint()).resolves.toMatchObject({ key: { seq: 4, cursor: 0 } });
+
+        const reset = await ReplayRuntime.open(
+            source, 'paper-runtime', store, sessions, paperModel
+        );
+        expect(reset.state()).toMatchObject({
+            snapshot: { cursor: 0 },
+            paper: { factCount: 0, orderCount: 0 },
+        });
     });
 });

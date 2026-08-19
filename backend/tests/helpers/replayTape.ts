@@ -3,6 +3,7 @@ import type { NormalizedTradeEvent } from '../../src/types';
 
 export const replayMint = 'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf';
 export const replaySha = '1'.repeat(64);
+export const replayQuoteMint = 'So11111111111111111111111111111111111111112';
 
 const trade = (index: number): NormalizedTradeEvent => ({
     kind: 'trade',
@@ -12,6 +13,11 @@ const trade = (index: number): NormalizedTradeEvent => ({
     tokenMint: replayMint,
     maker: `wallet-${index}`,
     side: index === 1 ? 'sell' : 'buy',
+    tokenAmountRaw: '100',
+    quoteMint: replayQuoteMint,
+    quoteAmountRaw: '100',
+    tokenDecimals: 6,
+    quoteDecimals: 9,
     priceSol: index + 1,
     slot: 42 + index,
     txIndex: 0,

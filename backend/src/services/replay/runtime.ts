@@ -1,8 +1,19 @@
 import type { MetricReplay } from '../marketData/metricReplay';
-import { CheckpointStore, type CheckpointKey } from './checkpointStore';
-import { ReplayCoordinator, type ReplaySnapshot } from './coordinator';
+import {
+    CheckpointStore,
+    ReplaySessionStore,
+    type SessionKey,
+} from './checkpointStore';
+import { ReplayCoordinator, type ReplayEvent, type ReplaySnapshot } from './coordinator';
+import {
+    ReplayPaperBroker,
+    type PaperFact,
+    type PaperOrder,
+} from './paperBroker';
+import { normalizeModel, type PaperModel } from './paperTypes';
 import { ReplayProjection, type ProjectionView } from './projection';
 import { ReplayScheduler } from './scheduler';
+import { createReplaySession } from './sessionCheckpoint';
 
 const deniedEnv = [
     'ALLOW_LIVE_SUBMISSION',
@@ -40,10 +51,15 @@ export interface ReplayState {
     readonly failure: string | null;
     readonly snapshot: ReplaySnapshot;
     readonly projection: ProjectionView;
+    readonly paper: {
+        readonly modelSha256: string;
+        readonly orderCount: number;
+        readonly factCount: number;
+    };
 }
 
 export interface SavedReplay {
-    readonly key: CheckpointKey;
+    readonly key: SessionKey;
     readonly state: ReplayState;
 }
 
@@ -66,17 +82,37 @@ const errorText = (error: unknown): string =>
 
 export class ReplayRuntime {
     private readonly coordinator: ReplayCoordinator;
+    private readonly paperModel: PaperModel;
     private projection: ReplayProjection;
+    private paper: ReplayPaperBroker;
     private active: ActiveRun | null = null;
     private failure: string | null = null;
+    private sessionSeq = -1;
+    private parentSha: string | null = null;
 
-    constructor(
+    private constructor(
         replay: MetricReplay,
         runId: string,
-        private readonly store: CheckpointStore
+        private readonly store: CheckpointStore,
+        private readonly sessions: ReplaySessionStore,
+        paperModel: unknown
     ) {
         this.coordinator = new ReplayCoordinator(replay, runId);
         this.projection = ReplayProjection.start(this.coordinator);
+        this.paperModel = normalizeModel(paperModel);
+        this.paper = new ReplayPaperBroker(this.coordinator.snapshot(), this.paperModel);
+    }
+
+    static async open(
+        replay: MetricReplay,
+        runId: string,
+        store: CheckpointStore,
+        sessions: ReplaySessionStore,
+        paperModel: unknown
+    ): Promise<ReplayRuntime> {
+        const runtime = new ReplayRuntime(replay, runId, store, sessions, paperModel);
+        await runtime.restoreLatest();
+        return runtime;
     }
 
     state(): ReplayState {
@@ -85,6 +121,11 @@ export class ReplayRuntime {
             failure: this.failure,
             snapshot: this.coordinator.snapshot(),
             projection: this.projection.view(),
+            paper: {
+                modelSha256: this.paper.modelSha256(),
+                orderCount: this.paper.orderCount(),
+                factCount: this.paper.factCount(),
+            },
         };
     }
 
@@ -94,7 +135,7 @@ export class ReplayRuntime {
         const abort = new AbortController();
         const scheduler = new ReplayScheduler(
             this.coordinator,
-            (event) => this.projection.apply(event)
+            (event) => this.apply(event)
         );
         let task: ActiveRun;
         const done = scheduler.run(speed, abort.signal).then(
@@ -120,7 +161,15 @@ export class ReplayRuntime {
         this.requireIdle();
         this.failure = null;
         const event = this.coordinator.step();
-        if (event !== undefined) this.projection.apply(event);
+        if (event !== undefined) {
+            try {
+                this.apply(event);
+            } catch (error) {
+                this.coordinator.stop();
+                this.failure = errorText(error);
+                throw error;
+            }
+        }
         return this.state();
     }
 
@@ -147,14 +196,41 @@ export class ReplayRuntime {
                 (event) => this.projection.apply(event)
             ).run('max', undefined, cursor);
         }
+        this.paper = new ReplayPaperBroker(this.coordinator.snapshot(), this.paperModel);
         return this.state();
     }
 
     async checkpoint(): Promise<SavedReplay> {
         this.requireIdle();
-        const checkpoint = this.projection.checkpoint(this.coordinator);
-        const key = await this.store.write(checkpoint);
+        const replay = this.projection.checkpoint(this.coordinator);
+        const paper = this.paper.checkpoint(this.coordinator.snapshot());
+        const seq = this.sessionSeq + 1;
+        const checkpoint = createReplaySession(seq, this.parentSha, replay, paper);
+        await this.store.write(replay);
+        const key = await this.sessions.write(checkpoint);
+        this.sessionSeq = seq;
+        this.parentSha = checkpoint.checkpointSha256;
         return { key, state: this.state() };
+    }
+
+    place(value: unknown): PaperOrder {
+        this.requirePaperControl();
+        this.failure = null;
+        return this.paper.place(value);
+    }
+
+    cancel(orderId: string): PaperOrder {
+        this.requirePaperControl();
+        this.failure = null;
+        return this.paper.cancel(orderId);
+    }
+
+    orders(after = 0, limit = 100): readonly PaperOrder[] {
+        return this.paper.orders(after, limit);
+    }
+
+    facts(after = 0, limit = 100): readonly PaperFact[] {
+        return this.paper.facts(after, limit);
     }
 
     async stop(): Promise<ReplayState> {
@@ -171,5 +247,38 @@ export class ReplayRuntime {
 
     private requireIdle(): void {
         if (this.active !== null) throw new Error('Replay control requires a paused run');
+    }
+
+    private requirePaperControl(): void {
+        this.requireIdle();
+        if (this.coordinator.currentStatus() !== 'paused') {
+            throw new Error('Paper order control requires a paused replay');
+        }
+    }
+
+    private apply(event: ReplayEvent): void {
+        this.projection.apply(event);
+        this.paper.apply(event);
+        if (this.coordinator.currentStatus() === 'complete') {
+            this.paper.finish(this.coordinator.snapshot());
+        }
+    }
+
+    private async restoreLatest(): Promise<void> {
+        const snapshot = this.coordinator.snapshot();
+        const saved = await this.sessions.latest(snapshot.sourceReplaySha256, snapshot.runId);
+        if (saved === null) return;
+        this.projection = ReplayProjection.restore(
+            this.coordinator,
+            saved.replay,
+            saved.paper.epoch
+        );
+        this.paper = ReplayPaperBroker.restore(
+            this.coordinator.snapshot(),
+            saved.paper,
+            this.paperModel
+        );
+        this.sessionSeq = saved.seq;
+        this.parentSha = saved.checkpointSha256;
     }
 }

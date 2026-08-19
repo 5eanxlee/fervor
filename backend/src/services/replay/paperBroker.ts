@@ -259,12 +259,39 @@ export class ReplayPaperBroker {
         return this.viewOf(this.requireOrder(id));
     }
 
-    orders(): readonly PaperOrder[] {
-        return Object.freeze([...this.orderMap.values()].map((order) => this.viewOf(order)));
+    orderCount(): number {
+        return this.orderMap.size;
     }
 
-    facts(): readonly PaperFact[] {
-        return Object.freeze([...this.factLog]);
+    orders(after = 0, limit = this.orderMap.size): readonly PaperOrder[] {
+        if (!Number.isSafeInteger(after)
+            || !Number.isSafeInteger(limit)
+            || after < 0
+            || limit < 0) {
+            throw new Error('Paper order page is invalid');
+        }
+        const orders: PaperOrder[] = [];
+        let index = 0;
+        for (const order of this.orderMap.values()) {
+            if (index >= after && orders.length < limit) orders.push(this.viewOf(order));
+            index += 1;
+            if (orders.length === limit) break;
+        }
+        return Object.freeze(orders);
+    }
+
+    factCount(): number {
+        return this.factLog.length;
+    }
+
+    facts(after = 0, limit = this.factLog.length): readonly PaperFact[] {
+        if (!Number.isSafeInteger(after)
+            || !Number.isSafeInteger(limit)
+            || after < 0
+            || limit < 0) {
+            throw new Error('Paper fact page is invalid');
+        }
+        return Object.freeze(this.factLog.slice(after, after + limit));
     }
 
     private fillEvent(orders: MutableOrder[], event: ReplayEvent): void {

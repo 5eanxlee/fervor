@@ -13,6 +13,8 @@ services:
       - /replay
       - --checkpoints
       - /checkpoints
+      - --model
+      - /replay/paper-model.json
       - --run
       - ${FERVOR_REPLAY_RUN:-local}
     network_mode: none

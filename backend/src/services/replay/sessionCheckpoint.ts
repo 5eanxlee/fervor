@@ -4,6 +4,7 @@ import {
     parsePaperCheckpoint,
     type PaperCheckpoint,
 } from './paperCheckpoint';
+import { terminal } from './paperTypes';
 import {
     parseReplayCheckpoint,
     type ReplayCheckpoint,
@@ -56,6 +57,9 @@ const assertBound = (replay: ReplayCheckpoint, paper: PaperCheckpoint): void => 
         || replay.cut.cursor !== paper.cursor
         || replay.cut.now !== paper.now) {
         throw new Error('Replay session components do not share one cut');
+    }
+    if (paper.cursor === paper.total && paper.orders.some((order) => !terminal(order.status))) {
+        throw new Error('Replay session has unfinished end-of-tape paper state');
     }
 };
 

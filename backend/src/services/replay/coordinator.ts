@@ -162,13 +162,7 @@ export class ReplayCoordinator {
         if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > this.events.length) {
             throw new Error('Replay seek cursor is outside the tape');
         }
-        if (this.epoch === Number.MAX_SAFE_INTEGER) throw new Error('Replay epoch is exhausted');
-        this.epoch += 1;
-        this.cursor = cursor;
-        const nowMs = cursor === 0 ? 0 : this.times[cursor - 1];
-        this.clock = new VirtualClock(nowMs);
-        this.status = cursor === this.events.length ? 'complete' : 'paused';
-        return this.snapshot();
+        return this.move(cursor, this.epoch);
     }
 
     cut(): ReplayCut {
@@ -201,8 +195,11 @@ export class ReplayCoordinator {
         };
     }
 
-    restore(value: unknown): ReplaySnapshot {
-        return this.seek(this.matchCut(value).cursor);
+    restore(value: unknown, afterEpoch: number = this.epoch): ReplaySnapshot {
+        if (!Number.isSafeInteger(afterEpoch) || afterEpoch < 1) {
+            throw new Error('Replay restore epoch is invalid');
+        }
+        return this.move(this.matchCut(value).cursor, afterEpoch);
     }
 
     private matchCut(value: unknown): ReplayCut {
@@ -247,6 +244,17 @@ export class ReplayCoordinator {
 
     private timeAt(cursor: number): string | null {
         return cursor === 0 ? null : new Date(this.times[cursor - 1]).toISOString();
+    }
+
+    private move(cursor: number, afterEpoch: number): ReplaySnapshot {
+        const epoch = Math.max(this.epoch, afterEpoch);
+        if (epoch === Number.MAX_SAFE_INTEGER) throw new Error('Replay epoch is exhausted');
+        this.epoch = epoch + 1;
+        this.cursor = cursor;
+        const nowMs = cursor === 0 ? 0 : this.times[cursor - 1];
+        this.clock = new VirtualClock(nowMs);
+        this.status = cursor === this.events.length ? 'complete' : 'paused';
+        return this.snapshot();
     }
 
     private prefixHash(cursor: number): string {

@@ -1,0 +1,20 @@
+{
+  "contract": "fervor-paper-fill-v1",
+  "latency": {
+    "clientMs": 50,
+    "buildMs": 25,
+    "submitMs": 175
+  },
+  "participationBps": 1000,
+  "maxLookaheadMs": 60000,
+  "priceGuardBps": 500,
+  "protocolFeeBps": 100,
+  "fixedFees": [
+    {
+      "kind": "network",
+      "mint": "So11111111111111111111111111111111111111112",
+      "amountRaw": "5000"
+    }
+  ],
+  "partialFill": "allow"
+}
