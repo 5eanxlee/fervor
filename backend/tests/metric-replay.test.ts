@@ -342,12 +342,17 @@ describe('metric replay', () => {
         );
         await expect(writeMetricReplay(first, replay)).rejects.toThrow('already exists');
 
-        const coordinator = new ReplayCoordinator(replay);
-        expect(() => new ReplayCoordinator({ ...replay, trades: [...replay.trades, replay.trades[0]] }))
+        const coordinator = new ReplayCoordinator(replay, 'test-run');
+        expect(() => new ReplayCoordinator(
+            { ...replay, trades: [...replay.trades, replay.trades[0]] },
+            'duplicate-run'
+        ))
             .toThrow('duplicate trade identities');
-        expect(coordinator.snapshot()).toMatchObject({ cursor: 0, total: 2, status: 'paused', now: null });
+        expect(coordinator.snapshot()).toMatchObject({
+            runId: 'test-run', epoch: 1, cursor: 0, total: 2, status: 'paused', now: null,
+        });
         const firstEvent = coordinator.step();
-        expect(firstEvent).toMatchObject({ cursor: 0, usdPriced: false });
+        expect(firstEvent).toMatchObject({ runId: 'test-run', epoch: 1, cursor: 0, usdPriced: false });
         expect(coordinator.snapshot()).toMatchObject({
             cursor: 1,
             status: 'paused',
@@ -360,10 +365,27 @@ describe('metric replay', () => {
         expect(coordinator.next()).toMatchObject({ cursor: 1, usdPriced: true });
         expect(coordinator.snapshot()).toMatchObject({ cursor: 2, status: 'complete' });
 
-        const restarted = new ReplayCoordinator(replay);
+        expect(coordinator.seek(0)).toMatchObject({ epoch: 2, cursor: 0, status: 'paused', now: null });
+        expect(coordinator.accepts(firstEvent!)).toBe(false);
+        const replayed = coordinator.step();
+        expect(replayed).toMatchObject({ epoch: 2, cursor: 0 });
+        expect(coordinator.accepts(replayed!)).toBe(true);
+        expect(coordinator.accepts({ ...replayed!, sourceReplaySha256: '0'.repeat(64) })).toBe(false);
+        expect(() => coordinator.seek(3)).toThrow('outside the tape');
+        expect(coordinator.snapshot().epoch).toBe(2);
+        expect(coordinator.seek(1)).toMatchObject({
+            epoch: 3, cursor: 1, status: 'paused', now: '2024-11-19T00:00:00.000Z',
+        });
+        const tail = coordinator.step();
+        expect(tail).toMatchObject({ epoch: 3, cursor: 1 });
+
+        const restarted = new ReplayCoordinator(replay, 'restart-run');
         restarted.resume();
         expect([restarted.next(), restarted.next()].map((event) => event?.trade.idempotencyKey))
             .toEqual(replay.sourceTrades.map((trade) => trade.idempotencyKey));
+        expect(coordinator.accepts({ ...tail!, runId: 'restart-run' })).toBe(false);
+        coordinator.stop();
+        expect(coordinator.accepts(tail!)).toBe(false);
 
         await writeFile(path.join(source, 'trades.ndjson'), '{}\n');
         await expect(buildMetricReplay(source)).rejects.toThrow('hash differs');

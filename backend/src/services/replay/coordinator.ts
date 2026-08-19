@@ -5,27 +5,36 @@ import type { MetricReplay } from '../marketData/metricReplay';
 export type ReplayStatus = 'paused' | 'running' | 'complete' | 'stopped';
 
 export interface ReplayEvent {
-    cursor: number;
-    usdPriced: boolean;
-    trade: Readonly<NormalizedTradeEvent>;
+    readonly runId: string;
+    readonly epoch: number;
+    readonly sourceReplaySha256: string;
+    readonly cursor: number;
+    readonly usdPriced: boolean;
+    readonly trade: Readonly<NormalizedTradeEvent>;
 }
 
 export interface ReplaySnapshot {
-    sourceReplaySha256: string;
-    cursor: number;
-    total: number;
-    status: ReplayStatus;
-    now: string | null;
+    readonly runId: string;
+    readonly epoch: number;
+    readonly sourceReplaySha256: string;
+    readonly cursor: number;
+    readonly total: number;
+    readonly status: ReplayStatus;
+    readonly now: string | null;
 }
 
 export class ReplayCoordinator {
-    private readonly clock = new VirtualClock(0);
+    private clock = new VirtualClock(0);
     private readonly events: NormalizedTradeEvent[];
     private readonly sourceSha: string;
+    private epoch = 1;
     private cursor = 0;
     private status: ReplayStatus = 'paused';
 
-    constructor(replay: MetricReplay) {
+    constructor(replay: MetricReplay, private readonly runId: string) {
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(runId)) {
+            throw new Error('Replay run ID is invalid');
+        }
         this.sourceSha = replay.source.replaySha256;
         const enriched = new Map(replay.trades.map((trade) => [trade.idempotencyKey, trade]));
         if (enriched.size !== replay.trades.length) {
@@ -49,6 +58,8 @@ export class ReplayCoordinator {
 
     snapshot(): ReplaySnapshot {
         return {
+            runId: this.runId,
+            epoch: this.epoch,
             sourceReplaySha256: this.sourceSha,
             cursor: this.cursor,
             total: this.events.length,
@@ -85,14 +96,38 @@ export class ReplayCoordinator {
         this.status = 'stopped';
     }
 
+    seek(cursor: number): ReplaySnapshot {
+        if (this.status === 'stopped') throw new Error('Stopped replay cannot seek');
+        if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > this.events.length) {
+            throw new Error('Replay seek cursor is outside the tape');
+        }
+        if (this.epoch === Number.MAX_SAFE_INTEGER) throw new Error('Replay epoch is exhausted');
+        this.epoch += 1;
+        this.cursor = cursor;
+        const nowMs = cursor === 0 ? 0 : Date.parse(this.events[cursor - 1].observedAt);
+        this.clock = new VirtualClock(nowMs);
+        this.status = cursor === this.events.length ? 'complete' : 'paused';
+        return this.snapshot();
+    }
+
+    accepts(event: Pick<ReplayEvent, 'runId' | 'epoch' | 'sourceReplaySha256'>): boolean {
+        return this.status !== 'stopped'
+            && event.runId === this.runId
+            && event.epoch === this.epoch
+            && event.sourceReplaySha256 === this.sourceSha;
+    }
+
     private take(): ReplayEvent {
         const trade = this.events[this.cursor];
         this.clock.advanceTo(Date.parse(trade.observedAt));
-        const event = {
+        const event: ReplayEvent = Object.freeze({
+            runId: this.runId,
+            epoch: this.epoch,
+            sourceReplaySha256: this.sourceSha,
             cursor: this.cursor,
             usdPriced: trade.priceUsd !== undefined && trade.usdAmount !== undefined,
             trade,
-        };
+        });
         this.cursor += 1;
         if (this.cursor === this.events.length) this.status = 'complete';
         return event;
