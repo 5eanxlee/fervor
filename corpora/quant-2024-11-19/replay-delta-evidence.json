@@ -1,0 +1,174 @@
+{
+  "contract": "fervor-replay-delta-evidence-v1",
+  "recordedAt": "2026-08-19T07:32:55Z",
+  "sourceCommit": "34b5c8e9aeaf6dc863cb4b62532715ebc2a1caeb",
+  "gcp": {
+    "project": "phonic-chariot-501107-j5",
+    "zone": "europe-west4-a",
+    "vm": "fervor-replay-lab-20260818",
+    "repoHead": "34b5c8e9aeaf6dc863cb4b62532715ebc2a1caeb"
+  },
+  "image": {
+    "tag": "fervor-backend:test-34b5c8e",
+    "id": "sha256:f31f7007bddcdba2cc43c331425ee33022bf2db4fab66f36dfa2e5a6fd0f2fd9",
+    "createdAt": "2026-08-19T07:27:19.230671021Z",
+    "bytes": 469702052
+  },
+  "run": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "runId": "portfolio-gcp",
+    "sessionId": "e6c3b2aac1547371b26385a6b5eab321ae004488b5aaaf7e2c9a2c4c795a39e5",
+    "snapshot": {
+      "epoch": 3,
+      "cursor": 60,
+      "total": 5516,
+      "status": "paused",
+      "now": "2024-11-20T03:49:32.000Z",
+      "busy": false,
+      "failure": null
+    }
+  },
+  "acceptance": {
+    "page": {
+      "httpStatus": 200,
+      "contract": "fervor-replay-delta-v1",
+      "request": {
+        "epoch": 3,
+        "after": 55,
+        "limit": 3
+      },
+      "cutCursor": 60,
+      "cutAt": "2024-11-20T03:49:32.000Z",
+      "next": 58,
+      "items": [
+        {
+          "cursor": 55,
+          "epoch": 3,
+          "tradeId": "d0face6f87be78b229e5a2b554f5b5c9d8fe7287a475a0e3ceefda13865c528f",
+          "slot": 302459737,
+          "observedAt": "2024-11-20T03:49:26Z"
+        },
+        {
+          "cursor": 56,
+          "epoch": 3,
+          "tradeId": "c592bb0937a2c9e2dc74f78ab31d06316b63dde04ec0d44b8c15f31509917a8a",
+          "slot": 302459740,
+          "observedAt": "2024-11-20T03:49:28Z"
+        },
+        {
+          "cursor": 57,
+          "epoch": 3,
+          "tradeId": "619fa1c3743f44d01eb599cf4324e8c03219508f257319aca0f801b06a4f9764",
+          "slot": 302459744,
+          "observedAt": "2024-11-20T03:49:29Z"
+        }
+      ]
+    },
+    "caughtUp": {
+      "httpStatus": 200,
+      "request": {
+        "epoch": 3,
+        "after": 60,
+        "limit": 3
+      },
+      "cutCursor": 60,
+      "next": null,
+      "items": []
+    },
+    "staleEpoch": {
+      "httpStatus": 409,
+      "contract": "fervor-replay-resync-v1",
+      "reason": "epoch_changed",
+      "requested": {
+        "epoch": 2,
+        "after": 60
+      },
+      "cut": {
+        "epoch": 3,
+        "cursor": 60,
+        "now": "2024-11-20T03:49:32.000Z"
+      }
+    },
+    "cursorAhead": {
+      "httpStatus": 409,
+      "contract": "fervor-replay-resync-v1",
+      "reason": "cursor_ahead",
+      "requested": {
+        "epoch": 3,
+        "after": 61
+      },
+      "cut": {
+        "epoch": 3,
+        "cursor": 60,
+        "now": "2024-11-20T03:49:32.000Z"
+      }
+    }
+  },
+  "tests": {
+    "local": {
+      "command": "npm --prefix backend test",
+      "passedFiles": 58,
+      "skippedFiles": 14,
+      "passedTests": 371,
+      "skippedTests": 60
+    },
+    "gcp": {
+      "container": "replay-delta-test-34b5c8e-c",
+      "exitCode": 0,
+      "passedFiles": 58,
+      "skippedFiles": 14,
+      "passedTests": 371,
+      "skippedTests": 60,
+      "durationMs": 3990
+    },
+    "harnessFailures": [
+      {
+        "container": "replay-delta-test-34b5c8e",
+        "exitCode": 1,
+        "reason": "The read-only root blocked Vite's temporary config directory before tests started."
+      },
+      {
+        "container": "replay-delta-test-34b5c8e-b",
+        "exitCode": 1,
+        "reason": "The image omitted repository-root contract fixtures; the corrected run mounted them read-only."
+      }
+    ]
+  },
+  "sandbox": {
+    "apiContainer": "replay-delta-api-34b5c8e",
+    "apiStatus": "running",
+    "user": "node",
+    "network": "none",
+    "readOnlyRoot": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "noNewPrivileges": true,
+    "tmpfs": {
+      "/tmp": "rw,noexec,nosuid,nodev,size=64m"
+    },
+    "environmentNames": [
+      "PATH",
+      "NODE_VERSION",
+      "YARN_VERSION"
+    ],
+    "egressProbe": "ENETUNREACH",
+    "corpusMount": "read_only",
+    "authMount": "read_only",
+    "checkpointMount": "read_write_copy",
+    "originalApiContainer": {
+      "name": "replay-api-gcp-live-c",
+      "statusAfterQualification": "running",
+      "modified": false
+    }
+  },
+  "effects": {
+    "realProviderCalls": 0,
+    "transactions": 0,
+    "messagesSent": 0,
+    "databaseWrites": 0,
+    "redisWrites": 0,
+    "credentialValuesRecorded": false
+  }
+}
