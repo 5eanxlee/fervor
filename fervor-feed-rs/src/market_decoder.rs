@@ -17,7 +17,19 @@ const RAYDIUM_CPMM: &str = "CPMMoo8L3F4NbTegBCKVNio1bsBk5wWK8Mwq1qkMzoC";
 const RAYDIUM_LAUNCHLAB: &str = "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj";
 const METEORA_DLMM: &str = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo";
 const METEORA_DBC: &str = "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN";
-const ORCA_WHIRLPOOL: &str = "whirLbMiicVdio4qvUfM5KAg6CtVciGkn7hKfLiE6iQ";
+const ORCA_WHIRLPOOL: &str = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
+
+pub const PROGRAM_IDS: &[&str] = &[
+    PUMP_PROGRAM,
+    PUMP_SWAP,
+    RAYDIUM_AMM_V4,
+    RAYDIUM_CLMM,
+    RAYDIUM_CPMM,
+    RAYDIUM_LAUNCHLAB,
+    METEORA_DLMM,
+    METEORA_DBC,
+    ORCA_WHIRLPOOL,
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -601,6 +613,19 @@ mod tests {
         assert!(is_swap_instruction(Venue::RaydiumAmmV4, &[9]));
         assert!(is_swap_instruction(Venue::RaydiumAmmV4, &[11]));
         assert!(!is_swap_instruction(Venue::RaydiumAmmV4, &[3]));
+    }
+
+    #[test]
+    fn recognizes_the_deployed_orca_program() {
+        assert_eq!(
+            Venue::from_program("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc"),
+            Some(Venue::OrcaWhirlpool)
+        );
+        assert!(PROGRAM_IDS.contains(&ORCA_WHIRLPOOL));
+        assert_eq!(
+            Venue::from_program("whirLbMiicVdio4qvUfM5KAg6CtVciGkn7hKfLiE6iQ"),
+            None
+        );
     }
 
     #[test]

@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use fervor_feed_rs::fervor_tx::{Commitment, Network, RawEnvelope, SourceAdapter, SourceCap};
-use fervor_feed_rs::market_decoder::{decode_swap, QuoteKind, Side, Venue};
+use fervor_feed_rs::market_decoder::{decode_swap, QuoteKind, Side, Venue, PROGRAM_IDS};
 use fervor_feed_rs::market_journal::MarketJournal;
 use fervor_feed_rs::postgres::DbTls;
 use fervor_feed_rs::pump::{decode_pump_events, has_pump_create, pump_supply, SupplyEvidence};
@@ -21,17 +21,6 @@ use yellowstone_grpc_proto::prelude::{
     SubscribeRequestFilterTransactions,
 };
 
-const PROGRAM_IDS: &[&str] = &[
-    "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
-    "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
-    "675kPX9MHTjS2zt1qfr1NYJSCfn6wUCwBK6n2UZMfw",
-    "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
-    "CPMMoo8L3F4NbTegBCKVNio1bsBk5wWK8Mwq1qkMzoC",
-    "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj",
-    "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
-    "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN",
-    "whirLbMiicVdio4qvUfM5KAg6CtVciGkn7hKfLiE6iQ",
-];
 const REPLAY_SLOTS: u64 = 2;
 
 #[derive(Parser, Debug)]
