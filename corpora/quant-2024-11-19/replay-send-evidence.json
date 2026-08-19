@@ -1,0 +1,112 @@
+{
+  "schema": "fervor-replay-send-evidence-v1",
+  "recordedAt": "2026-08-19T07:18:46.959Z",
+  "runtimeCommit": "00d27994f63df984699f1ec83197d52df1c6286f",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a",
+    "machine": "n2-standard-16"
+  },
+  "image": {
+    "tag": "fervor-backend:test-00d2799",
+    "configSha256": "9edaa7363de139b0cc2a50ea4d15eb30bc13ad79a6f214a34d5380cc35f4fcfc",
+    "builtAt": "2026-08-19T07:06:58.763632439Z"
+  },
+  "source": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "runId": "portfolio-gcp",
+    "epoch": 3,
+    "modelSha256": "d9dbfe3fe8d1fd3cb0f1f32c4f6e86064667d543821da98e4d704fbdbd29c09b",
+    "cutCursor": 60,
+    "cutAt": "2024-11-20T03:49:32.000Z",
+    "inboxSha256": "30bded487d1d91418bd19a32bfd4b1e0826720b5e70485ece88c8e7f08f4bfd7"
+  },
+  "notification": {
+    "contract": "fervor-replay-wallet-in-app-v1",
+    "notificationKey": "2d8cb0e5cadb34733bed44be64af447e2a3ecc6992e68059d5499fdd3da704e3",
+    "alertId": "44444444-4444-4444-8444-444444444444",
+    "historicalAt": "2024-11-20T03:48:46.000Z",
+    "externalBefore": false
+  },
+  "permit": {
+    "contract": "fervor-replay-send-permit-v1",
+    "permitSha256": "15d1a05d6d42494e1d77d050a44e31a4e14fde66a4754d004220b888b2d54b48",
+    "channel": "telegram",
+    "recipientHash": "cbaadb17c3b0d1aeb65bc7de6059865041e15d556a8fd439c6e2eb8595a7ebde",
+    "rawRecipientRecorded": false
+  },
+  "delivery": {
+    "container": "replay-send-actual-00d2799-b",
+    "provider": "gcp-loopback",
+    "providerMode": "local_fixture",
+    "status": "sent",
+    "attemptCount": 1,
+    "label": "FERVOR REPLAY - HISTORICAL DATA",
+    "messageSha256": "a9daa6041421e121246f87c6d119efff6cd924c48cae2bb8c213d5961ef3eb45",
+    "exitCode": 0
+  },
+  "isolation": {
+    "networkMode": "none",
+    "readOnlyRoot": true,
+    "capDrop": ["ALL"],
+    "noNewPrivileges": true,
+    "environment": ["NODE_VERSION", "PATH", "YARN_VERSION"],
+    "liveEnvironmentPresent": false,
+    "onlyProvider": "local_fixture"
+  },
+  "tests": {
+    "build": true,
+    "focusedContainer": "replay-send-test-00d2799-c",
+    "focusedFilesPassed": 2,
+    "focusedTestsPassed": 9,
+    "fullContainer": "replay-send-test-00d2799-e",
+    "backendFilesPassed": 58,
+    "backendFilesSkipped": 14,
+    "backendTestsPassed": 370,
+    "backendTestsSkipped": 60,
+    "databaseIntegrationRun": false
+  },
+  "discardedHarnesses": [
+    {
+      "container": "replay-send-test-00d2799",
+      "exitCode": 1,
+      "cause": "read-only root blocked the Vitest config cache before test collection"
+    },
+    {
+      "container": "replay-send-test-00d2799-d",
+      "exitCode": 1,
+      "cause": "an over-broad tmpfs hid workspace dependencies"
+    },
+    {
+      "container": "replay-send-actual-00d2799-a",
+      "exitCode": 1,
+      "cause": "one-off acceptance harness syntax error before server start"
+    }
+  ],
+  "retention": {
+    "acceptanceSha256": "668e0c52b9ff4b6c989947e30c26ce0956e2b7c272857e64238cbd249f75651e",
+    "gcs": "gs://fervor-replay-phonic-chariot-501107-j5/evidence/quant-2024-11-19/replay-send-v1/replay-send-acceptance.json",
+    "containersRetained": true,
+    "activeReplayContainer": "replay-api-gcp-live-c",
+    "activeReplayRetained": true
+  },
+  "result": {
+    "sourceBound": true,
+    "runBound": true,
+    "epochBound": true,
+    "modelBound": true,
+    "notificationBound": true,
+    "channelBound": true,
+    "destinationExplicit": true,
+    "historicalLabelPresent": true,
+    "retryAndFenceConformance": true,
+    "liveProviderUsed": false,
+    "liveCredentialUsed": false,
+    "externalNetworkUsed": false,
+    "databaseUsed": false,
+    "redisUsed": false,
+    "liveTransactionSubmitted": false
+  }
+}
