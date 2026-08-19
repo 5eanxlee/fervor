@@ -1,0 +1,178 @@
+{
+  "schema": "fervor-replay-paper-evidence-v1",
+  "recordedAt": "2026-08-19T05:01:12Z",
+  "runtimeCommit": "c217cf9706b26b031283dbd287e3ac7aacc006b7",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a",
+    "machine": "n2-standard-16"
+  },
+  "image": {
+    "manifestSha256": "1171e7265ac0b8bbddf7255d142bc02691e82bd6df806f92756e091df3f64538",
+    "configSha256": "d16af79b999aa8414e7e2b6dca757a78cbc08d94bed049371b8016dfc1804ede",
+    "dockerfileSha256": "0ec50342410460eaa3abb8a5cf9d6402c8107b048d83167d22fee7c99eec4d52",
+    "composeSha256": "b670acd8d44eeb7a09334fbd20df103d1be8b896ffecbeec6d02c6a5d9e0cf8e"
+  },
+  "source": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "sourceManifestSha256": "baa006f8a0a39e3fc7fbdc7967c3bf11be5a9e3a7a35e8cafe9a6e47d79e3600",
+    "tradeTapeSha256": "de9ec9f7d65feb395f97b495781ec0d9a772b845f5ec390f9e73fe64aaf09800",
+    "events": 5516
+  },
+  "model": {
+    "contract": "fervor-paper-fill-v1",
+    "fileSha256": "1a3c8607858d512b9eab846b48abc4c4adb9065fb3bb04911275fb2451acdfd5",
+    "modelSha256": "dc2bd54f846c381e4fae270858566670be5308cea23b1b43e6c6db075df11bbf",
+    "latencyMs": 250,
+    "participationBps": 1000,
+    "maxLookaheadMs": 60000,
+    "priceGuardBps": 500,
+    "protocolFeeBps": 100
+  },
+  "intent": {
+    "runId": "paper-gcp",
+    "orderId": "gcp-buy",
+    "kind": "market",
+    "side": "buy",
+    "inputMint": "So11111111111111111111111111111111111111112",
+    "outputMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "inputRaw": "10000000",
+    "reference": {
+      "quoteRaw": "220879745",
+      "tokenRaw": "3763254181972"
+    },
+    "placedCursor": 0,
+    "placedAt": null,
+    "eligibleAt": "2024-11-20T03:48:37.250Z",
+    "expiresAt": "2024-11-20T03:49:37.250Z"
+  },
+  "crashRecovery": {
+    "checkpoint": {
+      "seq": 0,
+      "cursor": 0,
+      "sessionSha256": "375bb11b7f0ff4f305120f2565cee25e6d9387aa26a03ac200d1f5a421d8f472",
+      "paperSha256": "76336d2d1235296b44b7fdaec5af8fcc266bf9ae08d6f997298f6c14d84d6c78",
+      "fileSha256": "321a3a16800605940f0f66a90dc21219ebce7575a9f096f20abfd5e2734f932a",
+      "fileBytes": 3494
+    },
+    "killedContainer": "paper-gcp-b",
+    "exitCode": 137,
+    "recoveredContainer": "paper-gcp-d",
+    "recoveredEpoch": 2,
+    "recoveredCursor": 0,
+    "recoveredOrderCount": 1,
+    "recoveredFactCount": 1
+  },
+  "fill": {
+    "eligibleFact": {
+      "epoch": 2,
+      "seq": 1,
+      "cursor": 1,
+      "observedAt": "2024-11-20T03:48:38.000Z"
+    },
+    "fillFact": {
+      "epoch": 2,
+      "seq": 2,
+      "cursor": 20,
+      "observedAt": "2024-11-20T03:48:52.000Z",
+      "tradeId": "778e5541c91438dc34172387bf9a56f12b740d6d1575de1d4a29bf23790fe8b1",
+      "inputRaw": "10000000",
+      "grossOutputRaw": "170375702940",
+      "netOutputRaw": "168671945910",
+      "price": {
+        "quoteRaw": "220879745",
+        "tokenRaw": "3763254181972"
+      },
+      "fees": [
+        {
+          "kind": "protocol",
+          "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+          "amountRaw": "1703757030"
+        },
+        {
+          "kind": "network",
+          "mint": "So11111111111111111111111111111111111111112",
+          "amountRaw": "5000"
+        }
+      ]
+    },
+    "filledFact": {
+      "epoch": 2,
+      "seq": 3,
+      "cursor": 20,
+      "observedAt": "2024-11-20T03:48:52.000Z"
+    },
+    "factKeys": [
+      "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702:paper-gcp:gcp-buy:0",
+      "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702:paper-gcp:gcp-buy:1",
+      "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702:paper-gcp:gcp-buy:2",
+      "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702:paper-gcp:gcp-buy:3"
+    ],
+    "checkpoint": {
+      "seq": 1,
+      "cursor": 22,
+      "parentSha256": "375bb11b7f0ff4f305120f2565cee25e6d9387aa26a03ac200d1f5a421d8f472",
+      "sessionSha256": "62158d3987c4569718adeb376367db63a0bea4b402399da7fb3297d31a9d8093",
+      "paperSha256": "f4fdb7e12c019db71013f5e1cc2bf76b949c50055ff376716fdd01fb1912d9ac",
+      "fileSha256": "645a80b87b1b9e23376b39e1bb55eb8d1586d29a1f7eda3309e45c7132088fcc",
+      "fileBytes": 18012
+    },
+    "coldRecovery": {
+      "container": "paper-gcp-e",
+      "epoch": 3,
+      "cursor": 22,
+      "orderCount": 1,
+      "factCount": 4,
+      "status": "filled"
+    }
+  },
+  "seekReset": {
+    "seekEpoch": 4,
+    "cursor": 0,
+    "orderCount": 0,
+    "factCount": 0,
+    "checkpoint": {
+      "seq": 2,
+      "parentSha256": "62158d3987c4569718adeb376367db63a0bea4b402399da7fb3297d31a9d8093",
+      "sessionSha256": "367775e035ade71ae50614de0fdbc3e0d56d4a33694855a4160fac1edd1c2ae2",
+      "paperSha256": "c6610d8cd6a9da3193a0e57cb28cee1f5e19e3a2077b46609c0000a0f1fdac9d",
+      "fileSha256": "2dfca0bc01c8092b2656bbff8449b34640e28af3fe18497a016e0f6cda83271c",
+      "fileBytes": 2256
+    },
+    "coldRecovery": {
+      "container": "paper-gcp-f",
+      "epoch": 5,
+      "cursor": 0,
+      "orderCount": 0,
+      "factCount": 0
+    }
+  },
+  "regression": {
+    "observedInput": "2024-11-20T03:48:37Z",
+    "canonicalState": "2024-11-20T03:48:37.000Z",
+    "fixedBy": "c217cf9706b26b031283dbd287e3ac7aacc006b7"
+  },
+  "tests": {
+    "build": true,
+    "focusedFiles": 3,
+    "focusedTests": 11,
+    "backendFilesPassed": 53,
+    "backendFilesSkipped": 14,
+    "backendTestsPassed": 349,
+    "backendTestsSkipped": 60,
+    "compose": true
+  },
+  "result": {
+    "laterTapeFill": true,
+    "rawUnitAccounting": true,
+    "atomicMarketPaperCheckpoint": true,
+    "sigkillRecovery": true,
+    "epochFencing": true,
+    "coldFillRecovery": true,
+    "seekIsolation": true,
+    "coldResetRecovery": true,
+    "liveTransactionSubmitted": false
+  }
+}
