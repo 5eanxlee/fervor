@@ -16,6 +16,10 @@ import {
 } from './paperPortfolio';
 import { normalizeModel, type PaperModel } from './paperTypes';
 import { ReplayProjection, type ProjectionView } from './projection';
+import {
+    replayWalletPage,
+    type ReplayWalletPage,
+} from './replayWallet';
 import { ReplayScheduler } from './scheduler';
 import { createReplaySession } from './sessionCheckpoint';
 
@@ -93,6 +97,7 @@ export class ReplayRuntime {
     private failure: string | null = null;
     private sessionSeq = -1;
     private parentSha: string | null = null;
+    private readonly trades: MetricReplay['sourceTrades'];
 
     private constructor(
         replay: MetricReplay,
@@ -102,6 +107,7 @@ export class ReplayRuntime {
         paperModel: unknown
     ) {
         this.coordinator = new ReplayCoordinator(replay, runId);
+        this.trades = replay.sourceTrades;
         this.projection = ReplayProjection.start(this.coordinator);
         this.paperModel = normalizeModel(paperModel);
         this.paper = new ReplayPaperBroker(this.coordinator.snapshot(), this.paperModel);
@@ -244,6 +250,12 @@ export class ReplayRuntime {
             runId: snapshot.runId,
             modelSha256: this.paper.modelSha256(),
         }, this.paper.orders(), this.paper.facts());
+    }
+
+    walletTrades(wallet: unknown, afterCursor = 0, limit = 100): ReplayWalletPage {
+        return replayWalletPage(
+            this.coordinator.snapshot(), this.trades, wallet, afterCursor, limit
+        );
     }
 
     async stop(): Promise<ReplayState> {

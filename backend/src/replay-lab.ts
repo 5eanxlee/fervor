@@ -3,6 +3,7 @@ import { open } from 'node:fs/promises';
 import readline from 'node:readline';
 import path from 'node:path';
 import { z } from 'zod';
+import { addressSchema } from './types/execution';
 import { buildMetricReplay } from './services/marketData/metricReplay';
 import {
     CheckpointStore,
@@ -29,6 +30,13 @@ const commandSchema = z.discriminatedUnion('op', [
     z.object({ id: requestId, op: z.literal('place'), order: paperOrderSchema }).strict(),
     z.object({ id: requestId, op: z.literal('cancel'), orderId }).strict(),
     z.object({ id: requestId, op: z.literal('portfolio') }).strict(),
+    z.object({
+        id: requestId,
+        op: z.literal('wallet_trades'),
+        wallet: addressSchema,
+        afterCursor: z.number().int().nonnegative().optional(),
+        limit: z.number().int().min(1).max(500).optional(),
+    }).strict(),
     z.object({
         id: requestId,
         op: z.literal('orders'),
@@ -145,6 +153,13 @@ const main = async (): Promise<void> => {
             }
             if (command.op === 'portfolio') {
                 return success(command, runtime.state(), { portfolio: runtime.portfolio() });
+            }
+            if (command.op === 'wallet_trades') {
+                return success(command, runtime.state(), {
+                    page: runtime.walletTrades(
+                        command.wallet, command.afterCursor, command.limit
+                    ),
+                });
             }
             if (command.op === 'orders') {
                 return success(command, runtime.state(), {

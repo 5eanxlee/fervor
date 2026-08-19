@@ -17,6 +17,7 @@ import {
 import { replayMint, replayQuoteMint, replayTape } from './helpers/replayTape';
 
 const tempDirs: string[] = [];
+const trackedWallet = '7Zb1d7t2S9Bkv8G6gPKZQdgs7Qk1HSA1xY5g7uEczwzE';
 const paperModel: PaperModelInput = {
     contract: paperModelContract,
     latency: { clientMs: 0, buildMs: 0, submitMs: 0 },
@@ -182,6 +183,49 @@ describe('replay runtime', () => {
         expect(reset.state()).toMatchObject({
             snapshot: { cursor: 0 },
             paper: { factCount: 0, orderCount: 0 },
+        });
+    });
+
+    it('derives wallet trade pages from the restored replay cut', async () => {
+        const temp = await mkdtemp(path.join(os.tmpdir(), 'fervor-wallet-runtime-'));
+        tempDirs.push(temp);
+        const source = replayTape();
+        source.sourceTrades[1] = {
+            ...source.sourceTrades[1],
+            maker: trackedWallet,
+            protocol: 'pump_fun',
+            signature: '5'.repeat(88),
+            commitment: 'finalized',
+        };
+        const store = new CheckpointStore(path.join(temp, 'checkpoints'));
+        const sessions = new ReplaySessionStore(store.root);
+        const runtime = await ReplayRuntime.open(
+            source, 'wallet-runtime', store, sessions, paperModel
+        );
+        runtime.step();
+        runtime.step();
+        const page = runtime.walletTrades(trackedWallet);
+        expect(page).toMatchObject({
+            cutCursor: 2,
+            nextCursor: 2,
+            items: [{
+                cursor: 1,
+                side: 'sell',
+                tokenDeltaRaw: '-100',
+                quoteDeltaRaw: '100',
+            }],
+        });
+        await runtime.checkpoint();
+
+        const restored = await ReplayRuntime.open(
+            source, 'wallet-runtime', store, sessions, paperModel
+        );
+        expect(restored.walletTrades(trackedWallet).items).toEqual(page.items);
+        await restored.seek(0);
+        expect(restored.walletTrades(trackedWallet)).toMatchObject({
+            cutCursor: 0,
+            nextCursor: 0,
+            items: [],
         });
     });
 });
