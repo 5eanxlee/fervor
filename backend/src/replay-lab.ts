@@ -15,8 +15,9 @@ import {
     ReplayRuntime,
     type ReplayState,
 } from './services/replay/runtime';
+import { replayApiMode, startReplayApi } from './services/replay/replayApi';
 
-const usage = 'Usage: replay-lab --replay <replay-dir> --checkpoints <checkpoint-dir> --model <paper-model.json> --run <run-id> [--alerts <alert-model.json>]';
+const usage = 'Usage: replay-lab --replay <replay-dir> --checkpoints <checkpoint-dir> --model <paper-model.json> --run <run-id> [--alerts <alert-model.json>] [--socket <replay-api.sock> --auth <api-auth.json>]';
 const requestId = z.string().min(1).max(64).optional();
 const orderId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
 const commandSchema = z.discriminatedUnion('op', [
@@ -67,13 +68,17 @@ const parseArgs = (): {
     checkpoints: string;
     model: string;
     alerts?: string;
+    socket?: string;
+    auth?: string;
     runId: string;
 } => {
     const values = new Map<string, string>();
     for (let index = 2; index < process.argv.length; index += 2) {
         const name = process.argv[index];
         const value = process.argv[index + 1];
-        if (!['--replay', '--checkpoints', '--model', '--alerts', '--run'].includes(name)
+        if (![
+            '--replay', '--checkpoints', '--model', '--alerts', '--socket', '--auth', '--run',
+        ].includes(name)
             || !value
             || values.has(name)) {
             throw new Error(usage);
@@ -84,19 +89,31 @@ const parseArgs = (): {
     const checkpoints = values.get('--checkpoints');
     const model = values.get('--model');
     const runId = values.get('--run');
-    if (!replay || !checkpoints || !model || !runId
-        || (values.size !== 4 && values.size !== 5)) throw new Error(usage);
+    const socket = values.get('--socket');
+    const auth = values.get('--auth');
+    if (!replay || !checkpoints || !model || !runId || Boolean(socket) !== Boolean(auth)) {
+        throw new Error(usage);
+    }
     const replayPath = path.resolve(replay);
     const checkpointPath = path.resolve(checkpoints);
     if (checkpointPath === replayPath || checkpointPath.startsWith(`${replayPath}${path.sep}`)) {
         throw new Error('Replay checkpoints must be outside the immutable corpus directory');
     }
     const alerts = values.get('--alerts');
+    const socketPath = socket === undefined ? undefined : path.resolve(socket);
+    const authPath = auth === undefined ? undefined : path.resolve(auth);
+    if (socketPath !== undefined && path.dirname(socketPath) !== checkpointPath) {
+        throw new Error('Replay API socket must be directly inside the checkpoint directory');
+    }
     return {
         replay: replayPath,
         checkpoints: checkpointPath,
         model: path.resolve(model),
         ...(alerts === undefined ? {} : { alerts: path.resolve(alerts) }),
+        ...(socketPath === undefined || authPath === undefined ? {} : {
+            socket: socketPath,
+            auth: authPath,
+        }),
         runId,
     };
 };
@@ -130,12 +147,15 @@ const success = (command: Command, state: ReplayState, extra = {}): void => {
 const main = async (): Promise<void> => {
     assertReplayIsolation(process.env);
     const args = parseArgs();
-    const [replay, paperModel, alertModel] = await Promise.all([
+    const [replay, paperModel, alertModel, apiAuth] = await Promise.all([
         buildMetricReplay(args.replay),
         readJson(args.model, 16_384, 'Paper model'),
         args.alerts === undefined
             ? Promise.resolve(undefined)
             : readJson(args.alerts, 65_536, 'Alert model'),
+        args.auth === undefined
+            ? Promise.resolve(undefined)
+            : readJson(args.auth, 4_096, 'Replay API auth'),
     ]);
     const runtime = await ReplayRuntime.open(
         replay,
@@ -145,6 +165,9 @@ const main = async (): Promise<void> => {
         paperModel,
         alertModel
     );
+    const api = args.socket === undefined
+        ? undefined
+        : await startReplayApi(runtime, args.checkpoints, args.socket, apiAuth);
     const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
     let queue = Promise.resolve();
 
@@ -223,22 +246,32 @@ const main = async (): Promise<void> => {
     });
     process.once('SIGINT', () => input.close());
     process.once('SIGTERM', () => input.close());
-    write({ event: 'ready', state: runtime.state() });
-
-    await new Promise<void>((resolve) => {
-        input.once('close', () => {
-            queue = queue.then(async () => {
-                if (runtime.state().snapshot.status === 'stopped') return;
-                const state = await runtime.pause();
-                const saved = await runtime.checkpoint();
-                write({ event: 'closed', key: saved.key, state });
-            }).catch((error) => {
-                write({ event: 'close_failed', error: errorText(error) });
-                process.exitCode = 1;
-            });
-            void queue.finally(resolve);
-        });
+    write({
+        event: 'ready',
+        state: runtime.state(),
+        ...(api === undefined ? {} : {
+            api: { mode: replayApiMode, socketPath: api.socketPath, sessionId: api.sessionId },
+        }),
     });
+
+    try {
+        await new Promise<void>((resolve) => {
+            input.once('close', () => {
+                queue = queue.then(async () => {
+                    if (runtime.state().snapshot.status === 'stopped') return;
+                    const state = await runtime.pause();
+                    const saved = await runtime.checkpoint();
+                    write({ event: 'closed', key: saved.key, state });
+                }).catch((error) => {
+                    write({ event: 'close_failed', error: errorText(error) });
+                    process.exitCode = 1;
+                });
+                void queue.finally(resolve);
+            });
+        });
+    } finally {
+        await api?.close();
+    }
 };
 
 main().catch((error) => {

@@ -1,0 +1,26 @@
+services:
+  replay:
+    command:
+      - node
+      - dist/replay-lab.js
+      - --replay
+      - /replay
+      - --checkpoints
+      - /checkpoints
+      - --model
+      - /replay/paper-model.json
+      - --alerts
+      - /replay/alert-model.json
+      - --run
+      - ${FERVOR_REPLAY_RUN:-local}
+      - --socket
+      - /checkpoints/replay-api.sock
+      - --auth
+      - /run/secrets/replay-api-auth.json
+    volumes:
+      - type: bind
+        source: ${FERVOR_REPLAY_AUTH_FILE:?set FERVOR_REPLAY_AUTH_FILE}
+        target: /run/secrets/replay-api-auth.json
+        read_only: true
+        bind:
+          create_host_path: false

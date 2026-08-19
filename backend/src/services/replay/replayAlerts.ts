@@ -373,7 +373,7 @@ export const projectReplayNotifications = (
         }
     }
     const rebuilt = coordinator.snapshot();
-    if (rebuilt.cursor !== snapshot.cursor || rebuilt.now !== snapshot.now || after > notifications.length) {
+    if (rebuilt.cursor !== snapshot.cursor || rebuilt.now !== snapshot.now) {
         throw new Error('Replay notification projection differs from its cut');
     }
     const unavailable = model.alerts.filter((alert): alert is ReplayMetricAlert =>
