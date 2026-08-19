@@ -4,6 +4,7 @@ import { MarketEventStorageService } from './marketEventStorageService';
 import { MarketMetricRepository, MetricBase } from './marketMetricRepository';
 import { stableHash } from './hash';
 import { RollingMetricBook } from './rollingMetricBook';
+import { realClock, type Clock } from '../clock';
 import { redisStreams, STREAMS, tickStream } from '../redisStreamService';
 import { env } from '../../config/env';
 import { deriveFervorMetrics, fervorInputContract, fervorMetricVersion, supplyAmount } from './metricEngine';
@@ -117,14 +118,15 @@ export class MarketMetricService {
     constructor(
         private readonly inputs: FervorInputSource = marketInputs,
         private readonly repository = new MarketMetricRepository(),
-        private readonly storage = new MarketEventStorageService()
+        private readonly storage = new MarketEventStorageService(),
+        private readonly clock: Clock = realClock
     ) {}
 
     async project(
         trade: NormalizedTradeEvent,
         options: MetricProjectOptions = {}
     ): Promise<'committed' | 'duplicate'> {
-        const nowMs = options.nowMs ?? Date.now();
+        const nowMs = options.nowMs ?? this.clock.nowMs();
         if (!validTrade(trade)) throw new Error('Trade is not eligible for metric projection');
         const inputs = options.loadInputs === false ? null : await this.inputs.get(trade.tokenMint);
         const empty = new RollingMetricBook(trade.tokenMint).serialize();

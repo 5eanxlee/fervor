@@ -116,7 +116,7 @@ export class RollingMetricBook {
         return RollingMetricBook.hydrate(this.serialize());
     }
 
-    add(trade: NormalizedTradeEvent, nowMs = Date.now()): boolean {
+    add(trade: NormalizedTradeEvent, nowMs: number): boolean {
         if (trade.tokenMint !== this.tokenMint) return false;
         const observedMs = Date.parse(trade.observedAt);
         if (!Number.isFinite(observedMs)) return false;
@@ -158,7 +158,7 @@ export class RollingMetricBook {
         return true;
     }
 
-    metrics(nowMs = Date.now()): RollingWindowMetrics {
+    metrics(nowMs: number): RollingWindowMetrics {
         this.prune(nowMs);
         const result = emptyMetrics();
         for (const name of windowNames) {
