@@ -1,0 +1,158 @@
+{
+  "contract": "fervor-replay-gateway-evidence-v1",
+  "recordedAt": "2026-08-19T08:34:42Z",
+  "sourceCommit": "3faf1f0f24b51b2120825588dde5101af4f75405",
+  "gcp": {
+    "project": "phonic-chariot-501107-j5",
+    "zone": "europe-west4-a",
+    "vm": "fervor-replay-lab-20260818",
+    "repoHead": "3faf1f0f24b51b2120825588dde5101af4f75405"
+  },
+  "images": {
+    "runtime": {
+      "tag": "fervor-backend:test-3faf1f0",
+      "id": "sha256:6b878419812834e170cf1e2a04993f9ca31c527d34a8c72b93659512964f94c4",
+      "createdAt": "2026-08-19T08:30:43.34332255Z",
+      "bytes": 212163435
+    },
+    "test": {
+      "tag": "fervor-backend:test-stage-3faf1f0",
+      "id": "sha256:ee1ee904973227fdac7311d1f7ac4ce9e6e69dab92f5baa4d2db992f40fdcf3a",
+      "createdAt": "2026-08-19T08:30:29.632985234Z",
+      "bytes": 469722559
+    }
+  },
+  "run": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "runId": "portfolio-gcp",
+    "sessionId": "e6c3b2aac1547371b26385a6b5eab321ae004488b5aaaf7e2c9a2c4c795a39e5",
+    "cut": {
+      "epoch": 7,
+      "cursor": 60,
+      "fact": 0,
+      "now": "2024-11-20T03:49:32.000Z",
+      "status": "paused"
+    },
+    "totalEvents": 5516
+  },
+  "gateway": {
+    "externalBase": "/api/replay/v1",
+    "upstreamTransport": "unix_socket",
+    "configuredOwnerOnly": true,
+    "browserCredentialForwarded": false,
+    "replayCredentialSource": "file",
+    "fixedResourceAllowlist": true,
+    "arbitraryRunAllowed": false,
+    "arbitrarySocketAllowed": false,
+    "responseIdentityChecked": [
+      "contract",
+      "mode",
+      "sourceReplaySha256",
+      "runId",
+      "sessionId",
+      "epoch",
+      "cursor"
+    ],
+    "limits": {
+      "requestBytes": 16384,
+      "responseBytes": 2097152,
+      "timeoutMs": 3000
+    }
+  },
+  "acceptance": {
+    "snapshot": {
+      "httpStatus": 200,
+      "replayStatus": "paused",
+      "totalEvents": 5516,
+      "factCount": 0
+    },
+    "caughtUpDeltas": {
+      "httpStatus": 200,
+      "after": 60,
+      "cutCursor": 60,
+      "next": null,
+      "itemCount": 0
+    },
+    "paper": {
+      "httpStatus": 200,
+      "orderCount": 0,
+      "factCount": 0
+    },
+    "pauseRetry": {
+      "httpStatus": 200,
+      "applied": false,
+      "revision": {
+        "epoch": 7,
+        "cursor": 60,
+        "fact": 0
+      }
+    },
+    "pathEscape": {
+      "resource": "wallets/../controls",
+      "code": "invalid_request",
+      "httpStatus": 400,
+      "upstreamRequestMade": false
+    }
+  },
+  "tests": {
+    "local": {
+      "passedFiles": 60,
+      "skippedFiles": 14,
+      "passedTests": 384,
+      "skippedTests": 60,
+      "durationMs": 1920,
+      "specChecksPassed": true,
+      "typescriptBuildPassed": true
+    },
+    "gcp": {
+      "exitCode": 0,
+      "passedFiles": 60,
+      "skippedFiles": 14,
+      "passedTests": 384,
+      "skippedTests": 60,
+      "durationMs": 4130,
+      "network": "none",
+      "rootContractFixturesMountedReadOnly": true
+    },
+    "harnessCorrections": [
+      "Vitest requires an ephemeral writable config path, so the disposable test container cannot use a wholly read-only image filesystem.",
+      "The backend build stage owns its copied source as root, so the disposable test container ran with its build-stage user instead of an unprivileged numeric override.",
+      "Root contract fixtures are not copied into the backend build stage and were mounted read-only for the successful full suite."
+    ]
+  },
+  "sandbox": {
+    "qualificationContainer": "replay-gateway-qualify-3faf1f0",
+    "exitCode": 0,
+    "network": "none",
+    "readOnlyRoot": true,
+    "user": "1001:1000",
+    "capDrop": [
+      "ALL"
+    ],
+    "noNewPrivileges": true,
+    "replayOwner": "replay-control-restore-181ad02",
+    "replayOwnerStatus": "running"
+  },
+  "rawEvidence": {
+    "uri": "gs://fervor-replay-phonic-chariot-501107-j5/evidence/quant-2024-11-19/replay-gateway-v1/real-gateway.json",
+    "sha256": "05ba86481213e41b9e96d56a80f752cbdf605ff20298e4e2967f59ecf3c68401",
+    "bytes": 1063,
+    "generation": "1787128488625469",
+    "credentialValuesRecorded": false,
+    "credentialLeakScanPassed": true
+  },
+  "effects": {
+    "realProviderCalls": 0,
+    "transactions": 0,
+    "messagesSent": 0,
+    "databaseWrites": 0,
+    "redisWrites": 0,
+    "credentialValuesRecorded": false
+  },
+  "remaining": [
+    "The frontend does not yet consume snapshot and delta contracts.",
+    "The first browser pilot remains unrun.",
+    "Database-backed end-to-end owner authentication remains deferred as requested."
+  ]
+}
