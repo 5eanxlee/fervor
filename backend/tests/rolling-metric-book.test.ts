@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { NormalizedTradeEvent } from '../src/types';
+import type { NormalizedTradeEvent } from '../src/types';
+import { Cardinality } from '../src/services/marketData/cardinality';
 import { RollingMetricBook } from '../src/services/marketData/rollingMetricBook';
 
 const nowMs = Date.parse('2026-08-03T12:00:00.000Z');
@@ -67,6 +68,11 @@ describe('RollingMetricBook', () => {
         expect(metrics.uniqueBuyers['1m']).toBeGreaterThan(150);
         expect(metrics.uniqueBuyers['1m']).toBeLessThan(250);
         expect(JSON.stringify(book.serialize())).not.toContain('hot-wallet-199');
+
+        const stored = JSON.parse(JSON.stringify(book.serialize()));
+        const restored = RollingMetricBook.hydrate(stored);
+        expect(restored.serialize()).toEqual(stored);
+        expect(restored.metrics(nowMs)).toEqual(metrics);
     });
 
     it('upgrades legacy snapshots without losing volume or unique counts', () => {
@@ -90,5 +96,51 @@ describe('RollingMetricBook', () => {
         expect(restored.metrics(nowMs).volumeUsd['1m']).toBe(12.5);
         expect(restored.metrics(nowMs).uniqueBuyers['24h']).toBe(1);
         expect(restored.serialize().version).toBe(2);
+
+        const corrupt = JSON.parse(JSON.stringify(legacy));
+        corrupt.windows['1m'][0].volumeUsd = '12.5';
+        expect(() => RollingMetricBook.hydrate(corrupt)).toThrow();
+    });
+
+    it('rejects corrupt snapshots instead of silently dropping state', () => {
+        const book = new RollingMetricBook('token-a');
+        book.add(trade(-1_000, 'buy', 'wallet-a', 42), nowMs);
+        book.add(trade(-1_000, 'buy', 'wallet-b', 42), nowMs);
+        const stored = book.serialize();
+        const corrupt = (change: (value: any) => void): any => {
+            const value = JSON.parse(JSON.stringify(stored));
+            change(value);
+            return value;
+        };
+
+        expect(() => RollingMetricBook.hydrate(corrupt((value) => { value.revision = -1; })))
+            .toThrow();
+        expect(() => RollingMetricBook.hydrate(corrupt((value) => { delete value.windows['1m']; })))
+            .toThrow();
+        expect(() => RollingMetricBook.hydrate(corrupt((value) => { value.ignored = true; })))
+            .toThrow();
+        expect(() => RollingMetricBook.hydrate(corrupt((value) => {
+            value.windows['1m'][0].startMs += 1;
+        }))).toThrow();
+        expect(() => RollingMetricBook.hydrate(corrupt((value) => {
+            value.windows['1m'][0].buyers.values.reverse();
+        }))).toThrow();
+        const invalidSketch = Buffer.alloc(128, 255).toString('base64');
+        expect(() => new Cardinality({ mode: 'hll', data: invalidSketch })).toThrow();
+        expect(() => RollingMetricBook.hydrate(corrupt((value) => {
+            value.windows['1m'][0].buyers = {
+                mode: 'hll',
+                data: invalidSketch,
+            };
+        }))).toThrow();
+        expect(() => RollingMetricBook.hydrate(corrupt((value) => {
+            value.revision = 65;
+            value.windows['1m'][0].buyCount = 65;
+            value.windows['1m'][0].txCount = 65;
+            value.windows['1m'][0].buyers = {
+                mode: 'hll',
+                data: Buffer.alloc(128).toString('base64'),
+            };
+        }))).toThrow();
     });
 });

@@ -1,5 +1,5 @@
-import { NormalizedTradeEvent } from '../../types';
-import { Cardinality, StoredCardinality } from './cardinality';
+import type { NormalizedTradeEvent } from '../../types';
+import { Cardinality, cardinalityExactLimit, type StoredCardinality } from './cardinality';
 import { ROLLING_WINDOWS_MS, RollingWindowMetrics, RollingWindowName } from './rollingWindowAggregator';
 
 const BUCKET_MS: Record<RollingWindowName, number> = {
@@ -32,23 +32,6 @@ export interface StoredRollup {
     windows: Record<RollingWindowName, StoredBucket[]>;
 }
 
-interface LegacyBucket {
-    startMs: number;
-    volumeUsd: number;
-    buyCount: number;
-    sellCount: number;
-    txCount: number;
-    buyers: string[];
-    sellers: string[];
-}
-
-interface LegacyRollup {
-    version: 1;
-    revision: number;
-    tokenMint: string;
-    windows: Record<RollingWindowName, LegacyBucket[]>;
-}
-
 const windowNames = Object.keys(ROLLING_WINDOWS_MS) as RollingWindowName[];
 
 const emptyMetrics = (): RollingWindowMetrics => ({
@@ -70,43 +53,130 @@ const emptyWindows = (): Record<RollingWindowName, Map<number, MetricBucket>> =>
     '24h': new Map(),
 });
 
+const recordOf = (value: unknown): Record<string, unknown> | undefined =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : undefined;
+
+const safeCount = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+const safeTime = (value: unknown): value is number =>
+    safeCount(value) && value <= 8_640_000_000_000_000;
+
+const hasKeys = (value: Record<string, unknown>, keys: readonly string[]): boolean =>
+    Object.keys(value).length === keys.length
+    && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
+
+const textList = (value: unknown): value is string[] => Array.isArray(value)
+    && value.every((item) => typeof item === 'string' && item.length > 0 && item.length <= 256)
+    && new Set(value).size === value.length;
+
+const exactCardinality = (value: unknown, limit: number): Cardinality => {
+    const stored = recordOf(value);
+    if (!stored
+        || !hasKeys(stored, ['mode', 'values'])
+        || stored.mode !== 'exact'
+        || !textList(stored.values)
+        || stored.values.length > limit) {
+        throw new Error('Invalid exact rolling cardinality');
+    }
+    for (let index = 1; index < stored.values.length; index += 1) {
+        if (stored.values[index - 1] >= stored.values[index]) {
+            throw new Error('Exact rolling cardinality is not canonical');
+        }
+    }
+    return new Cardinality({ mode: 'exact', values: stored.values });
+};
+
+const storedCardinality = (value: unknown, limit: number): Cardinality => {
+    const stored = recordOf(value);
+    if (stored?.mode === 'exact') return exactCardinality(value, Math.min(limit, cardinalityExactLimit));
+    if (!stored
+        || !hasKeys(stored, ['mode', 'data'])
+        || stored.mode !== 'hll'
+        || typeof stored.data !== 'string'
+        || limit <= cardinalityExactLimit) {
+        throw new Error('Invalid rolling cardinality');
+    }
+    const cardinality = new Cardinality({ mode: 'hll', data: stored.data });
+    if (cardinality.result().value === 0) throw new Error('Empty rolling cardinality sketch');
+    return cardinality;
+};
+
+const legacyCardinality = (value: unknown, limit: number): Cardinality => {
+    if (!textList(value) || value.length > limit) throw new Error('Invalid legacy rolling cardinality');
+    const result = new Cardinality();
+    for (const item of value) result.add(item);
+    return result;
+};
+
 export class RollingMetricBook {
     private readonly windows = emptyWindows();
 
     constructor(readonly tokenMint: string, private revision = 0) {}
 
-    static hydrate(value: StoredRollup | LegacyRollup): RollingMetricBook {
-        if (![1, 2].includes(value.version) || !value.tokenMint) {
+    static hydrate(value: unknown): RollingMetricBook {
+        const snapshot = recordOf(value);
+        const windows = recordOf(snapshot?.windows);
+        if (!snapshot
+            || !hasKeys(snapshot, ['version', 'revision', 'tokenMint', 'windows'])
+            || (snapshot.version !== 1 && snapshot.version !== 2)
+            || typeof snapshot.tokenMint !== 'string'
+            || snapshot.tokenMint.length === 0
+            || snapshot.tokenMint.length > 128
+            || !safeCount(snapshot.revision)
+            || !windows
+            || !hasKeys(windows, windowNames)
+            || windowNames.some((name) => !Array.isArray(windows[name]))) {
             throw new Error('Unsupported rolling metric snapshot');
         }
-        const book = new RollingMetricBook(value.tokenMint, Number(value.revision) || 0);
+        const book = new RollingMetricBook(snapshot.tokenMint, snapshot.revision);
         for (const name of windowNames) {
-            if (value.version === 1) {
-                for (const stored of value.windows[name] || []) {
-                    if (!Number.isFinite(stored.startMs)) continue;
-                    book.windows[name].set(stored.startMs, {
-                        startMs: stored.startMs,
-                        volumeMicroUsd: Math.round(stored.volumeUsd * 1_000_000),
-                        buyCount: stored.buyCount,
-                        sellCount: stored.sellCount,
-                        txCount: stored.txCount,
-                        buyers: new Cardinality({ mode: 'exact', values: stored.buyers }),
-                        sellers: new Cardinality({ mode: 'exact', values: stored.sellers }),
-                    });
+            let priorStart = -1;
+            for (const candidate of windows[name] as unknown[]) {
+                const stored = recordOf(candidate);
+                if (!stored
+                    || !hasKeys(stored, snapshot.version === 1
+                        ? ['startMs', 'volumeUsd', 'buyCount', 'sellCount', 'txCount', 'buyers', 'sellers']
+                        : ['startMs', 'volumeMicroUsd', 'buyCount', 'sellCount', 'txCount', 'buyers', 'sellers'])
+                    || !safeTime(stored.startMs)
+                    || (snapshot.version === 2 && stored.startMs % BUCKET_MS[name] !== 0)
+                    || stored.startMs <= priorStart
+                    || !safeCount(stored.buyCount)
+                    || !safeCount(stored.sellCount)
+                    || !safeCount(stored.txCount)
+                    || stored.txCount === 0
+                    || stored.buyCount + stored.sellCount !== stored.txCount
+                    || stored.txCount > snapshot.revision) {
+                    throw new Error(`Invalid ${name} rolling metric bucket`);
                 }
-            } else {
-                for (const stored of value.windows[name] || []) {
-                    if (!Number.isFinite(stored.startMs)) continue;
-                    book.windows[name].set(stored.startMs, {
-                        startMs: stored.startMs,
-                        volumeMicroUsd: stored.volumeMicroUsd,
-                        buyCount: stored.buyCount,
-                        sellCount: stored.sellCount,
-                        txCount: stored.txCount,
-                        buyers: new Cardinality(stored.buyers),
-                        sellers: new Cardinality(stored.sellers),
-                    });
+                if (snapshot.version === 1
+                    && (typeof stored.volumeUsd !== 'number'
+                        || !Number.isFinite(stored.volumeUsd)
+                        || stored.volumeUsd < 0)) {
+                    throw new Error(`Invalid ${name} rolling volume`);
                 }
+                const volumeMicroUsd = snapshot.version === 1
+                    ? Math.round(stored.volumeUsd as number * 1_000_000)
+                    : stored.volumeMicroUsd;
+                if (!safeCount(volumeMicroUsd)) throw new Error(`Invalid ${name} rolling volume`);
+                const buyers = snapshot.version === 1
+                    ? legacyCardinality(stored.buyers, stored.buyCount)
+                    : storedCardinality(stored.buyers, stored.buyCount);
+                const sellers = snapshot.version === 1
+                    ? legacyCardinality(stored.sellers, stored.sellCount)
+                    : storedCardinality(stored.sellers, stored.sellCount);
+                priorStart = stored.startMs;
+                book.windows[name].set(stored.startMs, {
+                    startMs: stored.startMs,
+                    volumeMicroUsd,
+                    buyCount: stored.buyCount,
+                    sellCount: stored.sellCount,
+                    txCount: stored.txCount,
+                    buyers,
+                    sellers,
+                });
             }
         }
         return book;

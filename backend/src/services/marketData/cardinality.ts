@@ -1,6 +1,7 @@
 const precision = 7;
 const registers = 1 << precision;
-const exactLimit = 64;
+export const cardinalityExactLimit = 64;
+const maxRank = 33 - precision;
 
 export type StoredCardinality =
     | { mode: 'exact'; values: string[] }
@@ -31,22 +32,40 @@ export class Cardinality {
     private sketch: Uint8Array | null;
 
     constructor(stored?: StoredCardinality) {
-        if (stored?.mode === 'hll') {
+        if (stored === undefined) {
+            this.values = new Set();
+            this.sketch = null;
+            return;
+        }
+        if (stored.mode === 'hll') {
+            if (typeof stored.data !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(stored.data)) {
+                throw new Error('Invalid cardinality sketch');
+            }
             const decoded = Buffer.from(stored.data, 'base64');
-            if (decoded.length !== registers) throw new Error('Invalid cardinality sketch');
+            if (decoded.length !== registers
+                || decoded.toString('base64') !== stored.data
+                || decoded.some((value) => value > maxRank)) {
+                throw new Error('Invalid cardinality sketch');
+            }
             this.values = null;
             this.sketch = Uint8Array.from(decoded);
             return;
         }
-        this.values = new Set(stored?.values || []);
+        if (stored.mode !== 'exact'
+            || !Array.isArray(stored.values)
+            || stored.values.some((value) => typeof value !== 'string' || value.length === 0 || value.length > 256)
+            || new Set(stored.values).size !== stored.values.length) {
+            throw new Error('Invalid exact cardinality set');
+        }
+        this.values = new Set(stored.values);
         this.sketch = null;
-        if (this.values.size > exactLimit) this.promote();
+        if (this.values.size > cardinalityExactLimit) this.promote();
     }
 
     add(value: string): void {
         if (this.values) {
             this.values.add(value);
-            if (this.values.size > exactLimit) this.promote();
+            if (this.values.size > cardinalityExactLimit) this.promote();
             return;
         }
         this.addHash(hash32(value));
