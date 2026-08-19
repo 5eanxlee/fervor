@@ -3,6 +3,7 @@ pub mod alert_store;
 pub mod archive;
 pub mod contracts;
 pub mod fervor_tx;
+pub mod fx;
 pub mod market_decoder;
 pub mod market_journal;
 #[cfg(feature = "archive-replay")]

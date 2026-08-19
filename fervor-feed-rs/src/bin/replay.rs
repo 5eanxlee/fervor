@@ -3,6 +3,7 @@ use clap::Parser;
 use fervor_feed_rs::{
     archive::{verify_extract, ExtractManifest},
     fervor_tx::{Network, Quarantine},
+    fx::{decode_fx, FX_CONTRACT, FX_POLICY, SOL_USDC_POOL},
     market_decoder::decode_swap,
     old_faithful::{ArchiveReader, OldFaithfulAdapter},
     pump::{
@@ -18,12 +19,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SCHEMA: &str = "fervor-replay-v3";
+const SCHEMA: &str = "fervor-replay-v4";
 const TX_FILE: &str = "transactions.ndjson";
 const SWAP_FILE: &str = "swaps.ndjson";
 const PUMP_FILE: &str = "pump-events.ndjson";
 const STATE_FILE: &str = "pump-state.json";
 const SUPPLY_FILE: &str = "supply.json";
+const FX_FILE: &str = "fx-observations.ndjson";
 
 #[derive(Debug, Parser)]
 #[command(name = "fervor-replay")]
@@ -67,6 +69,11 @@ struct ReplayManifest {
     supply_contract: &'static str,
     supply_file: &'static str,
     supply_sha256: String,
+    fx_contract: &'static str,
+    fx_policy: &'static str,
+    fx_observations: u64,
+    fx_file: &'static str,
+    fx_sha256: String,
     replay_sha256: String,
 }
 
@@ -126,11 +133,13 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     let mut tx_out = Output::new(&out.join(TX_FILE))?;
     let mut swap_out = Output::new(&out.join(SWAP_FILE))?;
     let mut pump_out = Output::new(&out.join(PUMP_FILE))?;
+    let mut fx_out = Output::new(&out.join(FX_FILE))?;
     let mut blocks = 0_u64;
     let mut transactions = 0_u64;
     let mut matched = 0_u64;
     let mut swaps = 0_u64;
     let mut pump_count = 0_u64;
+    let mut fx_count = 0_u64;
     let mut pump_events = Vec::<PumpEvent>::new();
     let mut supply = None::<SupplyEvidence>;
     let mut first_slot = None;
@@ -142,13 +151,26 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         blocks = checked_count(blocks, "block")?;
         for record in block.records {
             transactions = checked_count(transactions, "transaction")?;
-            // Old Faithful cannot filter remotely; off-mint records are archive scan noise.
-            if !record.references(mint) {
+            // Old Faithful cannot filter remotely; unrelated records are archive scan noise.
+            let mint_match = record.references(mint);
+            let fx_match = record.references(SOL_USDC_POOL);
+            if !mint_match && !fx_match {
                 continue;
             }
             let tx = adapter
                 .adapt_record(&record, mint)
                 .map_err(|error| quarantine_error("archive transaction", error))?;
+            if fx_match {
+                if let Some(observation) =
+                    decode_fx(&tx).map_err(|error| quarantine_error("FX observation", error))?
+                {
+                    fx_count = checked_count(fx_count, "FX observation")?;
+                    fx_out.write_json(&observation)?;
+                }
+            }
+            if !mint_match {
+                continue;
+            }
             matched = checked_count(matched, "matched transaction")?;
             tx_out.write_json(&tx)?;
             let events =
@@ -208,6 +230,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     let transaction_sha256 = tx_out.finish()?;
     let swap_sha256 = swap_out.finish()?;
     let pump_event_sha256 = pump_out.finish()?;
+    let fx_sha256 = fx_out.finish()?;
     let pump_state_sha256 = write_json(&out.join(STATE_FILE), &pump_state)?;
     let supply_sha256 = write_json(&out.join(SUPPLY_FILE), &supply)?;
     let replay_sha256 = replay_hash(&[
@@ -216,6 +239,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         &pump_event_sha256,
         &pump_state_sha256,
         &supply_sha256,
+        &fx_sha256,
     ]);
     let manifest = ReplayManifest {
         schema: SCHEMA,
@@ -247,6 +271,11 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         supply_contract: SUPPLY_CONTRACT,
         supply_file: SUPPLY_FILE,
         supply_sha256,
+        fx_contract: FX_CONTRACT,
+        fx_policy: FX_POLICY,
+        fx_observations: fx_count,
+        fx_file: FX_FILE,
+        fx_sha256,
         replay_sha256,
     };
     let mut bytes = serde_json::to_vec_pretty(&manifest)?;

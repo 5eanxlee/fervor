@@ -11,9 +11,9 @@ pub const USDC_MINT: &str = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 pub const USDT_MINT: &str = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
 
 const PUMP_SWAP: &str = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
-const RAYDIUM_AMM_V4: &str = "675kPX9MHTjS2zt1qfr1NYJSCfn6wUCwBK6n2UZMfw";
+const RAYDIUM_AMM_V4: &str = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
 const RAYDIUM_CLMM: &str = "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK";
-const RAYDIUM_CPMM: &str = "CPMMoo8L3F4NbTegBCKVNio1bsBk5wWK8Mwq1qkMzoC";
+const RAYDIUM_CPMM: &str = "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C";
 const RAYDIUM_LAUNCHLAB: &str = "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj";
 const METEORA_DLMM: &str = "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo";
 const METEORA_DBC: &str = "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN";
@@ -260,6 +260,30 @@ fn resolve_keys(tx: &FervorTx) -> Vec<String> {
         .chain(&tx.loaded_readonly)
         .cloned()
         .collect()
+}
+
+pub(crate) fn single_pool_swap(tx: &FervorTx, venue: Venue, pool: &str) -> Option<u32> {
+    let swaps = swap_instructions(&tx.instructions, &resolve_keys(tx));
+    if swaps.len() != 1 {
+        return None;
+    }
+    let swap = &swaps[0];
+    (swap.venue == venue && swap.pool.as_deref() == Some(pool)).then_some(swap.outer)
+}
+
+pub(crate) fn owner_delta(tx: &FervorTx, owner: &str, mint: &str) -> Option<(i128, u32)> {
+    let mut matches = token_deltas(&tx.pre_tokens, &tx.post_tokens)?
+        .into_iter()
+        .filter(|delta| delta.owner == owner && delta.mint == mint);
+    let delta = matches.next()?;
+    matches
+        .next()
+        .is_none()
+        .then_some((delta.raw, delta.decimals))
+}
+
+pub(crate) fn economic_sol_delta(tx: &FervorTx) -> Option<i128> {
+    native_sol_delta(tx)
 }
 
 fn swap_instructions(instructions: &[TxIx], keys: &[String]) -> Vec<SwapIx> {
@@ -616,16 +640,30 @@ mod tests {
     }
 
     #[test]
-    fn recognizes_the_deployed_orca_program() {
+    fn recognizes_deployed_programs() {
+        for program in PROGRAM_IDS {
+            assert_eq!(bs58::decode(program).into_vec().unwrap().len(), 32);
+        }
+        assert_eq!(
+            Venue::from_program("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"),
+            Some(Venue::RaydiumAmmV4)
+        );
+        assert_eq!(
+            Venue::from_program("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"),
+            Some(Venue::RaydiumCpmm)
+        );
         assert_eq!(
             Venue::from_program("whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc"),
             Some(Venue::OrcaWhirlpool)
         );
         assert!(PROGRAM_IDS.contains(&ORCA_WHIRLPOOL));
-        assert_eq!(
-            Venue::from_program("whirLbMiicVdio4qvUfM5KAg6CtVciGkn7hKfLiE6iQ"),
-            None
-        );
+        for retired in [
+            "675kPX9MHTjS2zt1qfr1NYJSCfn6wUCwBK6n2UZMfw",
+            "CPMMoo8L3F4NbTegBCKVNio1bsBk5wWK8Mwq1qkMzoC",
+            "whirLbMiicVdio4qvUfM5KAg6CtVciGkn7hKfLiE6iQ",
+        ] {
+            assert_eq!(Venue::from_program(retired), None);
+        }
     }
 
     #[test]
