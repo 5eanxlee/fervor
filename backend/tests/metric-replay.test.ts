@@ -371,6 +371,17 @@ describe('metric replay', () => {
         expect(replayed).toMatchObject({ epoch: 2, cursor: 0 });
         expect(coordinator.accepts(replayed!)).toBe(true);
         expect(coordinator.accepts({ ...replayed!, sourceReplaySha256: '0'.repeat(64) })).toBe(false);
+        const cut = coordinator.cut();
+        expect(cut).toMatchObject({
+            contract: 'fervor-replay-cut-v1',
+            cursor: 1,
+            now: '2024-11-19T00:00:00.000Z',
+        });
+        expect(cut.prefixSha256).toMatch(/^[0-9a-f]{64}$/);
+        const beforeRestore = coordinator.snapshot();
+        expect(() => coordinator.restore({ ...cut, prefixSha256: '0'.repeat(64) }))
+            .toThrow('does not match the verified tape');
+        expect(coordinator.snapshot()).toEqual(beforeRestore);
         expect(() => coordinator.seek(3)).toThrow('outside the tape');
         expect(coordinator.snapshot().epoch).toBe(2);
         expect(coordinator.seek(1)).toMatchObject({
@@ -383,6 +394,9 @@ describe('metric replay', () => {
         restarted.resume();
         expect([restarted.next(), restarted.next()].map((event) => event?.trade.idempotencyKey))
             .toEqual(replay.sourceTrades.map((trade) => trade.idempotencyKey));
+        const restored = new ReplayCoordinator(replay, 'restore-run');
+        expect(restored.restore(cut)).toMatchObject({ epoch: 2, cursor: 1, status: 'paused' });
+        expect(restored.step()?.trade.idempotencyKey).toBe(replay.sourceTrades[1].idempotencyKey);
         expect(coordinator.accepts({ ...tail!, runId: 'restart-run' })).toBe(false);
         coordinator.stop();
         expect(coordinator.accepts(tail!)).toBe(false);

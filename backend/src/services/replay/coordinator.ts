@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto';
 import { VirtualClock } from '../clock';
 import type { NormalizedTradeEvent } from '../../types';
 import type { MetricReplay } from '../marketData/metricReplay';
 
 export type ReplayStatus = 'paused' | 'running' | 'complete' | 'stopped';
+export const replayCutContract = 'fervor-replay-cut-v1' as const;
 
 export interface ReplayEvent {
     readonly runId: string;
@@ -21,6 +23,14 @@ export interface ReplaySnapshot {
     readonly total: number;
     readonly status: ReplayStatus;
     readonly now: string | null;
+}
+
+export interface ReplayCut {
+    readonly contract: typeof replayCutContract;
+    readonly sourceReplaySha256: string;
+    readonly cursor: number;
+    readonly now: string | null;
+    readonly prefixSha256: string;
 }
 
 export class ReplayCoordinator {
@@ -110,6 +120,29 @@ export class ReplayCoordinator {
         return this.snapshot();
     }
 
+    cut(): ReplayCut {
+        return Object.freeze({
+            contract: replayCutContract,
+            sourceReplaySha256: this.sourceSha,
+            cursor: this.cursor,
+            now: this.timeAt(this.cursor),
+            prefixSha256: this.prefixHash(this.cursor),
+        });
+    }
+
+    restore(cut: ReplayCut): ReplaySnapshot {
+        if (cut.contract !== replayCutContract
+            || cut.sourceReplaySha256 !== this.sourceSha
+            || !Number.isSafeInteger(cut.cursor)
+            || cut.cursor < 0
+            || cut.cursor > this.events.length
+            || cut.now !== this.timeAt(cut.cursor)
+            || cut.prefixSha256 !== this.prefixHash(cut.cursor)) {
+            throw new Error('Replay cut does not match the verified tape');
+        }
+        return this.seek(cut.cursor);
+    }
+
     accepts(event: Pick<ReplayEvent, 'runId' | 'epoch' | 'sourceReplaySha256'>): boolean {
         return this.status !== 'stopped'
             && event.runId === this.runId
@@ -131,5 +164,21 @@ export class ReplayCoordinator {
         this.cursor += 1;
         if (this.cursor === this.events.length) this.status = 'complete';
         return event;
+    }
+
+    private timeAt(cursor: number): string | null {
+        return cursor === 0 ? null : new Date(Date.parse(this.events[cursor - 1].observedAt)).toISOString();
+    }
+
+    private prefixHash(cursor: number): string {
+        const hash = createHash('sha256');
+        hash.update(replayCutContract);
+        hash.update('\0');
+        hash.update(this.sourceSha);
+        for (let index = 0; index < cursor; index += 1) {
+            hash.update('\0');
+            hash.update(this.events[index].idempotencyKey);
+        }
+        return hash.digest('hex');
     }
 }
