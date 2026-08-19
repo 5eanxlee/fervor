@@ -387,7 +387,12 @@ export class NotificationDeliveryService {
                     return 'terminal' as const;
                 }
                 const exhausted = Number(row.attempts) >= Number(row.max_attempts);
-                const retryAt = exhausted ? null : calculateRetryAt(Number(row.attempts), result.retryAfterMs);
+                const retryAt = exhausted ? null : calculateRetryAt(
+                    Number(row.attempts),
+                    result.retryAfterMs,
+                    env.NOTIFICATION_RETRY_BASE_MS,
+                    env.NOTIFICATION_RETRY_MAX_MS
+                );
                 const attempt = await db(
                     `UPDATE notification_attempts
                      SET status = 'retryable', effect = $1, provider_status = $2,
