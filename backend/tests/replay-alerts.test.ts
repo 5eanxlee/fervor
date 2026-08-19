@@ -17,7 +17,12 @@ import {
     projectReplayNotifications,
     replayAlertModelContract,
     replayNotificationContract,
+    replayWalletNotificationContract,
+    type ReplayMetricNotification,
+    type ReplayNotification,
+    type ReplayWalletNotification,
 } from '../src/services/replay/replayAlerts';
+import { replayWalletPage } from '../src/services/replay/replayWallet';
 import { ReplayRuntime } from '../src/services/replay/runtime';
 import { replayMint, replaySha, replayTape } from './helpers/replayTape';
 
@@ -29,6 +34,8 @@ const ids = [
     '33333333-3333-4333-8333-333333333333',
     '44444444-4444-4444-8444-444444444444',
     '55555555-5555-4555-8555-555555555555',
+    '66666666-6666-4666-8666-666666666666',
+    '77777777-7777-4777-8777-777777777777',
 ];
 const paperModel: PaperModelInput = {
     contract: paperModelContract,
@@ -92,6 +99,29 @@ const modelInput = () => ({
     ],
 } as const);
 
+const walletModelInput = () => ({
+    contract: replayAlertModelContract,
+    sourceReplaySha256: replaySha,
+    alerts: [
+        {
+            id: ids[5], userId, tokenMint: replayMint, wallet: replayMint,
+            side: 'buy', generation: 1, policy: 'one_shot',
+        },
+        {
+            id: ids[6], userId, tokenMint: replayMint, wallet: replayMint,
+            side: 'sell', generation: 1, policy: 'one_shot',
+        },
+    ],
+} as const);
+
+const metricItems = (items: readonly ReplayNotification[]): readonly ReplayMetricNotification[] =>
+    items.filter((item): item is ReplayMetricNotification =>
+        item.contract === replayNotificationContract);
+
+const walletItems = (items: readonly ReplayNotification[]): readonly ReplayWalletNotification[] =>
+    items.filter((item): item is ReplayWalletNotification =>
+        item.contract === replayWalletNotificationContract);
+
 const snapshot = (epoch = 1): ReplaySnapshot => ({
     runId: 'alerts-a',
     epoch,
@@ -116,7 +146,8 @@ describe('replay alerts', () => {
             unavailableTypes: ['market_cap'],
             next: null,
         });
-        expect(page.items.map((item) => ({
+        const items = metricItems(page.items);
+        expect(items.map((item) => ({
             id: item.alertId,
             cursor: item.metricCursor,
             value: item.currentValue,
@@ -126,7 +157,7 @@ describe('replay alerts', () => {
             { id: ids[3], cursor: 1, value: 2 },
             { id: ids[1], cursor: 2, value: 300 },
         ]);
-        expect(page.items[0]).toMatchObject({
+        expect(items[0]).toMatchObject({
             contract: replayNotificationContract,
             matchedAt: '2024-11-19T00:00:00.000Z',
             metricEstimated: true,
@@ -142,8 +173,60 @@ describe('replay alerts', () => {
 
         const middle = projectReplayNotifications(replay, snapshot(), model, 1, 2);
         expect(middle).toMatchObject({ after: 1, next: 3 });
-        expect(middle.items.map((item) => item.metricCursor)).toEqual([0, 1]);
+        expect(metricItems(middle.items).map((item) => item.metricCursor)).toEqual([0, 1]);
         expect(middle.notificationsSha256).toBe(page.notificationsSha256);
+    });
+
+    it('projects tracked-wallet buys and sells once from owned activity identities', () => {
+        const replay = source();
+        const model = normalizeReplayAlertModel(walletModelInput(), replaySha, replayMint);
+        const empty = projectReplayNotifications(replay, {
+            ...snapshot(), cursor: 0, status: 'paused', now: null,
+        }, model, 0, 500);
+        expect(empty).toMatchObject({
+            definitionCount: 2,
+            triggeredCount: 0,
+            armedCount: 2,
+            unavailableCount: 0,
+            items: [],
+        });
+
+        const first = projectReplayNotifications(replay, snapshot(1), model, 0, 500);
+        const items = walletItems(first.items);
+        expect(first).toMatchObject({
+            definitionCount: 2,
+            triggeredCount: 2,
+            armedCount: 0,
+            unavailableCount: 0,
+        });
+        expect(items.map((item) => ({
+            id: item.alertId,
+            watchSide: item.watchSide,
+            cursor: item.activity.cursor,
+            side: item.activity.side,
+            matchedAt: item.matchedAt,
+        }))).toEqual([
+            {
+                id: ids[5], watchSide: 'buy', cursor: 0, side: 'buy',
+                matchedAt: '2024-11-19T00:00:00.000Z',
+            },
+            {
+                id: ids[6], watchSide: 'sell', cursor: 1, side: 'sell',
+                matchedAt: '2024-11-19T00:00:10.000Z',
+            },
+        ]);
+        expect(items.map((item) => item.activity)).toEqual(
+            replayWalletPage(snapshot(), replay.sourceTrades, replayMint, 0, 500).items.slice(0, 2)
+        );
+        expect(items.every((item) => !item.delivery.external)).toBe(true);
+
+        const next = walletItems(
+            projectReplayNotifications(replay, snapshot(2), model, 0, 500).items
+        );
+        expect(next.map((item) => item.activity.activityKey))
+            .toEqual(items.map((item) => item.activity.activityKey));
+        expect(next.map((item) => item.notificationKey))
+            .not.toEqual(items.map((item) => item.notificationKey));
     });
 
     it('canonicalizes the model and fences notification identity by replay epoch', () => {
@@ -157,8 +240,8 @@ describe('replay alerts', () => {
 
         const first = projectReplayNotifications(replay, snapshot(1), model, 0, 500);
         const next = projectReplayNotifications(replay, snapshot(2), model, 0, 500);
-        expect(next.items.map((item) => item.metricEventId))
-            .toEqual(first.items.map((item) => item.metricEventId));
+        expect(metricItems(next.items).map((item) => item.metricEventId))
+            .toEqual(metricItems(first.items).map((item) => item.metricEventId));
         expect(next.items.map((item) => item.notificationKey))
             .not.toEqual(first.items.map((item) => item.notificationKey));
         expect(() => normalizeReplayAlertModel({
@@ -191,8 +274,8 @@ describe('replay alerts', () => {
             replay, 'alert-runtime', store, sessions, paperModel, modelInput()
         );
         const after = restored.notifications(0, 500);
-        expect(after.items.map((item) => item.metricEventId))
-            .toEqual(before.items.map((item) => item.metricEventId));
+        expect(metricItems(after.items).map((item) => item.metricEventId))
+            .toEqual(metricItems(before.items).map((item) => item.metricEventId));
         expect(after.epoch).toBe(2);
         await restored.seek(0);
         expect(restored.notifications()).toMatchObject({

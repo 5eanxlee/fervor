@@ -7,13 +7,15 @@ import { qualityForThreshold, thresholdMatches, valueForThreshold } from '../ale
 import type { MetricReplay } from '../marketData/metricReplay';
 import { ReplayCoordinator, type ReplayEvent, type ReplaySnapshot } from './coordinator';
 import { ReplayProjection, type ProjectionView } from './projection';
+import { replayWalletTrade, type ReplayWalletTrade } from './replayWallet';
 
 export const replayAlertModelContract = 'fervor-replay-alert-model-v1' as const;
 export const replayNotificationContract = 'fervor-replay-in-app-v1' as const;
+export const replayWalletNotificationContract = 'fervor-replay-wallet-in-app-v1' as const;
 export const replayNotificationPageContract = 'fervor-replay-notification-page-v1' as const;
 
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
-const alertSchema = z.object({
+const metricAlertSchema = z.object({
     id: z.string().uuid(),
     userId: z.string().uuid(),
     tokenMint: addressSchema,
@@ -23,6 +25,16 @@ const alertSchema = z.object({
     generation: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     policy: z.literal('one_shot'),
 }).strict();
+const walletAlertSchema = z.object({
+    id: z.string().uuid(),
+    userId: z.string().uuid(),
+    tokenMint: addressSchema,
+    wallet: addressSchema,
+    side: z.enum(['buy', 'sell', 'any']),
+    generation: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    policy: z.literal('one_shot'),
+}).strict();
+const alertSchema = z.union([metricAlertSchema, walletAlertSchema]);
 const modelSchema = z.object({
     contract: z.literal(replayAlertModelContract),
     sourceReplaySha256: hash,
@@ -30,6 +42,8 @@ const modelSchema = z.object({
 }).strict();
 
 export type ReplayAlert = Readonly<z.infer<typeof alertSchema>>;
+export type ReplayMetricAlert = Readonly<z.infer<typeof metricAlertSchema>>;
+export type ReplayWalletAlert = Readonly<z.infer<typeof walletAlertSchema>>;
 
 export interface ReplayAlertModel {
     readonly contract: typeof replayAlertModelContract;
@@ -38,7 +52,23 @@ export interface ReplayAlertModel {
     readonly modelSha256: string;
 }
 
-export interface ReplayNotification {
+interface ReplayDelivery {
+    readonly channel: 'in_app';
+    readonly status: 'available';
+    readonly attempts: 0;
+    readonly availableAt: string;
+    readonly external: false;
+}
+
+const inAppDelivery = (availableAt: string): ReplayDelivery => Object.freeze({
+    channel: 'in_app',
+    status: 'available',
+    attempts: 0,
+    availableAt,
+    external: false,
+});
+
+export interface ReplayMetricNotification {
     readonly contract: typeof replayNotificationContract;
     readonly notificationKey: string;
     readonly sourceReplaySha256: string;
@@ -64,14 +94,29 @@ export interface ReplayNotification {
     readonly metricEstimated: boolean;
     readonly basisCommitment: 'processed' | 'confirmed' | 'finalized';
     readonly engineVersion: 'fervor-replay-alert-v1';
-    readonly delivery: {
-        readonly channel: 'in_app';
-        readonly status: 'available';
-        readonly attempts: 0;
-        readonly availableAt: string;
-        readonly external: false;
-    };
+    readonly delivery: ReplayDelivery;
 }
+
+export interface ReplayWalletNotification {
+    readonly contract: typeof replayWalletNotificationContract;
+    readonly notificationKey: string;
+    readonly sourceReplaySha256: string;
+    readonly runId: string;
+    readonly epoch: number;
+    readonly modelSha256: string;
+    readonly alertId: string;
+    readonly alertGeneration: number;
+    readonly userId: string;
+    readonly tokenMint: string;
+    readonly wallet: string;
+    readonly watchSide: 'buy' | 'sell' | 'any';
+    readonly activity: ReplayWalletTrade;
+    readonly matchedAt: string;
+    readonly engineVersion: 'fervor-replay-wallet-alert-v1';
+    readonly delivery: ReplayDelivery;
+}
+
+export type ReplayNotification = ReplayMetricNotification | ReplayWalletNotification;
 
 export interface ReplayNotificationPage {
     readonly contract: typeof replayNotificationPageContract;
@@ -128,6 +173,9 @@ export const normalizeReplayAlertModel = (
     return Object.freeze({ ...model, modelSha256: modelDigest(model) });
 };
 
+const isMetricAlert = (alert: ReplayAlert): alert is ReplayMetricAlert =>
+    'thresholdType' in alert;
+
 const metricQuality = (event: ReplayEvent, estimated: boolean, sourceEventId: string): MetricQuality => ({
     sourceEventId,
     observedAt: new Date(Date.parse(event.trade.observedAt)).toISOString(),
@@ -173,12 +221,13 @@ const metricTick = (event: ReplayEvent, view: ProjectionView): FeedTick => {
 };
 
 const notificationKey = (
+    contract: typeof replayNotificationContract | typeof replayWalletNotificationContract,
     snapshot: ReplaySnapshot,
     modelSha256: string,
     alert: ReplayAlert,
     event: ReplayEvent
 ): string => createHash('sha256')
-    .update(replayNotificationContract)
+    .update(contract)
     .update('\0')
     .update(snapshot.sourceReplaySha256)
     .update('\0')
@@ -195,18 +244,20 @@ const notificationKey = (
     .update(event.trade.idempotencyKey)
     .digest('hex');
 
-const notification = (
+const metricNotification = (
     snapshot: ReplaySnapshot,
     model: ReplayAlertModel,
-    alert: ReplayAlert,
+    alert: ReplayMetricAlert,
     event: ReplayEvent,
     value: number,
     quality: MetricQuality
-): ReplayNotification => {
+): ReplayMetricNotification => {
     const observedAt = new Date(Date.parse(event.trade.observedAt)).toISOString();
     return Object.freeze({
         contract: replayNotificationContract,
-        notificationKey: notificationKey(snapshot, model.modelSha256, alert, event),
+        notificationKey: notificationKey(
+            replayNotificationContract, snapshot, model.modelSha256, alert, event
+        ),
         sourceReplaySha256: snapshot.sourceReplaySha256,
         runId: snapshot.runId,
         epoch: snapshot.epoch,
@@ -230,13 +281,39 @@ const notification = (
         metricEstimated: quality.estimated,
         basisCommitment: event.trade.commitment!,
         engineVersion: 'fervor-replay-alert-v1',
-        delivery: Object.freeze({
-            channel: 'in_app',
-            status: 'available',
-            attempts: 0,
-            availableAt: observedAt,
-            external: false,
-        }),
+        delivery: inAppDelivery(observedAt),
+    });
+};
+
+const walletNotification = (
+    snapshot: ReplaySnapshot,
+    model: ReplayAlertModel,
+    alert: ReplayWalletAlert,
+    event: ReplayEvent
+): ReplayWalletNotification => {
+    const activity = replayWalletTrade(
+        snapshot.sourceReplaySha256, event.cursor, event.trade
+    );
+    const matchedAt = new Date(Date.parse(activity.observedAt)).toISOString();
+    return Object.freeze({
+        contract: replayWalletNotificationContract,
+        notificationKey: notificationKey(
+            replayWalletNotificationContract, snapshot, model.modelSha256, alert, event
+        ),
+        sourceReplaySha256: snapshot.sourceReplaySha256,
+        runId: snapshot.runId,
+        epoch: snapshot.epoch,
+        modelSha256: model.modelSha256,
+        alertId: alert.id,
+        alertGeneration: alert.generation,
+        userId: alert.userId,
+        tokenMint: alert.tokenMint,
+        wallet: alert.wallet,
+        watchSide: alert.side,
+        activity,
+        matchedAt,
+        engineVersion: 'fervor-replay-wallet-alert-v1',
+        delivery: inAppDelivery(matchedAt),
     });
 };
 
@@ -272,6 +349,14 @@ export const projectReplayNotifications = (
         projection.apply(event);
         const tick = metricTick(event, projection.view());
         for (const alert of model.alerts) {
+            if (triggered.has(alert.id)) continue;
+            if (!isMetricAlert(alert)) {
+                if (event.trade.maker !== alert.wallet
+                    || (alert.side !== 'any' && event.trade.side !== alert.side)) continue;
+                triggered.add(alert.id);
+                notifications.push(walletNotification(snapshot, model, alert, event));
+                continue;
+            }
             const value = valueForThreshold(alert.thresholdType, tick);
             const quality = qualityForThreshold(alert.thresholdType, tick);
             if (value === undefined
@@ -282,18 +367,17 @@ export const projectReplayNotifications = (
                 || quality.confidence < 0
                 || quality.confidence > 1) continue;
             observed.add(alert.id);
-            if (triggered.has(alert.id)
-                || !thresholdMatches(alert.condition, alert.thresholdValue, value)) continue;
+            if (!thresholdMatches(alert.condition, alert.thresholdValue, value)) continue;
             triggered.add(alert.id);
-            notifications.push(notification(snapshot, model, alert, event, value, quality));
+            notifications.push(metricNotification(snapshot, model, alert, event, value, quality));
         }
     }
     const rebuilt = coordinator.snapshot();
     if (rebuilt.cursor !== snapshot.cursor || rebuilt.now !== snapshot.now || after > notifications.length) {
         throw new Error('Replay notification projection differs from its cut');
     }
-    const unavailable = model.alerts.filter((alert) =>
-        !triggered.has(alert.id) && !observed.has(alert.id));
+    const unavailable = model.alerts.filter((alert): alert is ReplayMetricAlert =>
+        isMetricAlert(alert) && !triggered.has(alert.id) && !observed.has(alert.id));
     const unavailableTypes = Object.freeze([...new Set(unavailable.map((alert) => alert.thresholdType))]
         .sort());
     const end = Math.min(notifications.length, after + limit);

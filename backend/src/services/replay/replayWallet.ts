@@ -70,7 +70,7 @@ const activityKey = (sourceSha: string, wallet: string, tradeId: string): string
         .update(tradeId)
         .digest('hex');
 
-const activity = (
+export const replayWalletTrade = (
     sourceSha: string,
     cursor: number,
     trade: NormalizedTradeEvent
@@ -128,7 +128,7 @@ export const replayWalletPage = (
     for (let cursor = afterCursor; cursor < snapshot.cursor; cursor += 1) {
         const trade = trades[cursor];
         if (trade.maker !== wallet) continue;
-        items.push(activity(snapshot.sourceReplaySha256, cursor, trade));
+        items.push(replayWalletTrade(snapshot.sourceReplaySha256, cursor, trade));
         if (items.length === limit) {
             nextCursor = cursor + 1;
             break;

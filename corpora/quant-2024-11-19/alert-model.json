@@ -31,6 +31,24 @@
       "condition": "above",
       "generation": 1,
       "policy": "one_shot"
+    },
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "userId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+      "wallet": "7m6dSzdhFpZMke5fWo4he6tPQzCAoS5UKjtVJpKdDmLA",
+      "side": "buy",
+      "generation": 1,
+      "policy": "one_shot"
+    },
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "userId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+      "wallet": "7m6dSzdhFpZMke5fWo4he6tPQzCAoS5UKjtVJpKdDmLA",
+      "side": "sell",
+      "generation": 1,
+      "policy": "one_shot"
     }
   ]
 }
