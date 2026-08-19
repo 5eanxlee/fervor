@@ -282,7 +282,9 @@ export class ReplayProjection {
     checkpoint(coordinator: ReplayCoordinator): ReplayCheckpoint {
         const snapshot = coordinator.snapshot();
         this.assertBound(snapshot);
-        if (snapshot.status === 'running') throw new Error('Running replay cannot checkpoint');
+        if (snapshot.status !== 'paused' && snapshot.status !== 'complete') {
+            throw new Error(`${snapshot.status} replay cannot checkpoint`);
+        }
         const payload = payloadOf(
             coordinator.cut(),
             this.tokenMint,

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fervorSupplyContract, NormalizedTradeEvent } from '../../types';
+import { fervorSupplyContract, type NormalizedTradeEvent } from '../../types/marketData';
 import { amountSchema } from '../../types/amount';
 import { addressSchema, signatureSchema } from '../../types/execution';
 import type { PriceSource, RefPrice } from '../referencePriceService';

@@ -3,8 +3,6 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { NormalizedTradeEvent } from '../src/types';
-import type { MetricReplay } from '../src/services/marketData/metricReplay';
 import { CheckpointStore } from '../src/services/replay/checkpointStore';
 import { ReplayCoordinator } from '../src/services/replay/coordinator';
 import {
@@ -12,9 +10,12 @@ import {
     ReplayProjection,
 } from '../src/services/replay/projection';
 import { ReplayScheduler, type ReplaySpeed } from '../src/services/replay/scheduler';
+import {
+    replayMint as mint,
+    replaySha as sourceSha,
+    replayTape as replay,
+} from './helpers/replayTape';
 
-const mint = 'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf';
-const sourceSha = '1'.repeat(64);
 const tempDirs: string[] = [];
 
 afterEach(async () => {
@@ -31,40 +32,6 @@ const resign = (value: any): any => {
     return value;
 };
 
-const trade = (index: number): NormalizedTradeEvent => ({
-    kind: 'trade',
-    source: 'old_faithful',
-    sourceEventId: `source:${index}`,
-    idempotencyKey: index.toString(16).padStart(64, '0'),
-    tokenMint: mint,
-    maker: `wallet-${index}`,
-    side: index === 1 ? 'sell' : 'buy',
-    priceSol: index + 1,
-    slot: 42 + index,
-    txIndex: 0,
-    instructionIndex: 0,
-    eventIndex: 0,
-    observedAt: new Date(Date.UTC(2024, 10, 19, 0, 0, index * 10)).toISOString(),
-    receivedAt: new Date(Date.UTC(2024, 10, 19, 0, 0, index * 10)).toISOString(),
-    confidence: 1,
-    stale: false,
-});
-
-const replay = (count = 3): MetricReplay => {
-    const sourceTrades = Array.from({ length: count }, (_, index) => trade(index));
-    const priced = [0, 2].filter((index) => index < count).map((index) => ({
-        ...sourceTrades[index],
-        priceUsd: (index + 1) * 100,
-        usdAmount: (index + 1) * 20,
-        usdSourceEventId: `fx:${index}`,
-    }));
-    return {
-        source: { mint, trades: sourceTrades.length, replaySha256: sourceSha },
-        sourceTrades,
-        trades: priced,
-    } as unknown as MetricReplay;
-};
-
 describe('replay projection checkpoints', () => {
     it('restores a cut and deterministically continues without stale work', () => {
         const source = replay();
@@ -73,7 +40,7 @@ describe('replay projection checkpoints', () => {
         baseline.resume();
         baselineProjection.apply(baseline.next()!);
         baselineProjection.apply(baseline.next()!);
-        expect(() => baselineProjection.checkpoint(baseline)).toThrow('Running');
+        expect(() => baselineProjection.checkpoint(baseline)).toThrow('running replay');
         baseline.pause();
 
         const midpoint = baselineProjection.checkpoint(baseline);
@@ -269,7 +236,15 @@ describe('replay scheduler', () => {
             coordinator,
             (event) => projection.apply(event),
             { nowMs: () => 0, wait: async () => undefined }
-        ).run('max')).resolves.toMatchObject({ emitted: 2, snapshot: { status: 'complete' } });
+        ).run('max', undefined, 2)).resolves.toMatchObject({
+            emitted: 1,
+            snapshot: { cursor: 2, status: 'paused' },
+        });
+        await expect(new ReplayScheduler(
+            coordinator,
+            (event) => projection.apply(event),
+            { nowMs: () => 0, wait: async () => undefined }
+        ).run('max')).resolves.toMatchObject({ emitted: 1, snapshot: { status: 'complete' } });
     });
 
     it('yields maximum-speed work in bounded bursts and rejects a second driver', async () => {
@@ -317,5 +292,11 @@ describe('replay scheduler', () => {
         });
         await expect(backward.run(1)).rejects.toThrow('not monotonic');
         expect(timed.snapshot()).toMatchObject({ cursor: 0, status: 'paused' });
+        await expect(backward.run('max', undefined, 4)).rejects.toThrow('target cursor');
+
+        const stopped = new ReplayCoordinator(replay(), 'stopped-checkpoint');
+        const projection = ReplayProjection.start(stopped);
+        stopped.stop();
+        expect(() => projection.checkpoint(stopped)).toThrow('stopped replay');
     });
 });

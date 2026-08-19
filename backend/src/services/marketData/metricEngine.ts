@@ -1,4 +1,4 @@
-import { fervorSupplyContract, type FervorSupplyInput } from '../../types';
+import { fervorSupplyContract, type FervorSupplyInput } from '../../types/marketData';
 import { parseU64 } from '../../types/amount';
 
 export const fervorMetricSource = 'fervor_engine' as const;

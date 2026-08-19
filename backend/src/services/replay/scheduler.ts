@@ -58,16 +58,25 @@ export class ReplayScheduler {
 
     async run(
         value: unknown,
-        signal: AbortSignal = new AbortController().signal
+        signal: AbortSignal = new AbortController().signal,
+        untilValue?: unknown
     ): Promise<ReplayRun> {
         const speed = parseReplaySpeed(value);
         if (this.active) throw new Error('Replay scheduler is already active');
         const before = this.coordinator.snapshot();
+        const until = untilValue === undefined ? before.total : untilValue;
+        if (!Number.isSafeInteger(until)
+            || (until as number) < before.cursor
+            || (until as number) > before.total) {
+            throw new Error('Replay scheduler target cursor is invalid');
+        }
         if (before.status === 'complete') return { emitted: 0, snapshot: before };
         if (before.status !== 'paused') {
             throw new Error(`Replay scheduler cannot run a ${before.status} replay`);
         }
-        if (signal.aborted) return { emitted: 0, snapshot: before };
+        if (signal.aborted || until === before.cursor) {
+            return { emitted: 0, snapshot: before };
+        }
         const wallStart = this.timer.nowMs();
         if (!Number.isFinite(wallStart) || wallStart < 0) {
             throw new Error('Replay scheduler timer is invalid');
@@ -108,16 +117,22 @@ export class ReplayScheduler {
                     if (this.coordinator.currentStatus() !== 'running') break;
                 }
 
+                let cursor = -1;
                 try {
                     const event = this.coordinator.next();
                     if (event === undefined) break;
                     this.sink(event);
+                    cursor = event.cursor + 1;
                 } catch (error) {
                     this.coordinator.stop();
                     throw error;
                 }
                 emitted += 1;
                 burst += 1;
+                if (cursor === until) {
+                    if (this.coordinator.currentStatus() === 'running') this.coordinator.pause();
+                    break;
+                }
             }
             return { emitted, snapshot: this.coordinator.snapshot() };
         } finally {

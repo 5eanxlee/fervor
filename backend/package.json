@@ -20,6 +20,7 @@
         "dev:egress-recovery": "ts-node-dev --respawn --transpile-only src/egress-recovery.ts",
         "dev:blob-retention": "ts-node-dev --respawn --transpile-only src/blob-retention.ts",
         "project:replay": "node dist/metric-replay.js",
+        "replay:lab": "node dist/replay-lab.js",
         "build": "tsc",
         "test": "vitest run",
         "start": "node dist/index.js",

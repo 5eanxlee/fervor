@@ -14,6 +14,10 @@ A caller supplies the run ID. Every seek treats its target as the next event ind
 
 `scheduler.ts` is the only wall-time pacing layer. It supports 1x, 20x, 100x, and maximum speed while the coordinator remains the sole owner of event time. Finite speeds use cumulative monotonic deadlines, so projection work reduces the following delay instead of accumulating drift. Maximum speed yields every 512 events to keep pause and abort controls responsive. A pause or abort cannot cross the next event boundary; a sink failure stops the run because its cursor can no longer be assumed to match downstream state.
 
+`runtime.ts` is the single control owner. It serializes play, pause, step, seek, checkpoint, and stop over one coordinator and projection; seek restores the nearest source-and-contract checkpoint on the same epoch-fenced coordinator before replaying to the exact target. The runtime refuses inherited database, Redis, live-provider, wallet, KMS, transaction, Telegram, Discord, and cloud-credential environment variables without reading or logging their values.
+
+`replay-lab.ts` exposes that owner as newline-delimited JSON over stdin and stdout, not an HTTP listener. It imports no application environment loader and starts paused after verifying the corpus. Launch it from a clean environment with `npm run replay:lab --workspace backend -- --replay <dir> --checkpoints <dir> --run <id>`. Commands are `status`, `play`, `pause`, `step`, `seek`, `checkpoint`, and `stop`; graceful EOF or a termination signal pauses and checkpoints before exit.
+
 Run its focused verification with:
 
 ```bash
