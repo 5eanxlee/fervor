@@ -1,0 +1,219 @@
+{
+  "contract": "fervor-replay-control-evidence-v1",
+  "recordedAt": "2026-08-19T08:19:43Z",
+  "sourceCommit": "181ad0266a4565e9897475c84f796e7309bb62fa",
+  "gcp": {
+    "project": "phonic-chariot-501107-j5",
+    "zone": "europe-west4-a",
+    "vm": "fervor-replay-lab-20260818",
+    "repoHead": "181ad0266a4565e9897475c84f796e7309bb62fa"
+  },
+  "image": {
+    "tag": "fervor-backend:test-181ad02",
+    "id": "sha256:dfd25f575f742861762bc90c61b488565b5ce0f701c384ed8f6949445fb30591",
+    "createdAt": "2026-08-19T08:14:30.191184698Z",
+    "bytes": 469713342
+  },
+  "run": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "runId": "portfolio-gcp",
+    "sessionId": "e6c3b2aac1547371b26385a6b5eab321ae004488b5aaaf7e2c9a2c4c795a39e5",
+    "initialCut": {
+      "epoch": 4,
+      "cursor": 60,
+      "fact": 6,
+      "now": "2024-11-20T03:49:32.000Z",
+      "status": "paused",
+      "orderCount": 2
+    },
+    "totalEvents": 5516,
+    "paperModelSha256": "dc2bd54f846c381e4fae270858566670be5308cea23b1b43e6c6db075df11bbf",
+    "alertModelSha256": "d9dbfe3fe8d1fd3cb0f1f32c4f6e86064667d543821da98e4d704fbdbd29c09b"
+  },
+  "controls": {
+    "endpoint": "/api/replay/v1/runs/portfolio-gcp/controls",
+    "commandContract": "fervor-replay-control-command-v1",
+    "resultContract": "fervor-replay-control-action-v1",
+    "play": {
+      "httpStatus": 202,
+      "speed": 1,
+      "requested": {
+        "epoch": 4,
+        "cursor": 60,
+        "fact": 6
+      },
+      "accepted": {
+        "epoch": 4,
+        "cursor": 60,
+        "fact": 6,
+        "busy": true,
+        "mutating": false,
+        "status": "running"
+      }
+    },
+    "pause": {
+      "httpStatus": 200,
+      "requested": {
+        "epoch": 4,
+        "cursor": 0,
+        "fact": 999
+      },
+      "applied": true,
+      "result": {
+        "epoch": 4,
+        "cursor": 75,
+        "fact": 6,
+        "now": "2024-11-20T03:49:43.000Z",
+        "busy": false,
+        "mutating": false,
+        "status": "paused"
+      },
+      "retry": {
+        "httpStatus": 200,
+        "applied": false,
+        "cursor": 75,
+        "fact": 6
+      }
+    },
+    "step": {
+      "httpStatus": 200,
+      "requestedCursor": 75,
+      "applied": true,
+      "resultCursor": 76,
+      "resultFact": 6,
+      "now": "2024-11-20T03:49:44.000Z",
+      "tradeId": "662b2c573d9632da134810c447e8b5fd55bf3033630e033c45b0d6f8539c42e4",
+      "staleRetry": {
+        "httpStatus": 409,
+        "contract": "fervor-replay-resync-v1",
+        "reason": "cursor_changed",
+        "requestedCursor": 75,
+        "cutCursor": 76
+      }
+    },
+    "noOpSeek": {
+      "httpStatus": 200,
+      "target": 76,
+      "applied": false,
+      "epoch": 4,
+      "cursor": 76,
+      "orderCount": 2,
+      "factCount": 6
+    },
+    "backwardSeek": {
+      "httpStatus": 200,
+      "target": 60,
+      "applied": true,
+      "result": {
+        "epoch": 5,
+        "cursor": 60,
+        "fact": 0,
+        "orderCount": 0,
+        "status": "paused"
+      },
+      "stalePause": {
+        "httpStatus": 409,
+        "reason": "epoch_changed",
+        "requestedEpoch": 4,
+        "cutEpoch": 5
+      }
+    },
+    "maxPlayback": {
+      "httpStatus": 202,
+      "speed": "max",
+      "acceptedCursor": 572,
+      "completed": {
+        "httpStatus": 200,
+        "epoch": 5,
+        "cursor": 5516,
+        "now": "2024-11-20T03:59:53.000Z",
+        "status": "complete",
+        "tradeId": "e96648988ad125e4d842e71a30075f20def4dc32749c2117b5c500c17dc60288"
+      }
+    },
+    "returnToDemoCut": {
+      "httpStatus": 200,
+      "target": 60,
+      "epoch": 6,
+      "cursor": 60,
+      "fact": 0,
+      "status": "paused"
+    }
+  },
+  "recovery": {
+    "explicitCheckpoint": {
+      "seq": 4,
+      "cursor": 60,
+      "checkpointSha256": "3c0eda6f4f6cda2faa66850d96a7841936d726b1fe538a622e3255d054d69916"
+    },
+    "gracefulStopCheckpoint": {
+      "seq": 5,
+      "parentSha256": "3c0eda6f4f6cda2faa66850d96a7841936d726b1fe538a622e3255d054d69916",
+      "checkpointSha256": "a7427671325c3972f97d67a93b38265c4295e6891043ff95be2ff92ac8483011",
+      "fileSha256": "e61d1a3620c0b993c87f518417076629cc569d9f989ba82a80d0cefe54aeb071"
+    },
+    "restoredCut": {
+      "httpStatus": 200,
+      "epoch": 7,
+      "cursor": 60,
+      "now": "2024-11-20T03:49:32.000Z",
+      "status": "paused",
+      "orderCount": 0,
+      "factCount": 0
+    },
+    "archive": {
+      "uri": "gs://fervor-replay-phonic-chariot-501107-j5/checkpoints/quant-2024-11-19/control-181ad02/session-seq-5.tar.gz",
+      "sha256": "3fdf88214e28fb57012eac2ee608488b2d1586c598bc72fc595ce62c4756503f",
+      "bytes": 19219,
+      "generation": "1787127567744754",
+      "deterministicRebuildMatched": true
+    }
+  },
+  "rawEvidence": {
+    "uri": "gs://fervor-replay-phonic-chariot-501107-j5/evidence/quant-2024-11-19/replay-control-v1/http-responses.tar.gz",
+    "sha256": "07c287952de9e39f5fc4c22311f514c1feb244913b4fd3c53cc4a231d6dd653b",
+    "bytes": 3898,
+    "generation": "1787127570312536",
+    "credentialValuesRecorded": false
+  },
+  "tests": {
+    "local": {
+      "passedFiles": 58,
+      "skippedFiles": 14,
+      "passedTests": 375,
+      "skippedTests": 60,
+      "durationMs": 2050
+    },
+    "gcp": {
+      "container": "replay-control-test-181ad02",
+      "exitCode": 0,
+      "passedFiles": 58,
+      "skippedFiles": 14,
+      "passedTests": 375,
+      "skippedTests": 60,
+      "durationMs": 4060
+    }
+  },
+  "sandbox": {
+    "qualificationContainer": "replay-control-api-181ad02",
+    "restoreContainer": "replay-control-restore-181ad02",
+    "restoreStatus": "running",
+    "network": "none",
+    "readOnlyRoot": true,
+    "user": "node",
+    "capDrop": [
+      "ALL"
+    ],
+    "noNewPrivileges": true,
+    "egressProbe": "ENETUNREACH"
+  },
+  "effects": {
+    "realProviderCalls": 0,
+    "transactions": 0,
+    "messagesSent": 0,
+    "databaseWrites": 0,
+    "redisWrites": 0,
+    "credentialValuesRecorded": false
+  }
+}
