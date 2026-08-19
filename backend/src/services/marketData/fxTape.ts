@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { PriceSource, RefPrice, SOL_MINT } from '../referencePriceService';
+import type { PriceSource, RefPrice } from '../referencePriceService';
 
 export const fxTapeContract = 'fervor-fx-tape-v1' as const;
 export const fxPolicy = 'fervor-sol-usd-v1' as const;
 export const stablePolicy = 'fervor-stable-usd-v1' as const;
 
+export const SOL_MINT = 'So11111111111111111111111111111111111111112';
 export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 export const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const stableMints = new Set([USDC_MINT, USDT_MINT]);

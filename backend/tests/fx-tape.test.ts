@@ -5,12 +5,12 @@ import { NormalizedTradeEvent } from '../src/types';
 import {
     FxPoint,
     FxTapeSource,
+    SOL_MINT,
     USDC_MINT,
     fxPolicy,
     stablePolicy,
 } from '../src/services/marketData/fxTape';
 import { TradeEnricher } from '../src/services/marketData/tradeEnricher';
-import { SOL_MINT } from '../src/services/referencePriceService';
 
 const pool = '58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2';
 

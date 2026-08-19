@@ -2,13 +2,14 @@ import { env } from './config/env';
 import { NormalizedTradeEvent } from './types';
 import { MarketEventStorageService } from './services/marketData/marketEventStorageService';
 import { isDecodedTrade, TradeEnricher } from './services/marketData/tradeEnricher';
+import { referencePrices } from './services/referencePriceService';
 import { redisStreams, STREAMS, StreamMessage } from './services/redisStreamService';
 import { mapConcurrent, uniqueStreamMessages } from './services/streamWorker';
 import { closeRuntime } from './runtime';
 
 const group = 'trade-enrichers';
 const consumer = `trade-enricher-${process.pid}`;
-const enricher = new TradeEnricher();
+const enricher = new TradeEnricher(referencePrices);
 const storage = new MarketEventStorageService();
 let running = true;
 

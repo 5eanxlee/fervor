@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { fervorSupplyContract, NormalizedTradeEvent } from '../../types';
 import { amountSchema } from '../../types/amount';
 import { addressSchema, signatureSchema } from '../../types/execution';
-import { PriceSource, RefPrice, referencePrices } from '../referencePriceService';
+import type { PriceSource, RefPrice } from '../referencePriceService';
 
 const positive = z.number().positive().finite();
 const safeUint = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
@@ -104,7 +104,7 @@ export const applyQuoteUsd = (trade: NormalizedTradeEvent, quote: RefPrice): Nor
 });
 
 export class TradeEnricher {
-    constructor(private readonly prices: PriceSource = referencePrices) {}
+    constructor(private readonly prices: PriceSource) {}
 
     async enrich(trade: NormalizedTradeEvent): Promise<NormalizedTradeEvent | null> {
         if (!isDecodedTrade(trade)) return null;

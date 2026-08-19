@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateCandles, CANDLE_INTERVALS, isCandleTrade } from '../src/services/marketData/candleProjector';
+import { aggregateCandles, CANDLE_INTERVALS, isCandleTrade } from '../src/services/marketData/candleEngine';
 import { NormalizedTradeEvent } from '../src/types';
 
 const trade = (input: Partial<NormalizedTradeEvent> = {}): NormalizedTradeEvent => ({
