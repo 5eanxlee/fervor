@@ -1,0 +1,257 @@
+{
+  "contract": "fervor-replay-product-evidence-v1",
+  "recordedAt": "2026-08-19T07:47:51Z",
+  "sourceCommit": "c1d4929242ab0c753bfe9e4280e0d324ba897883",
+  "gcp": {
+    "project": "phonic-chariot-501107-j5",
+    "zone": "europe-west4-a",
+    "vm": "fervor-replay-lab-20260818",
+    "repoHead": "c1d4929242ab0c753bfe9e4280e0d324ba897883"
+  },
+  "image": {
+    "tag": "fervor-backend:test-c1d4929",
+    "id": "sha256:4308275815bbdf1baa08b6cd348e78966eb658b1eeb14de3dd3d62e840c1fef6",
+    "createdAt": "2026-08-19T07:40:02.985822152Z",
+    "bytes": 469705304
+  },
+  "run": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "runId": "portfolio-gcp",
+    "sessionId": "e6c3b2aac1547371b26385a6b5eab321ae004488b5aaaf7e2c9a2c4c795a39e5",
+    "snapshot": {
+      "epoch": 3,
+      "cursor": 60,
+      "total": 5516,
+      "status": "paused",
+      "now": "2024-11-20T03:49:32.000Z"
+    },
+    "paperModelSha256": "dc2bd54f846c381e4fae270858566670be5308cea23b1b43e6c6db075df11bbf",
+    "alertModelSha256": "d9dbfe3fe8d1fd3cb0f1f32c4f6e86064667d543821da98e4d704fbdbd29c09b"
+  },
+  "paper": {
+    "httpStatus": 200,
+    "contract": "fervor-replay-paper-page-v1",
+    "request": {
+      "epoch": 3,
+      "cursor": 60,
+      "fact": 4,
+      "orderAfter": 0,
+      "factAfter": 0,
+      "limit": 2
+    },
+    "orders": {
+      "total": 1,
+      "next": null,
+      "items": [
+        {
+          "id": "portfolio-buy",
+          "kind": "market",
+          "side": "buy",
+          "status": "filled",
+          "filledInputRaw": "10000000",
+          "netOutputRaw": "168671945910"
+        }
+      ]
+    },
+    "facts": {
+      "total": 4,
+      "firstNext": 2,
+      "first": [
+        {
+          "seq": 0,
+          "kind": "intent",
+          "cursor": 0
+        },
+        {
+          "seq": 1,
+          "kind": "eligible",
+          "cursor": 1
+        }
+      ],
+      "tailNext": null,
+      "tail": [
+        {
+          "seq": 2,
+          "kind": "fill",
+          "cursor": 20
+        },
+        {
+          "seq": 3,
+          "kind": "filled",
+          "cursor": 20
+        }
+      ]
+    },
+    "portfolio": {
+      "contract": "fervor-paper-portfolio-v1",
+      "orderCount": 1,
+      "factCount": 4,
+      "fillCount": 1,
+      "basisComplete": true,
+      "position": {
+        "openQuantityRaw": "168671945910",
+        "openCostRaw": "10000000",
+        "realizedPnlRaw": "0",
+        "unmatchedSoldRaw": "0"
+      },
+      "portfolioSha256": "5823629fa14a70435c6d51baf17ba5bde0750297cf7a3fa9ab8b8f01a77c1be2"
+    }
+  },
+  "wallet": {
+    "httpStatus": 200,
+    "wallet": "Fi2hrxExy6TJnKcbPtQpo6iZzX9SUVbB9mDw6d29NgCn",
+    "request": {
+      "epoch": 3,
+      "cursor": 60,
+      "after": 0,
+      "limit": 1
+    },
+    "page": {
+      "contract": "fervor-replay-wallet-page-v1",
+      "nextCursor": 1,
+      "cutCursor": 60,
+      "item": {
+        "cursor": 0,
+        "side": "buy",
+        "tradeId": "b00e19ed1d8455bfafc7622b2250e6bb80e1d47cc1279b7089570c9d13504aa2",
+        "tokenDeltaRaw": "51095238095238",
+        "quoteDeltaRaw": "-1540887680"
+      }
+    },
+    "portfolio": {
+      "contract": "fervor-replay-wallet-portfolio-v1",
+      "tradeCount": 1,
+      "buyCount": 1,
+      "sellCount": 0,
+      "observedBasisComplete": true,
+      "markCursor": 59,
+      "openQuantityRaw": "51095238095238",
+      "openCostRaw": "1540887680",
+      "unrealizedPnlRaw": "2416621910",
+      "portfolioSha256": "9368e32830ba3a3c149e145474fafdf1ee8aa2aae1dec0a58face1846deca135"
+    },
+    "staleCut": {
+      "httpStatus": 409,
+      "contract": "fervor-replay-resync-v1",
+      "reason": "cursor_changed",
+      "requestedCursor": 59,
+      "currentCursor": 60
+    }
+  },
+  "inbox": {
+    "httpStatus": 200,
+    "request": {
+      "epoch": 3,
+      "cursor": 60,
+      "after": 0,
+      "limit": 1
+    },
+    "contract": "fervor-replay-notification-page-v1",
+    "triggeredCount": 4,
+    "armedCount": 0,
+    "unavailableCount": 1,
+    "unavailableTypes": [
+      "market_cap"
+    ],
+    "next": 1,
+    "first": {
+      "notificationKey": "2d8cb0e5cadb34733bed44be64af447e2a3ecc6992e68059d5499fdd3da704e3",
+      "contract": "fervor-replay-wallet-in-app-v1",
+      "activityCursor": 14,
+      "status": "available",
+      "external": false
+    }
+  },
+  "sameCursor": {
+    "placed": {
+      "id": "gcp-same-cut",
+      "kind": "limit",
+      "side": "buy",
+      "inputRaw": "1",
+      "placedCursor": 60,
+      "status": "pending",
+      "providerCalls": 0,
+      "transactions": 0
+    },
+    "priorRevision": {
+      "httpStatus": 409,
+      "contract": "fervor-replay-resync-v1",
+      "reason": "paper_changed",
+      "requested": {
+        "epoch": 3,
+        "cursor": 60,
+        "fact": 4
+      },
+      "cut": {
+        "epoch": 3,
+        "cursor": 60,
+        "fact": 5
+      }
+    },
+    "currentRevision": {
+      "httpStatus": 200,
+      "fact": 5,
+      "orderCount": 2,
+      "factCount": 5,
+      "orders": [
+        {
+          "id": "portfolio-buy",
+          "status": "filled"
+        },
+        {
+          "id": "gcp-same-cut",
+          "status": "pending"
+        }
+      ],
+      "portfolioSha256": "db02dd894677b46040f1afd8407c8f63f1946111bff3083adbb1313442198bfc"
+    },
+    "checkpoint": {
+      "seq": 2,
+      "cursor": 60,
+      "checkpointSha256": "27ce028b6ca57aefde790928d05f3727f8d92c6c7d5dcc8aed3c7b76b483c696",
+      "archive": "gs://fervor-replay-phonic-chariot-501107-j5/checkpoints/quant-2024-11-19/product-c1d4929/session-seq-2.tar.gz",
+      "archiveSha256": "b8253ef15131872a8dd2aa86f8df1cd0c529114e39247be38ce0899925de97ee",
+      "archiveBytes": 12092,
+      "generation": "1787125649065937"
+    }
+  },
+  "tests": {
+    "local": {
+      "passedFiles": 58,
+      "skippedFiles": 14,
+      "passedTests": 372,
+      "skippedTests": 60
+    },
+    "gcp": {
+      "container": "replay-product-test-c1d4929",
+      "exitCode": 0,
+      "passedFiles": 58,
+      "skippedFiles": 14,
+      "passedTests": 372,
+      "skippedTests": 60,
+      "durationMs": 4040
+    }
+  },
+  "sandbox": {
+    "apiContainer": "replay-product-api-c1d4929",
+    "status": "running",
+    "network": "none",
+    "readOnlyRoot": true,
+    "capDrop": [
+      "ALL"
+    ],
+    "noNewPrivileges": true,
+    "egressProbe": "ENETUNREACH",
+    "originalApiContainer": "running",
+    "deltaApiContainer": "running"
+  },
+  "effects": {
+    "realProviderCalls": 0,
+    "transactions": 0,
+    "messagesSent": 0,
+    "databaseWrites": 0,
+    "redisWrites": 0,
+    "credentialValuesRecorded": false
+  }
+}
