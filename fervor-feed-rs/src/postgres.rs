@@ -103,8 +103,8 @@ fn log_connection_error(service: &str, error: &tokio_postgres::Error) {
 mod tests {
     use super::*;
     use rcgen::{
-        BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, KeyPair,
-        KeyUsagePurpose,
+        BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose,
+        IsCa, KeyPair, KeyUsagePurpose,
     };
     use rustls::pki_types::PrivatePkcs8KeyDer;
     use std::net::{TcpListener, TcpStream};
@@ -113,6 +113,10 @@ mod tests {
 
     fn test_peer() -> (Arc<rustls::ServerConfig>, String) {
         let mut ca_params = CertificateParams::new(vec!["fervor-test-ca".into()]).unwrap();
+        ca_params.distinguished_name = DistinguishedName::new();
+        ca_params
+            .distinguished_name
+            .push(DnType::CommonName, "Fervor test CA");
         ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca_params.key_usages = vec![
             KeyUsagePurpose::DigitalSignature,
@@ -123,6 +127,11 @@ mod tests {
         let ca_cert = ca_params.self_signed(&ca_key).unwrap();
 
         let mut server_params = CertificateParams::new(vec!["localhost".into()]).unwrap();
+        server_params.distinguished_name = DistinguishedName::new();
+        server_params
+            .distinguished_name
+            .push(DnType::CommonName, "localhost");
+        server_params.use_authority_key_identifier_extension = true;
         server_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
         let server_key = KeyPair::generate().unwrap();
         let server_cert = server_params
