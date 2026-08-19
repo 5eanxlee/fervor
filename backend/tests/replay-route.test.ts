@@ -104,6 +104,18 @@ describe('replay host route', () => {
         expect(call).not.toHaveBeenCalled();
     });
 
+    it('allows authenticated users when the private lab has no owner allowlist', async () => {
+        mockedQuery.mockResolvedValueOnce({ rows: [user(otherId)] } as any);
+        const call = vi.fn().mockResolvedValue({ status: 200, body: { success: true } });
+        const app = appWith({ enabled: true, call });
+
+        await request(app)
+            .get('/api/replay/v1/snapshot')
+            .set('Authorization', `Bearer ${token(otherId)}`)
+            .expect(200);
+        expect(call).toHaveBeenCalledOnce();
+    });
+
     it('requires a Fervor user even when replay hosting is disabled', async () => {
         const call = vi.fn();
         const app = appWith({ enabled: false, call });

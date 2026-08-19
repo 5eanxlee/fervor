@@ -45,7 +45,7 @@ export const createReplayRouter = (gateway: ReplayGateway): Router => {
     router.use(authenticateToken);
     router.use((req: AuthRequest, res, next) => {
         if (!gateway.enabled) return next();
-        if (req.user!.id !== gateway.ownerId) {
+        if (gateway.ownerId && req.user!.id !== gateway.ownerId) {
             return res.status(404).json({ success: false, error: 'Replay route not found' });
         }
         next();

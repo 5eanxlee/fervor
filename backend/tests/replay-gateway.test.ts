@@ -39,7 +39,8 @@ const harness = async (
     handler: Parameters<typeof createServer>[0],
     suppliedToken = token,
     maxBytes = 2_097_152,
-    timeoutMs = 1_000
+    timeoutMs = 1_000,
+    userId: string | null = ownerId
 ) => {
     const root = await mkdtemp(path.join(os.tmpdir(), 'fervor-replay-gateway-'));
     tempDirs.push(root);
@@ -60,7 +61,7 @@ const harness = async (
         REPLAY_API_SOCKET: socket,
         REPLAY_API_AUTH_FILE: authFile,
         REPLAY_API_TOKEN_FILE: tokenFile,
-        REPLAY_API_USER_ID: ownerId,
+        REPLAY_API_USER_ID: userId ?? undefined,
         REPLAY_API_TIMEOUT_MS: timeoutMs,
         REPLAY_API_MAX_BYTES: maxBytes,
     });
@@ -114,6 +115,21 @@ describe('replay host gateway', () => {
         });
     });
 
+    it('supports an authenticated shared lab without weakening upstream credentials', async () => {
+        const gateway = await harness(
+            (_req, res) => res.end(JSON.stringify(envelope())),
+            token,
+            2_097_152,
+            1_000,
+            null
+        );
+
+        expect(gateway.enabled).toBe(true);
+        expect(gateway.ownerId).toBeUndefined();
+        await expect(gateway.call({ method: 'GET', resource: 'snapshot' }))
+            .resolves.toMatchObject({ status: 200, body: { mode: replayApiMode } });
+    });
+
     it('rejects route escape, credential drift, and response identity drift', async () => {
         const good = await harness((_req, res) => res.end(JSON.stringify(envelope())));
         await expect(good.call({
@@ -156,6 +172,15 @@ describe('replay host gateway', () => {
         } as NodeJS.ProcessEnv;
         expect(() => parseEnv({ ...base, REPLAY_API_SOCKET: '/run/replay.sock' }))
             .toThrow(/configured together/);
+        expect(() => parseEnv({ ...base, REPLAY_API_USER_ID: ownerId }))
+            .toThrow(/configured together/);
+        expect(parseEnv({
+            ...base,
+            REPLAY_API_SOCKET: '/run/replay.sock',
+            REPLAY_API_AUTH_FILE: '/run/auth.json',
+            REPLAY_API_TOKEN_FILE: '/run/token',
+            REPLAY_API_USER_ID: '',
+        }).REPLAY_API_USER_ID).toBeUndefined();
         expect(() => parseEnv({
             ...base,
             REPLAY_API_SOCKET: 'replay.sock',

@@ -48,6 +48,13 @@ const optionalPath = z.preprocess((value) => {
     return trimmed === '' ? undefined : trimmed;
 }, z.string().refine(path.isAbsolute, 'Path must be absolute').optional());
 
+const optionalUuid = z.preprocess((value) => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    return trimmed === '' ? undefined : trimmed;
+}, z.string().uuid().optional());
+
 const optionalDatabaseUrl = z.preprocess((value) => {
     if (value === undefined || value === null) return undefined;
     if (typeof value !== 'string') return value;
@@ -136,7 +143,7 @@ const EnvSchema = z.object({
     REPLAY_API_SOCKET: optionalPath,
     REPLAY_API_AUTH_FILE: optionalPath,
     REPLAY_API_TOKEN_FILE: optionalPath,
-    REPLAY_API_USER_ID: z.string().uuid().optional(),
+    REPLAY_API_USER_ID: optionalUuid,
     REPLAY_API_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(3_000),
     REPLAY_API_MAX_BYTES: z.coerce.number().int().min(16_384).max(16_777_216).default(2_097_152),
     RT_AUTH_MS: z.coerce.number().int().min(100).max(30_000).default(5_000),
@@ -259,14 +266,13 @@ const EnvSchema = z.object({
         value.REPLAY_API_SOCKET,
         value.REPLAY_API_AUTH_FILE,
         value.REPLAY_API_TOKEN_FILE,
-        value.REPLAY_API_USER_ID,
     ];
 
-    if (replay.some(Boolean) && !replay.every(Boolean)) {
+    if ((replay.some(Boolean) || value.REPLAY_API_USER_ID) && !replay.every(Boolean)) {
         ctx.addIssue({
             code: z.ZodIssueCode.custom,
             path: ['REPLAY_API_SOCKET'],
-            message: 'Replay API socket, auth file, token file, and user ID must be configured together',
+            message: 'Replay API socket, auth file, and token file must be configured together',
         });
     }
 

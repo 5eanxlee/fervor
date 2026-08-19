@@ -44,11 +44,12 @@ const user = (id = ownerId): User => ({
 
 class FakeFeed {
     readonly enabled = true;
-    readonly ownerId = ownerId;
     readonly ready = vi.fn(async () => undefined);
     readonly close = vi.fn(async () => undefined);
     readonly seed = vi.fn(() => ({ frames: [snapshot], resumed: false }));
     private readonly listeners = new Set<(frame: RtFrame) => void>();
+
+    constructor(readonly ownerId?: string) {}
 
     hello(): RtHello {
         return hello;
@@ -91,12 +92,15 @@ const listen = (server: Server): Promise<number> => new Promise((resolve, reject
     });
 });
 
-const createHarness = async (authenticated = user()): Promise<Harness> => {
+const createHarness = async (
+    authenticated = user(),
+    owner: string | null = ownerId
+): Promise<Harness> => {
     const http = createServer((_req, res) => {
         res.statusCode = 404;
         res.end();
     });
-    const feed = new FakeFeed();
+    const feed = new FakeFeed(owner ?? undefined);
     const realtime = attachRealtime(http, {
         feed,
         allowOrigin: (origin) => origin === 'http://localhost:3002',
@@ -229,6 +233,19 @@ describe('realtime WebSocket server', () => {
             frame: { type: 'error', code: 'forbidden', retryable: false },
         });
         expect(test.feed.ready).not.toHaveBeenCalled();
+    });
+
+    it('accepts authenticated users when a private lab has no owner allowlist', async () => {
+        const test = await createHarness(user('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'), null);
+        const socket = await connect(test.url);
+        const helloReply = nextFrame(socket);
+        send(socket, { contract: rtContract, op: 'auth', token });
+        await expect(helloReply).resolves.toMatchObject({
+            binary: true,
+            frame: { type: 'hello', sessionId: hello.sessionId },
+        });
+        expect(test.feed.ready).toHaveBeenCalledOnce();
+        socket.close();
     });
 
     it('encodes one immutable source frame once for every subscriber', async () => {

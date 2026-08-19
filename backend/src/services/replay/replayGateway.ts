@@ -76,6 +76,9 @@ export type ReplayEnv = Pick<Env,
 export type ReplayCode = 'not_configured' | 'invalid_request' | 'credential_invalid'
     | 'unavailable' | 'invalid_response';
 
+type ReplayConfig = Required<Omit<ReplayEnv, 'REPLAY_API_USER_ID'>>
+    & Pick<ReplayEnv, 'REPLAY_API_USER_ID'>;
+
 export class ReplayGatewayError extends Error {
     constructor(
         readonly code: ReplayCode,
@@ -163,10 +166,10 @@ const parseReply = (
 
 class UnixReplayGateway implements ReplayGateway {
     readonly enabled = true;
-    readonly ownerId: string;
+    readonly ownerId?: string;
     private credentials?: Promise<Credentials>;
 
-    constructor(private readonly config: Required<ReplayEnv>) {
+    constructor(private readonly config: ReplayConfig) {
         this.ownerId = config.REPLAY_API_USER_ID;
     }
 
@@ -298,7 +301,6 @@ const disabledGateway = (): ReplayGateway => Object.freeze({
 export const createReplayGateway = (config: ReplayEnv): ReplayGateway => {
     if (!config.REPLAY_API_SOCKET
         || !config.REPLAY_API_AUTH_FILE
-        || !config.REPLAY_API_TOKEN_FILE
-        || !config.REPLAY_API_USER_ID) return disabledGateway();
-    return new UnixReplayGateway(config as Required<ReplayEnv>);
+        || !config.REPLAY_API_TOKEN_FILE) return disabledGateway();
+    return new UnixReplayGateway(config as ReplayConfig);
 };

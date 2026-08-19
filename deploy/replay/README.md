@@ -32,4 +32,4 @@ curl --fail http://127.0.0.1:8080/health
 docker compose --env-file /secure/path/fervor-replay.env -f deploy/replay/compose.yml ps
 ```
 
-The replay owner ID is an ordinary authenticated Fervor user ID. For a one-user lab, authenticate an ephemeral, unfunded Solana keypair through the normal nonce/signature flow, place that UUID in `FERVOR_REPLAY_USER_ID`, and restart `api`. No chain transaction or funded wallet is required.
+Every replay caller must authenticate through the normal nonce/signature flow. A private lab accepts any authenticated demo session by default, which keeps an ephemeral replay wallet usable after browser storage is cleared. Set `FERVOR_REPLAY_USER_ID` to an ordinary Fervor user UUID only when the lab must be restricted to one account. No chain transaction or funded wallet is required.

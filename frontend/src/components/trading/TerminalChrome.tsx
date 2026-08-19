@@ -37,11 +37,14 @@ import TerminalSearchModal from './TerminalSearchModal';
 import DepositModal from './DepositModal';
 import type { SettingsSection } from './TerminalSettingsModal';
 
+const replayMode = process.env.NEXT_PUBLIC_DATA_MODE === 'replay';
+const replayMint = process.env.NEXT_PUBLIC_REPLAY_MINT?.trim();
 const nav = [
     { href: '/search', label: 'Trending' },
     { href: '/portfolio', label: 'Portfolio', key: 'portfolio' as const },
     { href: '/tracker', label: 'Track', key: 'watchlist' as const },
     { href: '/dashboard', label: 'Vision' },
+    ...(replayMode && replayMint ? [{ href: '/replay', label: 'Replay' }] : []),
 ];
 
 type Prices = Partial<Record<'sol' | 'bnb' | 'eth' | 'btc', number>>;
@@ -262,7 +265,9 @@ export function TerminalHeader({ onSettings, settings }: { onSettings: (section?
 
                     <nav className="hidden h-full min-w-0 items-center lg:flex">
                         {links.map(({ href, label }) => {
-                            const active = label === 'Vision'
+                            const active = label === 'Replay'
+                                ? pathname === '/replay'
+                                : label === 'Vision'
                                 ? pathname === '/dashboard' || pathname.startsWith('/trade/')
                                 : label === 'Track' ? pathname === '/tracker'
                                     : pathname === href;
