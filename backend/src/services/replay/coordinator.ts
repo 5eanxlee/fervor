@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { VirtualClock } from '../clock';
 import type { NormalizedTradeEvent } from '../../types';
 import type { MetricReplay } from '../marketData/metricReplay';
+import { hasTradeOrder, tradeOrder } from '../marketData/tradeOrder';
 
 export type ReplayStatus = 'paused' | 'running' | 'complete' | 'stopped';
 export const replayCutContract = 'fervor-replay-cut-v1' as const;
@@ -91,13 +92,16 @@ export class ReplayCoordinator {
         if (enriched.size !== replay.trades.length) {
             throw new Error('Replay projection contains duplicate trade identities');
         }
-        let priorMs = -1;
+        let prior: NormalizedTradeEvent | undefined;
         this.events = replay.sourceTrades.map((source) => {
             const observedMs = Date.parse(source.observedAt);
-            if (!Number.isSafeInteger(observedMs) || observedMs < priorMs) {
-                throw new Error('Replay trade tape is not ordered by event time');
+            if (!hasTradeOrder(source)
+                || !Number.isSafeInteger(observedMs)
+                || (prior !== undefined && (tradeOrder(prior, source) >= 0
+                    || observedMs < Date.parse(prior.observedAt)))) {
+                throw new Error('Replay trade tape is not in canonical chain order');
             }
-            priorMs = observedMs;
+            prior = source;
             const trade = enriched.get(source.idempotencyKey) ?? source;
             enriched.delete(source.idempotencyKey);
             return trade;

@@ -127,7 +127,7 @@ describe('FervorTx v1 contract', () => {
 
     it('matches the decoded trade accepted by the TypeScript enricher', () => {
         const fixture = JSON.parse(fs.readFileSync(
-            path.resolve(__dirname, '../../tests/contracts/decoded-trade-v1.json'),
+            path.resolve(__dirname, '../../tests/contracts/decoded-trade-v2.json'),
             'utf8'
         ));
         expect(decodedTradeSchema.parse(fixture)).toEqual(fixture);
@@ -136,7 +136,7 @@ describe('FervorTx v1 contract', () => {
 
     it('rejects supply evidence from another transaction', () => {
         const fixture = JSON.parse(fs.readFileSync(
-            path.resolve(__dirname, '../../tests/contracts/decoded-trade-v1.json'),
+            path.resolve(__dirname, '../../tests/contracts/decoded-trade-v2.json'),
             'utf8'
         ));
         fixture.supply.signature = bs58.encode(Buffer.alloc(64, 8));

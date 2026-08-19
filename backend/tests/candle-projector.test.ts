@@ -41,15 +41,15 @@ describe('candle projection', () => {
         expect(isCandleTrade({ kind: 'market_state' })).toBe(false);
     });
 
-    it('uses the idempotency key to order equal-time closes', () => {
+    it('uses chain position to order equal-time closes', () => {
         const candles = aggregateCandles([
-            trade({ idempotencyKey: 'a', priceUsd: 1 }),
-            trade({ idempotencyKey: 'b', priceUsd: 2 }),
+            trade({ idempotencyKey: 'a', priceUsd: 2, slot: 42, txIndex: 1, instructionIndex: 0, eventIndex: 0 }),
+            trade({ idempotencyKey: 'z', priceUsd: 1, slot: 42, txIndex: 0, instructionIndex: 0, eventIndex: 0 }),
         ]);
         expect(candles.find((candle) => candle.intervalName === '1s')).toMatchObject({
             closeUsd: 2,
-            closeKey: 'b',
-            openKey: 'a',
+            closeKey: 'a',
+            openKey: 'z',
         });
     });
 });

@@ -1,4 +1,5 @@
 import { NormalizedTradeEvent } from '../../types';
+import { tradeOrder } from './tradeOrder';
 
 export const CANDLE_INTERVALS = {
     '1s': 1_000,
@@ -45,11 +46,6 @@ export const isCandleTrade = (event: unknown): event is NormalizedTradeEvent => 
     if (!validNumber(trade.priceUsd) || trade.priceUsd <= 0) return false;
     if (trade.usdAmount !== undefined && (!validNumber(trade.usdAmount) || trade.usdAmount < 0)) return false;
     return Number.isFinite(Date.parse(String(trade.observedAt)));
-};
-
-const compareTrade = (left: NormalizedTradeEvent, right: NormalizedTradeEvent): number => {
-    const time = Date.parse(left.observedAt) - Date.parse(right.observedAt);
-    return time || left.idempotencyKey.localeCompare(right.idempotencyKey);
 };
 
 export const aggregateCandles = (events: NormalizedTradeEvent[]): CandleUpdate[] => {
@@ -100,13 +96,13 @@ export const aggregateCandles = (events: NormalizedTradeEvent[]): CandleUpdate[]
             candle.buyCount += event.side === 'buy' ? 1 : 0;
             candle.sellCount += event.side === 'sell' ? 1 : 0;
             candle.txCount += 1;
-            if (compareTrade(event, existing.open) < 0) {
+            if (tradeOrder(event, existing.open) < 0) {
                 existing.open = event;
                 candle.openAt = event.observedAt;
                 candle.openKey = event.idempotencyKey;
                 candle.openUsd = event.priceUsd!;
             }
-            if (compareTrade(event, existing.close) >= 0) {
+            if (tradeOrder(event, existing.close) >= 0) {
                 existing.close = event;
                 candle.closeAt = event.observedAt;
                 candle.closeKey = event.idempotencyKey;

@@ -62,6 +62,7 @@ export const decodedTradeSchema = z.object({
     priceUsd: positive.optional(),
     quoteKind: z.enum(['wsol', 'usdc', 'usdt', 'native_sol']),
     route: z.array(venue).min(1),
+    txIndex: safeUint,
     instructionIndex: z.number().int().min(0).max(0xffff_ffff),
     eventIndex: z.number().int().min(0).max(0xffff_ffff),
     slot: safeUint,

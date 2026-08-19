@@ -3,7 +3,7 @@
 This folder owns Fervor's normalized trade, price, candle, rolling-window, supply, FDV, and supported-liquidity semantics. Providers contribute observations; they do not contribute authoritative market cap or FDV values.
 
 ```text
-fervor-trade-v1
+fervor-trade-v2
       │
       ├─ quote price source ─> USD-enriched trade
       │                            │
@@ -15,6 +15,7 @@ fervor-trade-v1
 ## Ownership
 
 - `tradeEnricher.ts` is the shared quote-to-USD enrichment boundary.
+- `tradeOrder.ts` is the shared canonical slot, transaction, instruction, and event ordering rule; event time and identity are only the fallback for non-chain fixtures.
 - `fxTape.ts` validates and reads the historical `fervor-fx-tape-v1` contract. It never returns a point observed after the trade and never carries a point beyond `validUntil`.
 - `metricEngine.ts` is the canonical FDV and supported-liquidity derivation boundary. Circulating market cap remains unavailable.
 - `metricReplay.ts` verifies every source artifact and deterministically drives the same enrichment, candle, rolling-window, and metric engines under event time. It publishes through an atomic directory rename and refuses existing output.

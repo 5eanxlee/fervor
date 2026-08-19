@@ -21,6 +21,7 @@
   "priceSol": 2.0,
   "quoteKind": "wsol",
   "route": ["pump_fun"],
+  "txIndex": 0,
   "instructionIndex": 0,
   "eventIndex": 0,
   "slot": 42,

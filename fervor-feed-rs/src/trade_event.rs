@@ -6,7 +6,7 @@ use crate::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-pub const TRADE_CONTRACT: &str = "fervor-trade-v1";
+pub const TRADE_CONTRACT: &str = "fervor-trade-v2";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +40,7 @@ pub struct TradeEvent<'a> {
     pub price_usd: Option<f64>,
     pub quote_kind: QuoteKind,
     pub route: &'a [Venue],
+    pub tx_index: u64,
     pub instruction_index: u32,
     pub event_index: u32,
     pub slot: u64,
@@ -77,6 +78,13 @@ impl<'a> TradeEvent<'a> {
                 || value.commitment != tx.commitment
         }) {
             return Err("supply provenance differs from its trade".to_string());
+        }
+        let tx_index = tx
+            .occurrence
+            .tx_index
+            .ok_or_else(|| "trade transaction index is unavailable".to_string())?;
+        if tx_index > 9_007_199_254_740_991 {
+            return Err("trade transaction index exceeds the JSON safe range".to_string());
         }
         let network = tx.signed_id.network;
         Ok(Self {
@@ -117,6 +125,7 @@ impl<'a> TradeEvent<'a> {
             price_usd: swap.price_usd,
             quote_kind: swap.quote_kind,
             route: &swap.route,
+            tx_index,
             instruction_index: swap.instruction_index,
             event_index: swap.event_index,
             slot: swap.slot,
@@ -213,10 +222,18 @@ mod tests {
         let trade = TradeEvent::from_swap(&swap, &tx, "2024-11-19T00:00:00Z", Some(supply.clone()))
             .unwrap();
         let expected: serde_json::Value =
-            serde_json::from_str(include_str!("../../tests/contracts/decoded-trade-v1.json"))
+            serde_json::from_str(include_str!("../../tests/contracts/decoded-trade-v2.json"))
                 .unwrap();
         assert_eq!(serde_json::to_value(trade).unwrap(), expected);
 
+        tx.occurrence.tx_index = None;
+        assert_eq!(
+            TradeEvent::from_swap(&swap, &tx, &tx.observed_at, None)
+                .err()
+                .as_deref(),
+            Some("trade transaction index is unavailable")
+        );
+        tx.occurrence.tx_index = Some(0);
         tx.occurrence.slot = 43;
         assert_eq!(
             TradeEvent::from_swap(&swap, &tx, &tx.observed_at, None)

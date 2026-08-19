@@ -108,7 +108,7 @@ describe('FX tape price source', () => {
 
     it('enriches through the shared trade path with tape lineage', async () => {
         const trade = JSON.parse(fs.readFileSync(
-            path.resolve(__dirname, '../../tests/contracts/decoded-trade-v1.json'),
+            path.resolve(__dirname, '../../tests/contracts/decoded-trade-v2.json'),
             'utf8'
         )) as NormalizedTradeEvent;
         const enriched = await new TradeEnricher(new FxTapeSource([first, second])).enrich(trade);

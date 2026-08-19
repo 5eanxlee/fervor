@@ -19,6 +19,7 @@ import {
 import { RollingMetricBook } from './rollingMetricBook';
 import type { RollingWindowMetrics, RollingWindowName } from './rollingWindowAggregator';
 import { decodedTradeSchema, supplySchema, TradeEnricher } from './tradeEnricher';
+import { tradeOrder } from './tradeOrder';
 
 export const metricReplaySchema = 'fervor-metric-replay-v1' as const;
 export const pumpCurveContract = 'fervor-pump-curve-v1' as const;
@@ -33,7 +34,7 @@ const SCALE = 10n ** 18n;
 const LAMPORTS = 1_000_000_000n;
 
 export const replayManifestSchema = z.object({
-    schema: z.literal('fervor-replay-v7'),
+    schema: z.literal('fervor-replay-v8'),
     network: z.literal('mainnet-beta'),
     mint: addressSchema,
     startSlot: count,
@@ -53,7 +54,7 @@ export const replayManifestSchema = z.object({
     transactionSha256: hashText,
     swapFile: z.literal('swaps.ndjson'),
     swapSha256: hashText,
-    tradeContract: z.literal('fervor-trade-v1'),
+    tradeContract: z.literal('fervor-trade-v2'),
     trades: positiveCount,
     tradeFile: z.literal('trades.ndjson'),
     tradeSha256: hashText,
@@ -226,13 +227,6 @@ export interface MetricInput {
     phase: PumpPhase;
 }
 
-const compareTrade = (left: NormalizedTradeEvent, right: NormalizedTradeEvent): number =>
-    Date.parse(left.observedAt) - Date.parse(right.observedAt)
-    || (left.slot ?? 0) - (right.slot ?? 0)
-    || (left.instructionIndex ?? 0) - (right.instructionIndex ?? 0)
-    || (left.eventIndex ?? 0) - (right.eventIndex ?? 0)
-    || left.idempotencyKey.localeCompare(right.idempotencyKey);
-
 const coverage = (priced: number, total: number): number =>
     total === 0 ? 0 : Math.floor(priced * 10_000 / total);
 
@@ -290,7 +284,12 @@ export const projectMetricData = async (input: MetricInput): Promise<MetricRepla
             throw new Error('Replay trades are not unique events for the manifest mint');
         }
     }
-    const rawTrades = [...sourceTrades].sort(compareTrade);
+    const rawTrades = [...sourceTrades].sort(tradeOrder);
+    for (let index = 1; index < rawTrades.length; index += 1) {
+        if (Date.parse(rawTrades[index].observedAt) < Date.parse(rawTrades[index - 1].observedAt)) {
+            throw new Error('Replay event time regresses in canonical chain order');
+        }
+    }
     const points = z.array(pumpCurveSchema).parse(input.curve);
     if (points.length !== input.manifest.pumpCurvePoints) {
         throw new Error('Pump curve count differs from the manifest');
@@ -413,7 +412,7 @@ export const projectMetricData = async (input: MetricInput): Promise<MetricRepla
     return {
         sourceManifestSha256: input.manifestSha256,
         source: input.manifest,
-        sourceTrades,
+        sourceTrades: rawTrades,
         trades,
         curve,
         candles: aggregateCandles(trades),

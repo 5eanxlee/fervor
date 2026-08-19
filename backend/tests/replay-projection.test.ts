@@ -30,6 +30,10 @@ const trade = (index: number): NormalizedTradeEvent => ({
     maker: `wallet-${index}`,
     side: index === 1 ? 'sell' : 'buy',
     priceSol: index + 1,
+    slot: 42 + index,
+    txIndex: 0,
+    instructionIndex: 0,
+    eventIndex: 0,
     observedAt: new Date(Date.UTC(2024, 10, 19, 0, 0, index * 10)).toISOString(),
     receivedAt: new Date(Date.UTC(2024, 10, 19, 0, 0, index * 10)).toISOString(),
     confidence: 1,
@@ -92,6 +96,18 @@ describe('replay projection checkpoints', () => {
 
     it('rejects corruption before changing the coordinator', () => {
         const source = replay();
+        const first = { ...source.sourceTrades[0], slot: 42, txIndex: 1 };
+        const second = {
+            ...source.sourceTrades[1],
+            slot: 42,
+            txIndex: 0,
+            observedAt: first.observedAt,
+        };
+        expect(() => new ReplayCoordinator(
+            { ...source, sourceTrades: [first, second, source.sourceTrades[2]] },
+            'unordered'
+        )).toThrow('canonical chain order');
+
         const coordinator = new ReplayCoordinator(source, 'source');
         const projection = ReplayProjection.start(coordinator);
         projection.apply(coordinator.step()!);

@@ -51,6 +51,7 @@ const baseTrade = (): NormalizedTradeEvent => ({
     priceSol: 2,
     quoteKind: 'wsol',
     route: ['pump_fun'],
+    txIndex: 0,
     instructionIndex: 0,
     eventIndex: 0,
     slot: 42,
@@ -155,7 +156,7 @@ const curvePoint = () => ({
 });
 
 const manifest = () => replayManifestSchema.parse({
-    schema: 'fervor-replay-v7',
+    schema: 'fervor-replay-v8',
     network: 'mainnet-beta',
     mint,
     startSlot: 41,
@@ -175,7 +176,7 @@ const manifest = () => replayManifestSchema.parse({
     transactionSha256: '0'.repeat(64),
     swapFile: 'swaps.ndjson',
     swapSha256: '0'.repeat(64),
-    tradeContract: 'fervor-trade-v1',
+    tradeContract: 'fervor-trade-v2',
     trades: 2,
     tradeFile: 'trades.ndjson',
     tradeSha256: '0'.repeat(64),
@@ -233,7 +234,7 @@ const writeReplay = async (): Promise<string> => {
         supplySha256: artifactHashes[6],
         fxSha256: artifactHashes[7],
         fxTapeSha256: artifactHashes[8],
-        replaySha256: replayDigest('fervor-replay-v7', artifactHashes),
+        replaySha256: replayDigest('fervor-replay-v8', artifactHashes),
     };
     await writeFile(path.join(dir, 'manifest.json'), `${JSON.stringify(completed, null, 2)}\n`);
     return dir;
@@ -268,7 +269,8 @@ describe('metric replay', () => {
         };
         const replay = await projectMetricData(input);
 
-        expect(replay.sourceTrades).toHaveLength(2);
+        expect(replay.sourceTrades.map((trade) => trade.idempotencyKey))
+            .toEqual(trades().map((trade) => trade.idempotencyKey));
         expect(replay.trades).toHaveLength(1);
         expect(replay.candles).toHaveLength(11);
         expect(replay.curve[0]).toMatchObject({

@@ -23,7 +23,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SCHEMA: &str = "fervor-replay-v7";
+const SCHEMA: &str = "fervor-replay-v8";
 const TX_FILE: &str = "transactions.ndjson";
 const SWAP_FILE: &str = "swaps.ndjson";
 const TRADE_FILE: &str = "trades.ndjson";
