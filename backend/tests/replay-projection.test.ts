@@ -11,6 +11,7 @@ import {
     parseReplayCheckpoint,
     ReplayProjection,
 } from '../src/services/replay/projection';
+import { ReplayScheduler, type ReplaySpeed } from '../src/services/replay/scheduler';
 
 const mint = 'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf';
 const sourceSha = '1'.repeat(64);
@@ -49,9 +50,9 @@ const trade = (index: number): NormalizedTradeEvent => ({
     stale: false,
 });
 
-const replay = (): MetricReplay => {
-    const sourceTrades = [trade(0), trade(1), trade(2)];
-    const priced = [0, 2].map((index) => ({
+const replay = (count = 3): MetricReplay => {
+    const sourceTrades = Array.from({ length: count }, (_, index) => trade(index));
+    const priced = [0, 2].filter((index) => index < count).map((index) => ({
         ...sourceTrades[index],
         priceUsd: (index + 1) * 100,
         usdAmount: (index + 1) * 20,
@@ -165,5 +166,134 @@ describe('replay projection checkpoints', () => {
 
         await writeFile(path.join(sourceDir, files[0]), '{');
         await expect(store.read(keys[0])).rejects.toThrow('invalid');
+    });
+});
+
+describe('replay scheduler', () => {
+    const fakeTimer = (waits: number[]) => {
+        let now = 0;
+        return {
+            nowMs: () => now,
+            wait: async (delayMs: number) => {
+                waits.push(delayMs);
+                now += delayMs;
+            },
+            advance: (delayMs: number) => { now += delayMs; },
+        };
+    };
+
+    const runAt = async (speed: ReplaySpeed, workMs = 0) => {
+        const source = replay();
+        const coordinator = new ReplayCoordinator(source, `speed-${speed}`);
+        const projection = ReplayProjection.start(coordinator);
+        const waits: number[] = [];
+        const timer = fakeTimer(waits);
+        const scheduler = new ReplayScheduler(
+            coordinator,
+            (event) => {
+                projection.apply(event);
+                timer.advance(workMs);
+            },
+            timer
+        );
+        const result = await scheduler.run(speed);
+        return { checkpoint: projection.checkpoint(coordinator), result, waits };
+    };
+
+    it('changes pacing without changing canonical output', async () => {
+        const one = await runAt(1);
+        const twenty = await runAt(20);
+        const hundred = await runAt(100);
+        const lagged = await runAt(100, 25);
+        const maximum = await runAt('max');
+
+        expect(one.waits).toEqual([10_000, 10_000]);
+        expect(twenty.waits).toEqual([500, 500]);
+        expect(hundred.waits).toEqual([100, 100]);
+        expect(lagged.waits).toEqual([75, 75]);
+        expect(maximum.waits).toEqual([]);
+        expect([one, twenty, hundred, lagged, maximum].map(({ result }) => result))
+            .toEqual(Array(5).fill(expect.objectContaining({
+                emitted: 3,
+                snapshot: expect.objectContaining({ cursor: 3, status: 'complete' }),
+            })));
+        expect(twenty.checkpoint).toEqual(one.checkpoint);
+        expect(hundred.checkpoint).toEqual(one.checkpoint);
+        expect(lagged.checkpoint).toEqual(one.checkpoint);
+        expect(maximum.checkpoint).toEqual(one.checkpoint);
+    });
+
+    it('does not emit across a pause or pre-aborted run', async () => {
+        const source = replay();
+        const coordinator = new ReplayCoordinator(source, 'controlled');
+        const projection = ReplayProjection.start(coordinator);
+        const scheduler = new ReplayScheduler(
+            coordinator,
+            (event) => projection.apply(event),
+            { nowMs: () => 0, wait: async () => { coordinator.pause(); } }
+        );
+
+        await expect(scheduler.run(1)).resolves.toMatchObject({
+            emitted: 1,
+            snapshot: { cursor: 1, status: 'paused' },
+        });
+        const aborted = new AbortController();
+        aborted.abort();
+        await expect(scheduler.run(1, aborted.signal)).resolves.toMatchObject({
+            emitted: 0,
+            snapshot: { cursor: 1, status: 'paused' },
+        });
+        await expect(new ReplayScheduler(
+            coordinator,
+            (event) => projection.apply(event),
+            { nowMs: () => 0, wait: async () => undefined }
+        ).run('max')).resolves.toMatchObject({ emitted: 2, snapshot: { status: 'complete' } });
+    });
+
+    it('yields maximum-speed work in bounded bursts and rejects a second driver', async () => {
+        const fast = new ReplayCoordinator(replay(514), 'bounded');
+        const waits: number[] = [];
+        await expect(new ReplayScheduler(
+            fast,
+            () => undefined,
+            { nowMs: () => 0, wait: async (delayMs) => { waits.push(delayMs); } }
+        ).run('max')).resolves.toMatchObject({ emitted: 514, snapshot: { status: 'complete' } });
+        expect(waits).toEqual([0]);
+
+        const controlled = new ReplayCoordinator(replay(), 'single-driver');
+        let release = (): void => undefined;
+        const waiting = new Promise<void>((resolve) => { release = resolve; });
+        const scheduler = new ReplayScheduler(
+            controlled,
+            () => undefined,
+            { nowMs: () => 0, wait: async () => waiting }
+        );
+        const running = scheduler.run(1);
+        await expect(scheduler.run(20)).rejects.toThrow('already active');
+        controlled.pause();
+        release();
+        await expect(running).resolves.toMatchObject({
+            emitted: 1,
+            snapshot: { cursor: 1, status: 'paused' },
+        });
+    });
+
+    it('stops a run whose sink rejects an emitted event', async () => {
+        const coordinator = new ReplayCoordinator(replay(), 'failed-sink');
+        const failure = new Error('sink failed');
+        const scheduler = new ReplayScheduler(coordinator, () => { throw failure; });
+
+        await expect(scheduler.run('max')).rejects.toBe(failure);
+        expect(coordinator.snapshot()).toMatchObject({ cursor: 1, status: 'stopped' });
+        await expect(scheduler.run(10)).rejects.toThrow('speed is invalid');
+
+        const timed = new ReplayCoordinator(replay(), 'failed-timer');
+        let reads = 0;
+        const backward = new ReplayScheduler(timed, () => undefined, {
+            nowMs: () => reads++ === 0 ? 1 : 0,
+            wait: async () => undefined,
+        });
+        await expect(backward.run(1)).rejects.toThrow('not monotonic');
+        expect(timed.snapshot()).toMatchObject({ cursor: 0, status: 'paused' });
     });
 });

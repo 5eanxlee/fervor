@@ -76,6 +76,7 @@ export const parseReplayCut = (value: unknown): ReplayCut => {
 export class ReplayCoordinator {
     private clock = new VirtualClock(0);
     private readonly events: NormalizedTradeEvent[];
+    private readonly times: number[] = [];
     private readonly sourceSha: string;
     private epoch = 1;
     private cursor = 0;
@@ -102,6 +103,7 @@ export class ReplayCoordinator {
                 throw new Error('Replay trade tape is not in canonical chain order');
             }
             prior = source;
+            this.times.push(observedMs);
             const trade = enriched.get(source.idempotencyKey) ?? source;
             enriched.delete(source.idempotencyKey);
             return trade;
@@ -121,6 +123,10 @@ export class ReplayCoordinator {
             status: this.status,
             now: this.cursor === 0 ? null : new Date(this.clock.nowMs()).toISOString(),
         };
+    }
+
+    currentStatus(): ReplayStatus {
+        return this.status;
     }
 
     pause(): void {
@@ -159,7 +165,7 @@ export class ReplayCoordinator {
         if (this.epoch === Number.MAX_SAFE_INTEGER) throw new Error('Replay epoch is exhausted');
         this.epoch += 1;
         this.cursor = cursor;
-        const nowMs = cursor === 0 ? 0 : Date.parse(this.events[cursor - 1].observedAt);
+        const nowMs = cursor === 0 ? 0 : this.times[cursor - 1];
         this.clock = new VirtualClock(nowMs);
         this.status = cursor === this.events.length ? 'complete' : 'paused';
         return this.snapshot();
@@ -217,9 +223,15 @@ export class ReplayCoordinator {
             && event.sourceReplaySha256 === this.sourceSha;
     }
 
+    nextDelayMs(): number | null {
+        if (this.cursor === this.events.length || this.status === 'stopped') return null;
+        if (this.cursor === 0) return 0;
+        return this.times[this.cursor] - this.clock.nowMs();
+    }
+
     private take(): ReplayEvent {
         const trade = this.events[this.cursor];
-        this.clock.advanceTo(Date.parse(trade.observedAt));
+        this.clock.advanceTo(this.times[this.cursor]);
         const event: ReplayEvent = Object.freeze({
             runId: this.runId,
             epoch: this.epoch,
@@ -234,7 +246,7 @@ export class ReplayCoordinator {
     }
 
     private timeAt(cursor: number): string | null {
-        return cursor === 0 ? null : new Date(Date.parse(this.events[cursor - 1].observedAt)).toISOString();
+        return cursor === 0 ? null : new Date(this.times[cursor - 1]).toISOString();
     }
 
     private prefixHash(cursor: number): string {

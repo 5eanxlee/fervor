@@ -12,6 +12,8 @@ A caller supplies the run ID. Every seek treats its target as the next event ind
 
 `checkpointStore.ts` durably publishes that object beneath a provisioned parent directory as a write-once, source-and-cursor-addressed local file. It validates before touching disk, writes and syncs a private temporary file, atomically links the final name without overwrite, removes the temporary name, and syncs each created or changed directory. Concurrent identical writers converge on one file. Reads refuse symlinks, non-files, oversized or noncanonical bytes, key mismatches, and invalid checkpoint state. This is the replay-local persistence boundary; remote replication and checkpoint-retention policy remain separate concerns.
 
+`scheduler.ts` is the only wall-time pacing layer. It supports 1x, 20x, 100x, and maximum speed while the coordinator remains the sole owner of event time. Finite speeds use cumulative monotonic deadlines, so projection work reduces the following delay instead of accumulating drift. Maximum speed yields every 512 events to keep pause and abort controls responsive. A pause or abort cannot cross the next event boundary; a sink failure stops the run because its cursor can no longer be assumed to match downstream state.
+
 Run its focused verification with:
 
 ```bash
