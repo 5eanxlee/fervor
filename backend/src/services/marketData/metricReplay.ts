@@ -209,6 +209,7 @@ export interface MetricState {
 export interface MetricReplay {
     sourceManifestSha256: string;
     source: ReplayManifest;
+    sourceTrades: NormalizedTradeEvent[];
     trades: NormalizedTradeEvent[];
     curve: CurveMetric[];
     candles: CandleUpdate[];
@@ -279,17 +280,17 @@ export const projectMetricData = async (input: MetricInput): Promise<MetricRepla
     if (supply.tokenMint !== input.manifest.mint || supply.stale || !supply.fixed) {
         throw new Error('Replay supply does not qualify the manifest mint');
     }
-    const rawTrades = z.array(decodedTradeSchema).parse(input.trades);
-    if (rawTrades.length !== input.manifest.trades) {
+    const sourceTrades = z.array(decodedTradeSchema).parse(input.trades);
+    if (sourceTrades.length !== input.manifest.trades) {
         throw new Error('Replay trade count differs from the manifest');
     }
     const ids = new Set<string>();
-    for (const trade of rawTrades) {
+    for (const trade of sourceTrades) {
         if (trade.tokenMint !== input.manifest.mint || !ids.add(trade.idempotencyKey)) {
             throw new Error('Replay trades are not unique events for the manifest mint');
         }
     }
-    rawTrades.sort(compareTrade);
+    const rawTrades = [...sourceTrades].sort(compareTrade);
     const points = z.array(pumpCurveSchema).parse(input.curve);
     if (points.length !== input.manifest.pumpCurvePoints) {
         throw new Error('Pump curve count differs from the manifest');
@@ -412,6 +413,7 @@ export const projectMetricData = async (input: MetricInput): Promise<MetricRepla
     return {
         sourceManifestSha256: input.manifestSha256,
         source: input.manifest,
+        sourceTrades,
         trades,
         curve,
         candles: aggregateCandles(trades),

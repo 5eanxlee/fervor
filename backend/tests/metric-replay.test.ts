@@ -14,6 +14,7 @@ import {
 } from '../src/services/marketData/metricReplay';
 import { SOL_MINT, USDC_MINT } from '../src/services/marketData/fxTape';
 import type { FxPoint } from '../src/services/marketData/fxTape';
+import { ReplayCoordinator } from '../src/services/replay/coordinator';
 
 const mint = 'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf';
 const curveAddress = 'CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8';
@@ -267,6 +268,7 @@ describe('metric replay', () => {
         };
         const replay = await projectMetricData(input);
 
+        expect(replay.sourceTrades).toHaveLength(2);
         expect(replay.trades).toHaveLength(1);
         expect(replay.candles).toHaveLength(11);
         expect(replay.curve[0]).toMatchObject({
@@ -339,6 +341,29 @@ describe('metric replay', () => {
             await readFile(path.join(second, 'market-state.json'), 'utf8')
         );
         await expect(writeMetricReplay(first, replay)).rejects.toThrow('already exists');
+
+        const coordinator = new ReplayCoordinator(replay);
+        expect(() => new ReplayCoordinator({ ...replay, trades: [...replay.trades, replay.trades[0]] }))
+            .toThrow('duplicate trade identities');
+        expect(coordinator.snapshot()).toMatchObject({ cursor: 0, total: 2, status: 'paused', now: null });
+        const firstEvent = coordinator.step();
+        expect(firstEvent).toMatchObject({ cursor: 0, usdPriced: false });
+        expect(coordinator.snapshot()).toMatchObject({
+            cursor: 1,
+            status: 'paused',
+            now: '2024-11-19T00:00:00.000Z',
+        });
+        coordinator.resume();
+        coordinator.pause();
+        expect(() => coordinator.next()).toThrow('requires a running run');
+        coordinator.resume();
+        expect(coordinator.next()).toMatchObject({ cursor: 1, usdPriced: true });
+        expect(coordinator.snapshot()).toMatchObject({ cursor: 2, status: 'complete' });
+
+        const restarted = new ReplayCoordinator(replay);
+        restarted.resume();
+        expect([restarted.next(), restarted.next()].map((event) => event?.trade.idempotencyKey))
+            .toEqual(replay.sourceTrades.map((trade) => trade.idempotencyKey));
 
         await writeFile(path.join(source, 'trades.ndjson'), '{}\n');
         await expect(buildMetricReplay(source)).rejects.toThrow('hash differs');
