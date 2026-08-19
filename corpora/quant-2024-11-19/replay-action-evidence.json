@@ -1,0 +1,179 @@
+{
+  "contract": "fervor-replay-action-evidence-v1",
+  "recordedAt": "2026-08-19T08:01:57Z",
+  "sourceCommit": "0e2d95a97c4c168eba3b39af0762aa210b491d69",
+  "gcp": {
+    "project": "phonic-chariot-501107-j5",
+    "zone": "europe-west4-a",
+    "vm": "fervor-replay-lab-20260818",
+    "repoHead": "0e2d95a97c4c168eba3b39af0762aa210b491d69"
+  },
+  "image": {
+    "tag": "fervor-backend:test-0e2d95a",
+    "id": "sha256:f015918c6d4aa8eeb3540824519f804c01cbb0078054bb783b24b8575b64fff8",
+    "createdAt": "2026-08-19T07:54:43.60836657Z",
+    "bytes": 469709324
+  },
+  "run": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "runId": "portfolio-gcp",
+    "sessionId": "e6c3b2aac1547371b26385a6b5eab321ae004488b5aaaf7e2c9a2c4c795a39e5",
+    "initialCut": {
+      "epoch": 3,
+      "cursor": 60,
+      "fact": 4,
+      "now": "2024-11-20T03:49:32.000Z",
+      "status": "paused"
+    },
+    "paperModelSha256": "dc2bd54f846c381e4fae270858566670be5308cea23b1b43e6c6db075df11bbf",
+    "alertModelSha256": "d9dbfe3fe8d1fd3cb0f1f32c4f6e86064667d543821da98e4d704fbdbd29c09b"
+  },
+  "actions": {
+    "endpoint": "/api/replay/v1/runs/portfolio-gcp/paper/actions",
+    "commandContract": "fervor-replay-paper-command-v1",
+    "resultContract": "fervor-replay-paper-action-v1",
+    "place": {
+      "httpStatus": 201,
+      "id": "gcp-http-order",
+      "side": "buy",
+      "kind": "limit",
+      "inputRaw": "1",
+      "applied": true,
+      "revision": {
+        "epoch": 3,
+        "cursor": 60,
+        "fact": 5
+      },
+      "status": "pending"
+    },
+    "placeRetry": {
+      "httpStatus": 200,
+      "requestedFact": 4,
+      "applied": false,
+      "resultFact": 5,
+      "status": "pending"
+    },
+    "idConflict": {
+      "httpStatus": 409,
+      "changedField": "inputRaw",
+      "error": "Paper order ID conflict"
+    },
+    "staleCreate": {
+      "httpStatus": 409,
+      "contract": "fervor-replay-resync-v1",
+      "reason": "paper_changed",
+      "requested": {
+        "epoch": 3,
+        "cursor": 60,
+        "fact": 4
+      },
+      "cut": {
+        "epoch": 3,
+        "cursor": 60,
+        "fact": 5
+      }
+    },
+    "cancel": {
+      "httpStatus": 200,
+      "applied": true,
+      "revision": {
+        "epoch": 3,
+        "cursor": 60,
+        "fact": 6
+      },
+      "status": "cancelled"
+    },
+    "cancelRetry": {
+      "httpStatus": 200,
+      "requestedFact": 5,
+      "applied": false,
+      "resultFact": 6,
+      "status": "cancelled"
+    },
+    "finalCut": {
+      "epoch": 3,
+      "cursor": 60,
+      "fact": 6,
+      "now": "2024-11-20T03:49:32.000Z",
+      "orderCount": 2,
+      "factCount": 6,
+      "providerCalls": 0,
+      "transactions": 0
+    }
+  },
+  "recovery": {
+    "explicitCheckpoint": {
+      "seq": 2,
+      "cursor": 60,
+      "checkpointSha256": "2f3ad0ca4ece9eacf2cfea2064408cfb769c16ad41620e297d6823a7d0f77933"
+    },
+    "gracefulStopCheckpoint": {
+      "seq": 3,
+      "parentSha256": "2f3ad0ca4ece9eacf2cfea2064408cfb769c16ad41620e297d6823a7d0f77933",
+      "checkpointSha256": "8539a683963c80d34ca66f547ba49fedbfbc05f8fc9377b64a6d7efcff6ccda3",
+      "fileSha256": "4e65aa56e4f8d03d5a659bf1608b3270ff355d5a82c1082219c6692b83408ac7"
+    },
+    "restoredCut": {
+      "httpStatus": 200,
+      "epoch": 4,
+      "cursor": 60,
+      "fact": 6,
+      "now": "2024-11-20T03:49:32.000Z",
+      "orderId": "gcp-http-order",
+      "orderStatus": "cancelled"
+    },
+    "archive": {
+      "uri": "gs://fervor-replay-phonic-chariot-501107-j5/checkpoints/quant-2024-11-19/action-0e2d95a/session-seq-3.tar.gz",
+      "sha256": "cf875051286b74a77d6719c0097cd59c1982e9405460ffd310da2d201c669544",
+      "bytes": 15129,
+      "generation": "1787126503503086",
+      "deterministicRebuildMatched": true
+    }
+  },
+  "rawEvidence": {
+    "uri": "gs://fervor-replay-phonic-chariot-501107-j5/evidence/quant-2024-11-19/replay-action-v1/http-responses.tar.gz",
+    "sha256": "8fe017be8a7aaa7979503d8990ff6388176ab4d9013c9b9ab2c7776edbc0047a",
+    "bytes": 2292,
+    "generation": "1787126506269281",
+    "credentialValuesRecorded": false
+  },
+  "tests": {
+    "local": {
+      "passedFiles": 58,
+      "skippedFiles": 14,
+      "passedTests": 373,
+      "skippedTests": 60
+    },
+    "gcp": {
+      "container": "replay-action-test-0e2d95a",
+      "exitCode": 0,
+      "passedFiles": 58,
+      "skippedFiles": 14,
+      "passedTests": 373,
+      "skippedTests": 60,
+      "durationMs": 3920
+    }
+  },
+  "sandbox": {
+    "qualificationContainer": "replay-action-api-0e2d95a",
+    "restoreContainer": "replay-action-restore-0e2d95a",
+    "restoreStatus": "running",
+    "network": "none",
+    "readOnlyRoot": true,
+    "user": "node",
+    "capDrop": [
+      "ALL"
+    ],
+    "noNewPrivileges": true,
+    "egressProbe": "ENETUNREACH"
+  },
+  "effects": {
+    "realProviderCalls": 0,
+    "transactions": 0,
+    "messagesSent": 0,
+    "databaseWrites": 0,
+    "redisWrites": 0,
+    "credentialValuesRecorded": false
+  }
+}
