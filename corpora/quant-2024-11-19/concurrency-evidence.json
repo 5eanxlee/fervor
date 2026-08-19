@@ -1,0 +1,42 @@
+{
+  "schema": "fervor-replay-concurrency-evidence-v1",
+  "recordedAt": "2026-08-19T04:08:27Z",
+  "runtimeCommit": "b57e4ef01f32b6822f72aed58983a92058ec11c5",
+  "baseCommit": "ec56764826a327b1690859f6fd073a171a1e8e8a",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a"
+  },
+  "sourceSha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+  "runs": [
+    {
+      "run": "concurrent-a",
+      "container": "d928064435c0fac4dfb09e62826116e22c733fa150aa9ab3be560ffb58c4a7a4",
+      "store": "/home/sean/replay-run-a",
+      "readyCursor": 0,
+      "end": "SIGKILL",
+      "exitCode": 137,
+      "files": 0
+    },
+    {
+      "run": "concurrent-b",
+      "container": "42f0ec3c9c3069ff303b22663cd417a3061784d0526e201406122caa77b8b899",
+      "store": "/home/sean/replay-run-b",
+      "readyCursor": 0,
+      "peerAfterKill": "running",
+      "end": "SIGTERM",
+      "exitCode": 0,
+      "files": 1,
+      "checkpointCursor": 0,
+      "checkpointSha256": "d00070b79fa09094a2ebbcde5dc9a3933aa5fd0e282a6c2120f579cfc452d135"
+    }
+  ],
+  "result": {
+    "distinctRunIds": true,
+    "distinctStores": true,
+    "sharedWritableMounts": 0,
+    "peerSurvivedKill": true,
+    "gracefulCheckpoint": true
+  }
+}
