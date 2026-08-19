@@ -23,3 +23,5 @@ Run focused verification with:
 ```bash
 npm test -- realtime-protocol.test.ts realtime-replay-feed.test.ts realtime-server.test.ts
 ```
+
+Run the bounded transport qualification with `npm run bench:realtime`. It sends 1,000 production-contract frames to 32 authenticated loopback clients and fails on delivery loss or regression thresholds. This benchmark qualifies encoding, bounded queues, and WebSocket fanout; it does not claim live-provider, WAN, or market-correctness coverage. Retained results live with the selected historical corpus in `corpora/quant-2024-11-19/realtime-evidence.json`.

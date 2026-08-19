@@ -1,0 +1,86 @@
+{
+  "contract": "fervor-realtime-benchmark-v1",
+  "recordedAt": "2026-08-19T10:05:08.583Z",
+  "sourceCommit": "f56934de0421cb1a6374d3c251a5b4145ecaf730",
+  "host": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4 Pro",
+    "logicalCpus": 14,
+    "node": "v24.5.0"
+  },
+  "scope": {
+    "historicalCorpus": "quant-2024-11-19",
+    "historicalWindowSeconds": 685,
+    "historicalReferenceEvents": 5516,
+    "transportEvents": 1000,
+    "clients": 32,
+    "deliveredMessages": 32000,
+    "payloadFixture": "tests/contracts/decoded-trade-v2.json",
+    "payloadBytes": 2052673,
+    "averageFrameBytes": 2052.673,
+    "marketCorrectnessReplay": false
+  },
+  "historicalEngine": {
+    "sourceCommit": "87e133f",
+    "maximumSpeedElapsedMs": 61.4,
+    "pacedElapsedMs": {
+      "100x": 6762,
+      "20x": 33802,
+      "1x": 676003
+    },
+    "allRunsFinalCursor": 5516,
+    "allRunsCheckpointSha256": "c4cf96bf76e34047b5427e7a57cd1853f23c6559f5c7f79561b16d63e5976f05"
+  },
+  "transport": {
+    "encode": {
+      "elapsedMs": 4.681125,
+      "eventsPerSec": 213623.8618,
+      "mebibytesPerSec": 418.1861
+    },
+    "queue": {
+      "clients": 256,
+      "operations": 512000,
+      "elapsedMs": 24.905125,
+      "operationsPerSec": 20558017.677,
+      "sharedBufferIdentity": true
+    },
+    "loopback": {
+      "elapsedMs": 247.981333,
+      "messagesPerSec": 129041.9711,
+      "cpuUserMs": 248.244,
+      "cpuSystemMs": 77.304,
+      "rssDeltaBytes": 28065792,
+      "allDeliveredExactlyOnce": true
+    }
+  },
+  "gates": {
+    "encodeEventsPerSec": 20000,
+    "queueOperationsPerSec": 100000,
+    "loopbackMessagesPerSec": 10000,
+    "maxLoopbackMs": 5000,
+    "passed": true,
+    "failures": []
+  },
+  "tests": {
+    "backendPassed": 400,
+    "backendSkipped": 60,
+    "specChecksPassed": true,
+    "composeChecksPassed": true
+  },
+  "effects": {
+    "historicalArchiveDownloaded": false,
+    "twentyFourHourReplayRun": false,
+    "realProviderCalls": 0,
+    "transactions": 0,
+    "messagesSent": 0,
+    "databaseWrites": 0,
+    "redisWrites": 0
+  },
+  "limits": [
+    "The engine timings reuse retained evidence from the verified 11 minute 25 second historical corpus; this run did not replay or download a 24-hour archive.",
+    "The transport workload uses the production frame contract and a real-shaped decoded trade fixture, but does not rerun market decoding or metric correctness.",
+    "The loopback result is a single-process capacity baseline, not a multi-region, internet, live-provider, or million-user qualification.",
+    "The benchmark establishes regression headroom for the declared bounded workload only; production capacity still requires staged saturation and soak tests."
+  ]
+}
