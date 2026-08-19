@@ -70,6 +70,7 @@ const deniedEnv = [
 ] as const;
 
 export interface ReplayState {
+    readonly tokenMint: string;
     readonly busy: boolean;
     readonly mutating: boolean;
     readonly failure: string | null;
@@ -158,6 +159,7 @@ export class ReplayRuntime {
 
     state(): ReplayState {
         return {
+            tokenMint: this.coordinator.tokenMint,
             busy: this.active !== null,
             mutating: this.mutating,
             failure: this.failure,
