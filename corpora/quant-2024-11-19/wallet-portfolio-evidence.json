@@ -1,0 +1,104 @@
+{
+  "schema": "fervor-replay-wallet-portfolio-evidence-v1",
+  "recordedAt": "2026-08-19T05:38:42Z",
+  "runtimeCommit": "5e48971a80b1eb92bc87a8bdab1f702fe2f8b626",
+  "host": {
+    "project": "phonic-chariot-501107-j5",
+    "vm": "fervor-replay-lab-20260818",
+    "zone": "europe-west4-a",
+    "machine": "n2-standard-16"
+  },
+  "image": {
+    "configSha256": "6c250dda82a737b4776e7f969be4d489758203c44893cb4985b901498b113e5a",
+    "builtAt": "2026-08-19T05:36:26.521267249Z"
+  },
+  "source": {
+    "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+    "sourceReplaySha256": "804d60b575012dba56f8ff62ea5e77c35214201ceeec3999b6743069eb048702",
+    "events": 5516,
+    "windowStart": "2024-11-20T03:48:37Z",
+    "windowEnd": "2024-11-20T03:59:53Z"
+  },
+  "run": {
+    "runId": "portfolio-gcp",
+    "epoch": 2,
+    "cursor": 60,
+    "now": "2024-11-20T03:49:32.000Z"
+  },
+  "wallet": {
+    "address": "7m6dSzdhFpZMke5fWo4he6tPQzCAoS5UKjtVJpKdDmLA",
+    "contract": "fervor-replay-wallet-portfolio-v1",
+    "coverage": {
+      "source": "verified_trade_tape",
+      "scope": "trade_only",
+      "history": "selected_window",
+      "basisPolicy": "observed_fifo",
+      "historyComplete": false,
+      "balanceComplete": false,
+      "feeComplete": false,
+      "openingBalanceKnown": false,
+      "transferComplete": false
+    },
+    "tradeCount": 3,
+    "buyCount": 1,
+    "sellCount": 2,
+    "observedBasisComplete": true,
+    "netFlows": [
+      {
+        "mint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+        "netRaw": "3726932913640"
+      },
+      {
+        "mint": "So11111111111111111111111111111111111111112",
+        "netRaw": "-118622896"
+      }
+    ],
+    "position": {
+      "tokenMint": "3an8rhdepsLCya22af7qDBKPbdomw8K4iCHXaA2Gpump",
+      "quoteMint": "So11111111111111111111111111111111111111112",
+      "acquiredRaw": "5823332677562",
+      "soldRaw": "2096399763922",
+      "coveredSoldRaw": "2096399763922",
+      "unmatchedSoldRaw": "0",
+      "soldBasisCoverageBps": 10000,
+      "openQuantityRaw": "3726932913640",
+      "openCostRaw": "201339752",
+      "realizedPnlRaw": "82716856",
+      "markPolicy": "last_trade_ratio",
+      "markCursor": 59,
+      "markTradeId": "4737caf873aee0a8f51f20fea3a058706cb0ac2696f8b75a2afd2ecb5400fd06",
+      "markObservedAt": "2024-11-20T03:49:32Z",
+      "markValueRaw": "288664331",
+      "unrealizedPnlRaw": "87324579",
+      "observedBasisComplete": true
+    },
+    "portfolioSha256": "8fb4fb455b28a2a4ccc3c5309ef00dd87964edb6790dc20ac371894420363a34"
+  },
+  "coldRecovery": {
+    "firstContainer": "basis-gcp-a",
+    "secondContainer": "basis-gcp-b",
+    "epoch": 2,
+    "cursor": 60,
+    "portfolioSha256": "8fb4fb455b28a2a4ccc3c5309ef00dd87964edb6790dc20ac371894420363a34",
+    "digestMatch": true,
+    "positionMatch": true
+  },
+  "tests": {
+    "build": true,
+    "backendFilesPassed": 55,
+    "backendFilesSkipped": 14,
+    "backendTestsPassed": 357,
+    "backendTestsSkipped": 60,
+    "compose": true
+  },
+  "result": {
+    "sharedFifoAuthority": true,
+    "exactRawFlows": true,
+    "unmatchedSalesExposed": true,
+    "stablePortfolioDigest": true,
+    "walletCheckpointAdded": false,
+    "completeHistoryClaimed": false,
+    "liveProviderUsed": false,
+    "liveTransactionSubmitted": false
+  }
+}
