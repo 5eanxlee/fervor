@@ -11,12 +11,20 @@ import {
     type ReplayResync,
     type ReplaySnapshot,
 } from './coordinator';
+import {
+    paperOrderSchema,
+    type PaperOrder,
+    type PaperRequest,
+} from './paperBroker';
+import { priceOf } from './paperTypes';
 import type { ReplayRuntime, ReplayState } from './runtime';
 
 export const replayApiAuthContract = 'fervor-replay-api-auth-v1' as const;
 export const replayApiContract = 'fervor-replay-api-v1' as const;
 export const replayApiMode = 'historical_replay' as const;
 export const replayPaperContract = 'fervor-replay-paper-page-v1' as const;
+export const replayPaperCommandContract = 'fervor-replay-paper-command-v1' as const;
+export const replayPaperActionContract = 'fervor-replay-paper-action-v1' as const;
 
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
 const runId = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
@@ -26,6 +34,24 @@ const authSchema = z.object({
     runId,
     tokenSha256: hash,
 }).strict();
+const actionCut = {
+    contract: z.literal(replayPaperCommandContract),
+    epoch: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    cursor: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+    fact: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
+};
+const paperActionSchema = z.discriminatedUnion('op', [
+    z.object({
+        ...actionCut,
+        op: z.literal('place'),
+        order: paperOrderSchema,
+    }).strict(),
+    z.object({
+        ...actionCut,
+        op: z.literal('cancel'),
+        orderId: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/),
+    }).strict(),
+]);
 
 export interface ReplayApiAuth extends z.infer<typeof authSchema> {
     readonly sessionId: string;
@@ -153,6 +179,75 @@ const sendResync = (
     success: false,
     ...responseBody(auth, resyncIdentity(resync), { resync }),
 });
+
+const readJson = (
+    req: IncomingMessage,
+    res: ServerResponse,
+    maxBytes = 16_384
+): Promise<unknown | undefined> => {
+    if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(req.headers['content-type'] ?? '')) {
+        reject(res, 415, 'JSON content type required');
+        req.resume();
+        return Promise.resolve(undefined);
+    }
+    const declared = req.headers['content-length'];
+    if (declared !== undefined
+        && (!/^(0|[1-9]\d*)$/.test(declared) || Number(declared) > maxBytes)) {
+        return new Promise((resolve) => {
+            req.once('end', () => {
+                reject(res, 413, 'Request body is too large');
+                resolve(undefined);
+            });
+            req.once('aborted', () => resolve(undefined));
+            req.once('error', () => resolve(undefined));
+            req.resume();
+        });
+    }
+    return new Promise((resolve) => {
+        const chunks: Buffer[] = [];
+        let bytes = 0;
+        let tooLarge = false;
+        let done = false;
+        const finish = (value: unknown | undefined): void => {
+            if (done) return;
+            done = true;
+            resolve(value);
+        };
+        req.on('data', (chunk: Buffer) => {
+            if (done) return;
+            bytes += chunk.length;
+            if (bytes > maxBytes) {
+                tooLarge = true;
+                chunks.length = 0;
+                return;
+            }
+            if (!tooLarge) chunks.push(Buffer.from(chunk));
+        });
+        req.once('end', () => {
+            if (done) return;
+            if (tooLarge) {
+                reject(res, 413, 'Request body is too large');
+                return finish(undefined);
+            }
+            if (bytes === 0) {
+                reject(res, 400, 'JSON body required');
+                return finish(undefined);
+            }
+            try {
+                finish(JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown);
+            } catch {
+                reject(res, 400, 'JSON body is invalid');
+                finish(undefined);
+            }
+        });
+        const failed = (): void => {
+            if (!done) reject(res, 400, 'Request body was interrupted');
+            finish(undefined);
+        };
+        req.once('aborted', failed);
+        req.once('error', failed);
+    });
+};
 
 const hasToken = (req: IncomingMessage, expected: string): boolean => {
     const token = req.headers.authorization?.match(/^Bearer ([A-Za-z0-9._~-]{32,256})$/)?.[1];
@@ -301,22 +396,55 @@ const offsetPage = <T>(after: number, total: number, items: readonly T[]) => ({
     items,
 });
 
+const sameOrder = (order: PaperOrder, request: PaperRequest): boolean => {
+    const requestedPrice = priceOf(request.kind === 'market' ? request.reference : request.limit);
+    return order.id === request.id
+        && order.kind === request.kind
+        && order.side === request.side
+        && order.tokenMint === request.tokenMint
+        && order.quoteMint === request.quoteMint
+        && order.inputRaw === request.inputRaw
+        && order.price.quoteRaw === requestedPrice.quoteRaw
+        && order.price.tokenRaw === requestedPrice.tokenRaw;
+};
+
+const actionResponse = (
+    res: ServerResponse,
+    status: number,
+    auth: ReplayApiAuth,
+    state: ReplayState,
+    op: 'place' | 'cancel',
+    applied: boolean,
+    order: PaperOrder
+): void => sendJson(res, status, {
+    success: true,
+    ...responseBody(auth, identityOf(state.snapshot), {
+        action: {
+            contract: replayPaperActionContract,
+            op,
+            applied,
+            revision: {
+                epoch: state.snapshot.epoch,
+                cursor: state.snapshot.cursor,
+                fact: state.paper.factCount,
+            },
+            order,
+        },
+    }),
+});
+
 const handler = (
     runtime: ReplayRuntime,
     auth: ReplayApiAuth
 ): ((req: IncomingMessage, res: ServerResponse) => void) => {
     const base = `/api/replay/v1/runs/${auth.runId}`;
-    return (req, res) => {
+    return async (req, res) => {
         if (req.headers['x-fervor-mode'] !== replayApiMode) {
             return reject(res, 409, 'Historical replay mode required');
         }
         if (!hasToken(req, auth.tokenSha256)) {
             res.setHeader('WWW-Authenticate', 'Bearer realm="fervor-replay"');
             return reject(res, 401, 'Replay access token required');
-        }
-        if (req.method !== 'GET') {
-            res.setHeader('Allow', 'GET');
-            return reject(res, 405, 'Method not allowed');
         }
         let url: URL;
         try {
@@ -325,6 +453,65 @@ const handler = (
             return reject(res, 400, 'Invalid request URL');
         }
         try {
+            if (url.pathname === `${base}/paper/actions`) {
+                if (req.method !== 'POST') {
+                    res.setHeader('Allow', 'POST');
+                    return reject(res, 405, 'Method not allowed');
+                }
+                const body = await readJson(req, res);
+                if (body === undefined) return;
+                const parsed = paperActionSchema.safeParse(body);
+                if (!parsed.success) return reject(res, 400, 'Paper action is invalid');
+                const command = parsed.data;
+                const orderId = command.op === 'place' ? command.order.id : command.orderId;
+                const existing = runtime.findOrder(orderId);
+                if (command.op === 'place' && existing !== undefined) {
+                    if (!sameOrder(existing, command.order)) {
+                        return reject(res, 409, 'Paper order ID conflict');
+                    }
+                    return actionResponse(
+                        res, 200, auth, runtime.state(), 'place', false, existing
+                    );
+                }
+                if (command.op === 'cancel' && existing === undefined) {
+                    return reject(res, 404, 'Paper order not found');
+                }
+                if (command.op === 'cancel' && existing!.status === 'cancelled') {
+                    return actionResponse(
+                        res, 200, auth, runtime.state(), 'cancel', false, existing!
+                    );
+                }
+                if (command.op === 'cancel'
+                    && (existing!.status === 'filled' || existing!.status === 'expired')) {
+                    return reject(res, 409, 'Paper order is terminal');
+                }
+                const state = runtime.state();
+                const resync = exactResync(state, {
+                    epoch: command.epoch,
+                    cursor: command.cursor,
+                    fact: command.fact,
+                });
+                if (resync) return sendResync(res, auth, resync);
+                if (state.busy || state.snapshot.status !== 'paused') {
+                    return reject(res, 409, 'Replay must be paused');
+                }
+                const order = command.op === 'place'
+                    ? runtime.place(command.order)
+                    : runtime.cancel(command.orderId);
+                return actionResponse(
+                    res,
+                    command.op === 'place' ? 201 : 200,
+                    auth,
+                    runtime.state(),
+                    command.op,
+                    true,
+                    order
+                );
+            }
+            if (req.method !== 'GET') {
+                res.setHeader('Allow', 'GET');
+                return reject(res, 405, 'Method not allowed');
+            }
             if (url.pathname === `${base}/snapshot`) {
                 if (url.search) return reject(res, 400, 'Snapshot query is invalid');
                 const state: ReplayState = runtime.state();

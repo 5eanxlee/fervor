@@ -18,6 +18,8 @@ import {
     replayApiAuthContract,
     replayApiContract,
     replayApiMode,
+    replayPaperActionContract,
+    replayPaperCommandContract,
     replayPaperContract,
     startReplayApi,
     type ReplayApi,
@@ -96,14 +98,25 @@ const call = (
     socketPath: string,
     route: string,
     headers: Record<string, string> = {},
-    method = 'GET'
+    method = 'GET',
+    body?: unknown
 ): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: any }> =>
     new Promise((resolve, reject) => {
+        const payload = body === undefined ? undefined : JSON.stringify(body);
         const req = request({
             socketPath,
             path: route,
             method,
-            headers: { connection: 'close', ...headers },
+            headers: {
+                connection: 'close',
+                ...(payload === undefined ? {} : {
+                    'content-type': 'application/json',
+                    ...(headers['transfer-encoding'] === 'chunked' ? {} : {
+                        'content-length': String(Buffer.byteLength(payload)),
+                    }),
+                }),
+                ...headers,
+            },
         }, (res) => {
             const chunks: Buffer[] = [];
             res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
@@ -117,7 +130,7 @@ const call = (
             });
         });
         req.once('error', reject);
-        req.end();
+        req.end(payload);
     });
 
 const openApi = async (steps = 3): Promise<{
@@ -495,5 +508,150 @@ describe('replay API', () => {
         ]) {
             await expect(call(socketPath, route, headers)).resolves.toMatchObject({ status: 400 });
         }
+    });
+
+    it('converges replay-only paper action retries without crossing a stale cut', async () => {
+        const { runtime, socketPath } = await openApi(1);
+        const route = '/api/replay/v1/runs/api-run/paper/actions';
+        const place = {
+            contract: replayPaperCommandContract,
+            op: 'place',
+            epoch: 1,
+            cursor: 1,
+            fact: 0,
+            order: {
+                id: 'http-order',
+                kind: 'limit',
+                side: 'buy',
+                tokenMint: replayMint,
+                quoteMint: replayQuoteMint,
+                inputRaw: '10',
+                limit: { quoteRaw: '2', tokenRaw: '2' },
+            },
+        } as const;
+
+        await expect(call(socketPath, route, {}, 'POST', place))
+            .resolves.toMatchObject({ status: 409 });
+        await expect(call(socketPath, route, {
+            'x-fervor-mode': replayApiMode,
+        }, 'POST', place)).resolves.toMatchObject({ status: 401 });
+        await expect(call(socketPath, route, headers)).resolves.toMatchObject({ status: 405 });
+
+        const created = await call(socketPath, route, headers, 'POST', place);
+        expect(created).toMatchObject({
+            status: 201,
+            body: {
+                success: true,
+                session: { epoch: 1, cursor: 1 },
+                data: {
+                    action: {
+                        contract: replayPaperActionContract,
+                        op: 'place',
+                        applied: true,
+                        revision: { epoch: 1, cursor: 1, fact: 1 },
+                        order: {
+                            id: 'http-order',
+                            status: 'pending',
+                            price: { quoteRaw: '1', tokenRaw: '1' },
+                        },
+                    },
+                },
+            },
+        });
+        await expect(call(socketPath, route, headers, 'POST', place)).resolves.toMatchObject({
+            status: 200,
+            body: {
+                data: {
+                    action: {
+                        op: 'place',
+                        applied: false,
+                        revision: { epoch: 1, cursor: 1, fact: 1 },
+                        order: { id: 'http-order' },
+                    },
+                },
+            },
+        });
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...place,
+            order: { ...place.order, inputRaw: '11' },
+        })).resolves.toMatchObject({
+            status: 409,
+            body: { error: 'Paper order ID conflict' },
+        });
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...place,
+            order: { ...place.order, id: 'stale-order' },
+        })).resolves.toMatchObject({
+            status: 409,
+            body: {
+                data: {
+                    resync: {
+                        reason: 'paper_changed',
+                        requested: { epoch: 1, cursor: 1, fact: 0 },
+                        cut: { epoch: 1, cursor: 1, fact: 1 },
+                    },
+                },
+            },
+        });
+
+        const cancel = {
+            contract: replayPaperCommandContract,
+            op: 'cancel',
+            epoch: 1,
+            cursor: 1,
+            fact: 1,
+            orderId: 'http-order',
+        } as const;
+        await expect(call(socketPath, route, headers, 'POST', cancel)).resolves.toMatchObject({
+            status: 200,
+            body: {
+                data: {
+                    action: {
+                        op: 'cancel',
+                        applied: true,
+                        revision: { epoch: 1, cursor: 1, fact: 2 },
+                        order: { id: 'http-order', status: 'cancelled' },
+                    },
+                },
+            },
+        });
+        await expect(call(socketPath, route, headers, 'POST', cancel)).resolves.toMatchObject({
+            status: 200,
+            body: {
+                data: {
+                    action: {
+                        op: 'cancel',
+                        applied: false,
+                        revision: { epoch: 1, cursor: 1, fact: 2 },
+                    },
+                },
+            },
+        });
+        expect(runtime.state().paper).toMatchObject({ orderCount: 1, factCount: 2 });
+
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...cancel,
+            fact: 2,
+            orderId: 'missing-order',
+        })).resolves.toMatchObject({ status: 404 });
+        await expect(call(socketPath, route, {
+            ...headers,
+            'content-type': 'text/plain',
+        }, 'POST', place)).resolves.toMatchObject({ status: 415 });
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...place,
+            padding: 'x'.repeat(17_000),
+        })).resolves.toMatchObject({ status: 413 });
+        await expect(call(socketPath, route, {
+            ...headers,
+            'transfer-encoding': 'chunked',
+        }, 'POST', {
+            ...place,
+            padding: 'x'.repeat(17_000),
+        })).resolves.toMatchObject({ status: 413 });
+        await expect(call(socketPath, route, headers, 'POST', {
+            ...place,
+            extra: true,
+        })).resolves.toMatchObject({ status: 400 });
     });
 });

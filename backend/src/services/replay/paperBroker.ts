@@ -261,6 +261,11 @@ export class ReplayPaperBroker {
         return this.viewOf(this.requireOrder(id));
     }
 
+    findOrder(id: string): PaperOrder | undefined {
+        const order = this.orderMap.get(id);
+        return order === undefined ? undefined : this.viewOf(order);
+    }
+
     orderCount(): number {
         return this.orderMap.size;
     }

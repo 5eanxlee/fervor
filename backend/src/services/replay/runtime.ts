@@ -272,6 +272,10 @@ export class ReplayRuntime {
         return this.paper.orders(after, limit);
     }
 
+    findOrder(id: string): PaperOrder | undefined {
+        return this.paper.findOrder(id);
+    }
+
     facts(after = 0, limit = 100): readonly PaperFact[] {
         return this.paper.facts(after, limit);
     }
