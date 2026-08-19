@@ -4,7 +4,15 @@ This stack runs the same browser/API boundary used by the live product while kee
 
 The deployment intentionally uses one colocated Postgres instance in development mode. It is a bounded replay lab, not the production database topology. Live financial submission, live wallet polling, and external notification providers remain disabled.
 
-Create a mode-600 environment file from `env.example`, then run:
+Create a mode-600 environment file from `env.example`. Set `FERVOR_SECRET_GID` to the
+numeric group that owns the replay auth and token files, and grant that group read access:
+
+```sh
+chgrp "$(id -g)" /secure/path/replay-api-auth.json /secure/path/replay-api-token
+chmod 640 /secure/path/replay-api-auth.json /secure/path/replay-api-token
+```
+
+Then run:
 
 ```sh
 docker compose --env-file /secure/path/fervor-replay.env -f deploy/replay/compose.yml up -d --build
