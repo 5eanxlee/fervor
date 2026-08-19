@@ -1,0 +1,49 @@
+name: fervor-replay
+
+services:
+  replay:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: fervor-backend:replay
+    command:
+      - node
+      - dist/replay-lab.js
+      - --replay
+      - /replay
+      - --checkpoints
+      - /checkpoints
+      - --run
+      - ${FERVOR_REPLAY_RUN:-local}
+    network_mode: none
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stdin_open: true
+    tty: true
+    restart: "no"
+    stop_grace_period: 30s
+    pids_limit: 128
+    cpus: ${FERVOR_REPLAY_CPUS:-4.0}
+    mem_limit: ${FERVOR_REPLAY_MEMORY:-2g}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 4096
+    volumes:
+      - type: bind
+        source: ${FERVOR_REPLAY_DIR:?set FERVOR_REPLAY_DIR}
+        target: /replay
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${FERVOR_CHECKPOINT_DIR:?set FERVOR_CHECKPOINT_DIR}
+        target: /checkpoints
+        bind:
+          create_host_path: false

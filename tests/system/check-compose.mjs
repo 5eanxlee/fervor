@@ -38,6 +38,58 @@ if (local.services['core-postgres'].volumes[0].source
     === local.services['market-postgres'].volumes[0].source) {
     throw new Error('Local database planes share a data volume');
 }
+
+const replayDir = path.join(root, 'corpora/quant-2024-11-19');
+const checkpointDir = path.join(replayDir, 'golden');
+const replayResult = await runProc('docker', [
+    'compose',
+    '-f',
+    path.join(root, 'docker-compose.replay.yml'),
+    'config',
+    '--format',
+    'json',
+], {
+    cwd: root,
+    env: cleanEnv({
+        FERVOR_REPLAY_DIR: replayDir,
+        FERVOR_CHECKPOINT_DIR: checkpointDir,
+        FERVOR_REPLAY_RUN: 'compose-check',
+    }),
+    capture: true,
+    timeoutMs: 30_000,
+});
+if (replayResult.timedOut) throw new Error('Replay Compose rendering exceeded 30 seconds');
+if (replayResult.code !== 0) {
+    throw new Error(`Replay Compose rendering failed: ${replayResult.stderr.trim()}`);
+}
+const replayCompose = JSON.parse(replayResult.stdout);
+const replayService = replayCompose.services?.replay;
+if (!replayService
+    || replayService.network_mode !== 'none'
+    || replayService.read_only !== true
+    || replayService.privileged === true
+    || replayService.stdin_open !== true
+    || replayService.tty !== true
+    || replayService.pids_limit !== 128
+    || replayService.mem_limit !== '2147483648'
+    || replayService.cpus !== 4
+    || JSON.stringify(replayService.cap_drop) !== JSON.stringify(['ALL'])
+    || JSON.stringify(replayService.security_opt) !== JSON.stringify(['no-new-privileges:true'])
+    || Object.keys(replayService.environment ?? {}).length > 0
+    || (replayService.secrets?.length ?? 0) > 0
+    || (replayService.ports?.length ?? 0) > 0
+    || (replayService.expose?.length ?? 0) > 0
+    || Object.keys(replayService.networks ?? {}).length > 0) {
+    throw new Error('Replay Compose does not preserve its no-network least-privilege boundary');
+}
+const replayVolumes = new Map((replayService.volumes ?? []).map((item) => [item.target, item]));
+if (replayVolumes.size !== 2
+    || replayVolumes.get('/replay')?.source !== replayDir
+    || replayVolumes.get('/replay')?.read_only !== true
+    || replayVolumes.get('/checkpoints')?.source !== checkpointDir
+    || replayVolumes.get('/checkpoints')?.read_only === true) {
+    throw new Error('Replay Compose changed its immutable corpus or checkpoint mount contract');
+}
 const splitScript = read(path.join(root, 'db/tools/compose-plane-split.mjs'));
 if (!splitScript.includes('-----BEGIN CERTIFICATE-----')
     || !splitScript.includes('rejectUnauthorized: true')

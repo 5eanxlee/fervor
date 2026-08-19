@@ -18,6 +18,8 @@ A caller supplies the run ID. Every seek treats its target as the next event ind
 
 `replay-lab.ts` exposes that owner as newline-delimited JSON over stdin and stdout, not an HTTP listener. It imports no application environment loader and starts paused after verifying the corpus. Launch it from a clean environment with `npm run replay:lab --workspace backend -- --replay <dir> --checkpoints <dir> --run <id>`. Commands are `status`, `play`, `pause`, `step`, `seek`, `checkpoint`, and `stop`; graceful EOF or a termination signal pauses and checkpoints before exit.
 
+`docker-compose.replay.yml` is the portable OS sandbox. It attaches no network, env file, or secret; mounts the immutable corpus read-only and a separate checkpoint directory read-write; makes the container root read-only; drops every capability; denies privilege escalation; and bounds memory, CPU, PIDs, file descriptors, and temporary storage. Both host directories must already exist. Run it with `FERVOR_REPLAY_DIR=<dir> FERVOR_CHECKPOINT_DIR=<dir> FERVOR_REPLAY_RUN=<id> docker compose -f docker-compose.replay.yml run --rm replay`.
+
 Run its focused verification with:
 
 ```bash
