@@ -140,7 +140,7 @@ mod tests {
         connector: TlsConnector,
         config: Arc<rustls::ServerConfig>,
         host: &str,
-    ) -> bool {
+    ) -> Result<(), native_tls::HandshakeError<TcpStream>> {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let server = thread::spawn(move || {
@@ -161,7 +161,7 @@ mod tests {
         stream
             .set_write_timeout(Some(Duration::from_secs(2)))
             .unwrap();
-        let connected = connector.connect(host, stream).is_ok();
+        let connected = connector.connect(host, stream).map(|_| ());
         server.join().unwrap();
         connected
     }
@@ -198,20 +198,20 @@ mod tests {
     #[test]
     fn verifies_tls_peer() {
         let (config, ca) = test_peer();
-        assert!(connect_peer(
+        connect_peer(
             native_connector(Some(&ca)).unwrap(),
             config.clone(),
-            "localhost"
-        ));
-        assert!(!connect_peer(
-            native_connector(None).unwrap(),
-            config.clone(),
-            "localhost"
-        ));
-        assert!(!connect_peer(
+            "localhost",
+        )
+        .unwrap();
+        assert!(
+            connect_peer(native_connector(None).unwrap(), config.clone(), "localhost").is_err()
+        );
+        assert!(connect_peer(
             native_connector(Some(&ca)).unwrap(),
             config,
             "wrong.example"
-        ));
+        )
+        .is_err());
     }
 }
