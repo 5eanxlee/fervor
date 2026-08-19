@@ -22,13 +22,6 @@ suite('market projection infrastructure', () => {
         ({ MarketEventStorageService } = await import('../src/services/marketData/marketEventStorageService'));
         ({ MarketMetricService } = await import('../src/services/marketData/marketMetricService'));
         await redisStreams.connect();
-        await query(
-            `INSERT INTO tokens (mint, total_supply, circulating_supply, source, observed_at, stale)
-             VALUES ($1, 1000000000, 900000000, 'fixture', CURRENT_TIMESTAMP, false)
-             ON CONFLICT (mint) DO UPDATE SET total_supply = EXCLUDED.total_supply,
-               circulating_supply = EXCLUDED.circulating_supply`,
-            [tokenMint]
-        );
         await redisStreams.command.del(
             `stream:seen:market.states:${eventKey}:state`,
             `stream:seen:ticks.normalized:${eventKey}:tick`,
@@ -89,24 +82,32 @@ suite('market projection infrastructure', () => {
             receivedAt: now.toISOString(),
             confidence: 0.8,
             stale: false,
+            supply: {
+                contract: 'fervor-supply-v1',
+                tokenMint,
+                rawAmount: '1000000000000000',
+                decimals: 6,
+                fixed: true,
+                layout: 'pump-event-2024-11-v1',
+                source: 'helius_laserstream',
+                sourceEventId: 'fixture:supply:1',
+                slot: 42,
+                signature: 'fixture-signature-1',
+                instructionIndex: 0,
+                eventIndex: 0,
+                observedAt: now.toISOString(),
+                confidence: 1,
+                stale: false,
+                commitment: 'confirmed',
+            },
         };
         await new MarketEventStorageService().persist([trade]);
         const beforeStates = await redisStreams.command.xlen(STREAMS.marketStates);
         const beforeTicks = await redisStreams.command.xlen(STREAMS.ticksNormalized);
         const service = new MarketMetricService({
             get: async () => ({
-                contract: 'fervor-market-input-v1',
+                contract: 'fervor-market-input-v2',
                 tokenMint,
-                supply: {
-                    totalSupply: 1_000_000_000,
-                    circulatingSupply: 900_000_000,
-                    supplyPolicy: 'fervor_mint_supply_v1',
-                    source: 'helius_laserstream',
-                    sourceEventId: 'fixture:supply:1',
-                    observedAt: now.toISOString(),
-                    stale: false,
-                    confidence: 0.95,
-                },
             }),
         } as any);
 
@@ -132,7 +133,7 @@ suite('market projection infrastructure', () => {
             [tokenMint]
         );
         expect(state.rows[0]).toMatchObject({
-            market_cap_usd: '270000000000.00',
+            market_cap_usd: null,
             fdv_usd: '300000000000.00',
         });
         expect(state.rows[0].volume_usd['1m']).toBe(600);
@@ -143,17 +144,17 @@ suite('market projection infrastructure', () => {
         );
         expect(projected.rows[0].state.metricQuality).toMatchObject({
             price: { confidence: 0.8 },
-            market_cap: { confidence: 0.8 },
             fdv: { confidence: 0.8 },
             supply: { sourceEventId: 'fixture:supply:1' },
             rolling: { estimated: true },
         });
         expect(projected.rows[0].state).toMatchObject({
-            inputContract: 'fervor-market-input-v1',
+            inputContract: 'fervor-market-input-v2',
             metricSource: 'fervor_engine',
-            metricVersion: 'fervor-market-v1',
-            supplyPolicy: 'fervor_mint_supply_v1',
+            metricVersion: 'fervor-market-v2',
+            supply: { contract: 'fervor-supply-v1', rawAmount: '1000000000000000' },
         });
+        expect(projected.rows[0].state.marketCapUsd).toBeUndefined();
 
         const late = {
             ...trade,
@@ -162,6 +163,7 @@ suite('market projection infrastructure', () => {
             signature: 'fixture-signature-late',
             priceUsd: 1,
             usdAmount: 50,
+            supply: undefined,
             observedAt: new Date(now.getTime() - 30_000).toISOString(),
         };
         expect(await service.project(late, { nowMs: now.getTime() })).toBe('committed');

@@ -12,6 +12,7 @@ use std::str;
 
 pub const PUMP_PROGRAM: &str = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 pub const PUMP_LAYOUT: &str = "pump-event-2024-11-v1";
+pub const SUPPLY_CONTRACT: &str = "fervor-supply-v1";
 
 const TOKEN_PROGRAM: &str = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
 const SELF_CPI: [u8; 8] = [228, 69, 165, 46, 81, 203, 154, 29];
@@ -69,6 +70,27 @@ pub struct PumpCreate {
     #[serde(with = "u64_text")]
     pub supply_raw: u64,
     pub supply_fixed: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupplyEvidence {
+    pub contract: String,
+    pub token_mint: String,
+    pub raw_amount: String,
+    pub decimals: u32,
+    pub fixed: bool,
+    pub layout: String,
+    pub source: String,
+    pub source_event_id: String,
+    pub slot: u64,
+    pub signature: String,
+    pub instruction_index: u32,
+    pub event_index: u32,
+    pub observed_at: String,
+    pub confidence: f64,
+    pub stale: bool,
+    pub commitment: crate::fervor_tx::Commitment,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -365,6 +387,69 @@ impl PumpState {
         self.fdv_sol = Some(decimal_ratio(fdv_num, denominator)?);
         Ok(())
     }
+}
+
+pub fn has_pump_create(tx: &FervorTx) -> bool {
+    let keys = tx
+        .static_keys
+        .iter()
+        .chain(&tx.loaded_writable)
+        .chain(&tx.loaded_readonly)
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    tx.instructions.iter().any(|ix| {
+        keys.get(ix.program_index as usize).copied() == Some(PUMP_PROGRAM)
+            && ix.data.starts_with(&SELF_CPI)
+            && ix
+                .data
+                .get(SELF_CPI.len()..)
+                .is_some_and(|data| data.starts_with(&CREATE_EVENT))
+    })
+}
+
+pub fn pump_supply(
+    events: &[PumpEvent],
+    mint: &str,
+    source: &str,
+    observed_at: &str,
+    commitment: crate::fervor_tx::Commitment,
+) -> Option<SupplyEvidence> {
+    events.iter().find_map(|event| {
+        let PumpData::Create(create) = &event.data else {
+            return None;
+        };
+        if create.mint != mint
+            || !create.supply_fixed
+            || create.supply_raw == 0
+            || create.decimals > 18
+        {
+            return None;
+        }
+        Some(SupplyEvidence {
+            contract: SUPPLY_CONTRACT.to_string(),
+            token_mint: create.mint.clone(),
+            raw_amount: create.supply_raw.to_string(),
+            decimals: create.decimals,
+            fixed: true,
+            layout: PUMP_LAYOUT.to_string(),
+            source: source.to_string(),
+            source_event_id: format!(
+                "{source}:supply:{}:{}:{}:{}",
+                event.origin.slot,
+                event.origin.signature,
+                event.origin.instruction_index,
+                event.origin.event_index
+            ),
+            slot: event.origin.slot,
+            signature: event.origin.signature.clone(),
+            instruction_index: event.origin.instruction_index,
+            event_index: event.origin.event_index,
+            observed_at: observed_at.to_string(),
+            confidence: 1.0,
+            stale: false,
+            commitment,
+        })
+    })
 }
 
 pub fn decode_pump_events(tx: &FervorTx) -> Result<Vec<PumpEvent>, Quarantine> {
@@ -891,6 +976,7 @@ mod tests {
     #[test]
     fn reconstructs_fixed_supply_curve_lifecycle() {
         let tx = sample();
+        assert!(has_pump_create(&tx));
         let events = decode_pump_events(&tx).unwrap();
         assert_eq!(events.len(), 4);
         assert_eq!(
@@ -910,6 +996,17 @@ mod tests {
         let json = serde_json::to_value(&events[0]).unwrap();
         assert_eq!(json["type"], "create");
         assert_eq!(json["supplyRaw"], "1000000000000000");
+        let supply = pump_supply(
+            &events,
+            &key(2),
+            "old_faithful",
+            &tx.observed_at,
+            tx.commitment,
+        )
+        .unwrap();
+        assert_eq!(supply.contract, SUPPLY_CONTRACT);
+        assert_eq!(supply.raw_amount, "1000000000000000");
+        assert_eq!(supply.decimals, 6);
     }
 
     #[test]
@@ -931,6 +1028,16 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn ignores_transactions_without_a_create_event() {
+        let mut tx = sample();
+        tx.instructions.retain(|ix| {
+            !ix.data
+                .starts_with(&[SELF_CPI.as_slice(), CREATE_EVENT.as_slice()].concat())
+        });
+        assert!(!has_pump_create(&tx));
     }
 
     #[test]

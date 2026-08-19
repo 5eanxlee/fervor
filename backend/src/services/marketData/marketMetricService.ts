@@ -6,7 +6,7 @@ import { stableHash } from './hash';
 import { RollingMetricBook } from './rollingMetricBook';
 import { redisStreams, STREAMS, tickStream } from '../redisStreamService';
 import { env } from '../../config/env';
-import { deriveFervorMetrics, fervorInputContract, fervorMetricVersion } from './metricEngine';
+import { deriveFervorMetrics, fervorInputContract, fervorMetricVersion, supplyAmount } from './metricEngine';
 import { FervorInputSource, marketInputs } from './marketInputService';
 
 export interface MetricProjectOptions {
@@ -65,6 +65,22 @@ const inputHash = (trade: NormalizedTradeEvent): string => crypto.createHash('sh
     trade.quoteKind ?? null,
     trade.decodeVersion ?? null,
     trade.computeUnits ?? null,
+    trade.supply?.contract ?? null,
+    trade.supply?.tokenMint ?? null,
+    trade.supply?.rawAmount ?? null,
+    trade.supply?.decimals ?? null,
+    trade.supply?.fixed ?? null,
+    trade.supply?.layout ?? null,
+    trade.supply?.source ?? null,
+    trade.supply?.sourceEventId ?? null,
+    trade.supply?.slot ?? null,
+    trade.supply?.signature ?? null,
+    trade.supply?.instructionIndex ?? null,
+    trade.supply?.eventIndex ?? null,
+    trade.supply?.observedAt ?? null,
+    trade.supply?.confidence ?? null,
+    trade.supply?.stale ?? null,
+    trade.supply?.commitment ?? null,
     trade.observedAt,
     trade.confidence,
     trade.stale,
@@ -129,21 +145,21 @@ export class MarketMetricService {
                 const later = isLater(trade, base) || !prior?.priceUsd;
                 const priceUsd = later ? trade.priceUsd : prior!.priceUsd;
                 const priceSol = later ? trade.priceSol : prior?.priceSol;
-                const totalSupply = inputs?.supply?.totalSupply ?? prior?.totalSupply;
-                const supplyPolicy = inputs?.supply?.supplyPolicy ?? prior?.supplyPolicy;
-                const circulatingSupply = inputs?.supply?.supplyPolicy
-                    ? inputs.supply.circulatingSupply
-                    : prior?.supplyPolicy
-                        ? prior.circulatingSupply
-                        : undefined;
+                const directSupply = supplyAmount(trade.supply, trade.tokenMint) === undefined
+                    ? undefined
+                    : trade.supply;
+                const priorSupply = supplyAmount(prior?.supply, trade.tokenMint) === undefined
+                    ? undefined
+                    : prior?.supply;
+                const supply = directSupply ?? priorSupply;
                 const liquidityUsd = inputs?.liquidity?.liquidityUsd ?? prior?.liquidityUsd;
                 const derived = deriveFervorMetrics({
+                    tokenMint: trade.tokenMint,
                     priceUsd,
-                    totalSupply,
-                    circulatingSupply,
-                    supplyPolicy,
+                    supply,
                     liquidityUsd,
                 });
+                const totalSupply = supplyAmount(supply, trade.tokenMint);
                 const latestObservedAt = later ? trade.observedAt : base.latestObservedAt!;
                 const latestSlot = later ? trade.slot ?? null : base.latestSlot;
                 const latestEventKey = later ? trade.idempotencyKey : base.latestEventKey!;
@@ -164,13 +180,14 @@ export class MarketMetricService {
                     stale: prior!.stale,
                     estimated: true,
                 };
-                const supplyQuality = inputs?.supply ? {
-                    sourceEventId: inputs.supply.sourceEventId,
-                    observedAt: inputs.supply.observedAt,
-                    confidence: inputs.supply.confidence,
-                    stale: inputs.supply.stale,
-                    estimated: true,
-                } : prior?.metricQuality?.supply;
+                const supplyQuality = directSupply ? {
+                    sourceEventId: directSupply.sourceEventId,
+                    observedAt: directSupply.observedAt,
+                    confidence: directSupply.confidence,
+                    stale: directSupply.stale,
+                    estimated: false,
+                    commitment: directSupply.commitment,
+                } : supply ? prior?.metricQuality?.supply : undefined;
                 const liquidityQuality = inputs?.liquidity ? {
                     sourceEventId: inputs.liquidity.sourceEventId,
                     observedAt: inputs.liquidity.observedAt,
@@ -190,7 +207,7 @@ export class MarketMetricService {
                     kind: 'market_state',
                     source: derived.metricSource,
                     observationSource: later ? trade.source : prior!.observationSource,
-                    inputContract: inputs?.contract ?? prior?.inputContract ?? fervorInputContract,
+                    inputContract: fervorInputContract,
                     sourceEventId: `metric:${trade.sourceEventId}`,
                     idempotencyKey: stableHash([trade.idempotencyKey, fervorMetricVersion]),
                     metricSource: derived.metricSource,
@@ -204,8 +221,7 @@ export class MarketMetricService {
                     fdvUsd: derived.fdvUsd,
                     liquidityUsd: derived.liquidityUsd,
                     totalSupply,
-                    circulatingSupply,
-                    supplyPolicy,
+                    supply,
                     volumeUsd: rolling.volumeUsd,
                     buyCount: rolling.buyCount,
                     sellCount: rolling.sellCount,
@@ -228,9 +244,7 @@ export class MarketMetricService {
                     priceObservedAt: latestObservedAt,
                     metricQuality: {
                         price: priceQuality,
-                        market_cap: circulatingSupply === undefined
-                            ? undefined
-                            : combineQuality(priceQuality, supplyQuality),
+                        market_cap: undefined,
                         fdv: totalSupply === undefined
                             ? undefined
                             : combineQuality(priceQuality, supplyQuality),

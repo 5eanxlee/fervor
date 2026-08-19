@@ -7,28 +7,6 @@ interface RpcResult<T> {
     error?: { code?: number; message?: string };
 }
 
-interface TokenSupply {
-    context?: { slot?: number };
-    value: {
-        amount: string;
-        decimals: number;
-        uiAmountString: string;
-    };
-}
-
-export interface SupplyObservation {
-    mint: string;
-    rawAmount: string;
-    uiAmount: string;
-    decimals: number;
-    totalSupply: number;
-    slot?: number;
-    observedAt: string;
-    source: 'helius_rpc';
-    confidence: number;
-    stale: boolean;
-}
-
 interface LargeAccount {
     address: string;
     amount: string;
@@ -96,37 +74,15 @@ export class HeliusTokenService {
         return response.data.result;
     }
 
-    async getSupply(mint: string): Promise<SupplyObservation> {
-        const supply = await this.rpc<TokenSupply>('getTokenSupply', [mint, { commitment: 'confirmed' }]);
-        const totalSupply = finite(supply.value.uiAmountString);
-        if (totalSupply === undefined || totalSupply < 0) {
-            throw new Error('getTokenSupply returned an invalid supply');
-        }
-        return {
-            mint,
-            rawAmount: supply.value.amount,
-            uiAmount: supply.value.uiAmountString,
-            decimals: supply.value.decimals,
-            totalSupply,
-            slot: supply.context?.slot,
-            observedAt: new Date().toISOString(),
-            source: 'helius_rpc',
-            confidence: 0.98,
-            stale: false,
-        };
-    }
-
     async getMetadata(mint: string): Promise<TokenMetadata> {
-        const [asset, supply] = await Promise.all([
-            this.rpc<Asset>('getAsset', {
-                id: mint,
-                displayOptions: { showFungible: true },
-            }),
-            this.getSupply(mint),
-        ]);
+        const asset = await this.rpc<Asset>('getAsset', {
+            id: mint,
+            displayOptions: { showFungible: true },
+        });
         const links = asset.content?.links || {};
         const metadata = asset.content?.metadata || {};
         const file = asset.content?.files?.[0];
+        const decimals = finite(asset.token_info?.decimals);
 
         return {
             mint,
@@ -134,10 +90,10 @@ export class HeliusTokenService {
             name: metadata.name || 'Unknown Token',
             symbol: metadata.symbol || asset.token_info?.symbol || 'UNKNOWN',
             logo: links.image || file?.cdn_uri || file?.uri || '',
-            decimals: supply.decimals,
+            decimals: decimals !== undefined && Number.isInteger(decimals) && decimals >= 0 && decimals <= 255
+                ? decimals
+                : undefined,
             metadataUri: asset.content?.json_uri || '',
-            totalSupply: supply.rawAmount,
-            totalSupplyFormatted: supply.uiAmount,
             links: {
                 website: links.external_url || links.website,
                 twitter: links.twitter,
@@ -147,18 +103,20 @@ export class HeliusTokenService {
         };
     }
 
-    async getHolders(mint: string, limit = 20): Promise<TokenHolders> {
+    async getHolders(mint: string, limit = 20, ownedSupply?: number): Promise<TokenHolders> {
         const cappedLimit = Math.min(20, Math.max(1, limit));
-        const [largest, supply] = await Promise.all([
-            this.rpc<{ value: LargeAccount[] }>('getTokenLargestAccounts', [mint, { commitment: 'confirmed' }]),
-            this.getSupply(mint),
-        ]);
+        const largest = await this.rpc<{ value: LargeAccount[] }>(
+            'getTokenLargestAccounts',
+            [mint, { commitment: 'confirmed' }]
+        );
+        const totalSupply = finite(ownedSupply);
+        const usableSupply = totalSupply !== undefined && totalSupply > 0 ? totalSupply : undefined;
         const accounts = largest.value.slice(0, cappedLimit);
         if (accounts.length === 0) {
             return {
                 items: [],
-                totalSupply: supply.totalSupply,
-                top10Percent: 0,
+                totalSupply: usableSupply,
+                top10Percent: usableSupply === undefined ? undefined : 0,
                 source: 'helius',
             };
         }
@@ -175,20 +133,21 @@ export class HeliusTokenService {
             byOwner.set(owner, (byOwner.get(owner) || 0) + amount);
         });
 
-        const totalSupply = supply.totalSupply;
         const items = [...byOwner.entries()]
             .map(([owner, amount]) => ({
                 owner,
                 amount,
-                supplyPercent: totalSupply && totalSupply > 0 ? amount / totalSupply * 100 : undefined,
+                supplyPercent: usableSupply === undefined ? undefined : amount / usableSupply * 100,
             }))
             .sort((left, right) => right.amount - left.amount)
             .slice(0, cappedLimit);
 
         return {
             items,
-            totalSupply,
-            top10Percent: items.slice(0, 10).reduce((sum, item) => sum + (item.supplyPercent || 0), 0),
+            totalSupply: usableSupply,
+            top10Percent: usableSupply === undefined
+                ? undefined
+                : items.slice(0, 10).reduce((sum, item) => sum + (item.supplyPercent || 0), 0),
             source: 'helius',
         };
     }

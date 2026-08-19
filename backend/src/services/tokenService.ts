@@ -57,13 +57,16 @@ export class TokenService {
             price: state.priceUsd,
             liquidity: state.liquidityUsd,
             total_supply: state.totalSupply,
-            circulating_supply: state.circulatingSupply,
             fdv: state.fdvUsd,
             market_cap: state.marketCapUsd,
             source: state.source,
             observed_at: state.observedAt,
             stale: state.stale,
         };
+    }
+
+    async getTokenSupply(tokenAddress: string): Promise<number | undefined> {
+        return (await this.marketState.getTokenState(tokenAddress))?.totalSupply;
     }
 
     async searchTokens(searchTerm: string): Promise<TokenData[]> {
@@ -79,6 +82,7 @@ export class TokenService {
                     liquidity_usd, stale, source, observed_at, updated_at
              FROM tokens
              WHERE price_usd IS NOT NULL
+               AND source = 'fervor_engine'
                AND (symbol ILIKE $1 OR name ILIKE $1)
              ORDER BY stale ASC, liquidity_usd DESC NULLS LAST, observed_at DESC NULLS LAST
              LIMIT 25`,
@@ -98,7 +102,10 @@ export class TokenService {
         if (tokenAddresses.length === 0) return new Map();
         const result = await query(
             `SELECT mint, price_usd FROM tokens
-             WHERE mint = ANY($1::varchar[]) AND price_usd IS NOT NULL AND stale = FALSE`,
+             WHERE mint = ANY($1::varchar[])
+               AND source = 'fervor_engine'
+               AND price_usd IS NOT NULL
+               AND stale = FALSE`,
             [tokenAddresses]
         );
         return new Map(result.rows.map((row) => [row.mint, Number(row.price_usd)]));
@@ -111,8 +118,7 @@ export class TokenService {
                     base.decimals AS base_decimals, quote.name AS quote_name,
                     quote.symbol AS quote_symbol, quote.image AS quote_image,
                     quote.decimals AS quote_decimals,
-                    COALESCE(state.price_usd, base.price_usd) AS price_usd,
-                    COALESCE(state.liquidity_usd, base.liquidity_usd) AS liquidity_usd
+                    state.price_usd, state.liquidity_usd
              FROM pools p
              LEFT JOIN tokens base ON base.mint = p.base_mint
              LEFT JOIN tokens quote ON quote.mint = p.quote_mint
@@ -121,12 +127,13 @@ export class TokenService {
                  FROM market_state_snapshots
                  WHERE token_mint = p.base_mint
                    AND pool_address = p.pool_address
+                   AND source = 'fervor_engine'
                    AND stale = FALSE
                  ORDER BY observed_at DESC
                  LIMIT 1
              ) state ON TRUE
              WHERE (p.base_mint = $1 OR p.quote_mint = $1) AND p.stale = FALSE
-             ORDER BY COALESCE(state.liquidity_usd, base.liquidity_usd) DESC NULLS LAST,
+             ORDER BY state.liquidity_usd DESC NULLS LAST,
                       p.observed_at DESC NULLS LAST
              LIMIT 10`,
             [tokenAddress]
@@ -182,8 +189,18 @@ export class TokenService {
             try {
                 const metadata = await this.helius.getMetadata(address);
                 await this.storeMetadata(metadata);
-                const fdv = numberOrUndefined(stored?.fdv_usd);
-                return { ...metadata, fullyDilutedValue: fdv === undefined ? undefined : String(fdv) };
+                const owned = stored?.market_source === 'fervor_engine'
+                    ? numberOrUndefined(stored.total_supply)
+                    : undefined;
+                const fdv = stored?.market_source === 'fervor_engine'
+                    ? numberOrUndefined(stored.fdv_usd)
+                    : undefined;
+                return {
+                    ...metadata,
+                    totalSupply: owned === undefined ? undefined : String(owned),
+                    totalSupplyFormatted: owned === undefined ? undefined : String(owned),
+                    fullyDilutedValue: fdv === undefined ? undefined : String(fdv),
+                };
             } catch (error) {
                 if (!stored) throw error;
             }
@@ -200,7 +217,8 @@ export class TokenService {
                     COALESCE(m.image, t.image) AS image,
                     COALESCE(m.metadata_uri, t.metadata_uri) AS metadata_uri,
                     m.description, COALESCE(m.socials, t.socials) AS socials,
-                    t.total_supply, t.fdv_usd, m.updated_at AS metadata_updated_at
+                    t.total_supply, t.fdv_usd, t.source AS market_source,
+                    m.updated_at AS metadata_updated_at
              FROM tokens t
              LEFT JOIN token_metadata m ON m.mint = t.mint
              WHERE t.mint = $1`,
@@ -210,9 +228,10 @@ export class TokenService {
     }
 
     private metadataFromRow(row: any): TokenMetadata {
-        const totalSupply = row.total_supply === null || row.total_supply === undefined
-            ? '0'
-            : String(row.total_supply);
+        const owned = row.market_source === 'fervor_engine';
+        const totalSupply = owned && row.total_supply !== null && row.total_supply !== undefined
+            ? String(row.total_supply)
+            : undefined;
         const socials = row.socials && typeof row.socials === 'object' ? row.socials : {};
         return {
             mint: row.mint,
@@ -220,11 +239,13 @@ export class TokenService {
             name: row.name || 'Unknown Token',
             symbol: row.symbol || 'UNKNOWN',
             logo: row.image || '',
-            decimals: Number(row.decimals || 0),
+            decimals: row.decimals === null || row.decimals === undefined ? undefined : Number(row.decimals),
             metadataUri: row.metadata_uri || '',
             totalSupply,
             totalSupplyFormatted: totalSupply,
-            fullyDilutedValue: row.fdv_usd === null || row.fdv_usd === undefined ? undefined : String(row.fdv_usd),
+            fullyDilutedValue: !owned || row.fdv_usd === null || row.fdv_usd === undefined
+                ? undefined
+                : String(row.fdv_usd),
             links: {
                 website: socials.website,
                 twitter: socials.twitter,
@@ -238,15 +259,14 @@ export class TokenService {
         await transaction(async (db) => {
             await db(
                 `INSERT INTO tokens
-                    (mint, decimals, name, symbol, image, metadata_uri, total_supply, source, observed_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'helius_das', CURRENT_TIMESTAMP)
+                    (mint, decimals, name, symbol, image, metadata_uri, source, observed_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'helius_das', CURRENT_TIMESTAMP)
                  ON CONFLICT (mint) DO UPDATE SET
                     decimals = COALESCE(EXCLUDED.decimals, tokens.decimals),
                     name = COALESCE(NULLIF(EXCLUDED.name, 'Unknown Token'), tokens.name),
                     symbol = COALESCE(NULLIF(EXCLUDED.symbol, 'UNKNOWN'), tokens.symbol),
                     image = COALESCE(NULLIF(EXCLUDED.image, ''), tokens.image),
                     metadata_uri = COALESCE(NULLIF(EXCLUDED.metadata_uri, ''), tokens.metadata_uri),
-                    total_supply = COALESCE(EXCLUDED.total_supply, tokens.total_supply),
                     updated_at = CURRENT_TIMESTAMP`,
                 [
                     metadata.mint,
@@ -255,7 +275,6 @@ export class TokenService {
                     metadata.symbol,
                     metadata.logo,
                     metadata.metadataUri,
-                    metadata.totalSupplyFormatted,
                 ]
             );
             await db(

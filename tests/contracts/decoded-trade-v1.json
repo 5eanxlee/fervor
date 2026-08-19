@@ -31,5 +31,23 @@
   "stale": false,
   "commitment": "confirmed",
   "decodeVersion": "balance-delta-v1",
-  "computeUnits": 88000
+  "computeUnits": 88000,
+  "supply": {
+    "contract": "fervor-supply-v1",
+    "tokenMint": "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf",
+    "rawAmount": "1000000000000000",
+    "decimals": 6,
+    "fixed": true,
+    "layout": "pump-event-2024-11-v1",
+    "source": "helius_laserstream",
+    "sourceEventId": "helius_laserstream:supply:42:BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA:0:0",
+    "slot": 42,
+    "signature": "BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA",
+    "instructionIndex": 0,
+    "eventIndex": 0,
+    "observedAt": "2024-11-19T00:00:00Z",
+    "confidence": 1.0,
+    "stale": false,
+    "commitment": "confirmed"
+  }
 }

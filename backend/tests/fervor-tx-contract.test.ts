@@ -133,4 +133,13 @@ describe('FervorTx v1 contract', () => {
         expect(decodedTradeSchema.parse(fixture)).toEqual(fixture);
         expect(isDecodedTrade(fixture)).toBe(true);
     });
+
+    it('rejects supply evidence from another transaction', () => {
+        const fixture = JSON.parse(fs.readFileSync(
+            path.resolve(__dirname, '../../tests/contracts/decoded-trade-v1.json'),
+            'utf8'
+        ));
+        fixture.supply.signature = bs58.encode(Buffer.alloc(64, 8));
+        expect(decodedTradeSchema.safeParse(fixture).success).toBe(false);
+    });
 });

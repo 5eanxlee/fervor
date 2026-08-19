@@ -20,7 +20,7 @@ describe('market event storage', () => {
         const event: NormalizedMarketState = {
             kind: 'market_state',
             metricSource: 'fervor_engine',
-            metricVersion: 'fervor-market-v1',
+            metricVersion: 'fervor-market-v2',
             tokenMint: 'So11111111111111111111111111111111111111112',
             poolAddress: 'pool-1',
             protocol: 'pump_fun',
@@ -31,11 +31,9 @@ describe('market event storage', () => {
             liquidityUsd: 0,
             liquiditySol: 0,
             totalSupply: 0,
-            circulatingSupply: 0,
-            supplyPolicy: 'fervor_mint_supply_v1',
             source: 'fervor_engine',
             observationSource: 'helius_laserstream',
-            inputContract: 'fervor-market-input-v1',
+            inputContract: 'fervor-market-input-v2',
             sourceEventId: 'event-1',
             idempotencyKey: 'state-event-1',
             signature: 'signature-1',
@@ -48,7 +46,7 @@ describe('market event storage', () => {
 
         await new MarketEventStorageService().persist([event]);
 
-        expect(mockedQuery.mock.calls[0][1]?.slice(4, 12)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+        expect(mockedQuery.mock.calls[0][1]?.slice(4, 12)).toEqual([0, 0, 0, 0, 0, 0, 0, null]);
         expect(mockedQuery.mock.calls[1][1]?.slice(1, 5)).toEqual([0, 0, 0, 0]);
     });
 });

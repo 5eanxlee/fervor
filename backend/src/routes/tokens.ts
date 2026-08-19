@@ -26,6 +26,7 @@ router.get('/discovery', publicTokenLimiter, async (req, res) => {
                (SELECT t.*, 'new'::text AS category
                 FROM tokens t
                 WHERE t.stale = FALSE
+                  AND t.source = 'fervor_engine'
                   AND COALESCE(t.lifecycle_status, 'unknown') NOT IN ('bonding', 'migrating', 'migrated', 'trading')
                 ORDER BY t.observed_at DESC NULLS LAST, t.mint
                 LIMIT $1)
@@ -33,6 +34,7 @@ router.get('/discovery', publicTokenLimiter, async (req, res) => {
                (SELECT t.*, 'final'::text AS category
                 FROM tokens t
                 WHERE t.stale = FALSE
+                  AND t.source = 'fervor_engine'
                   AND (t.lifecycle_status = 'migrating'
                     OR (t.lifecycle_status = 'bonding' AND t.market_cap_usd >= $2))
                 ORDER BY t.market_cap_usd DESC NULLS LAST, t.mint
@@ -40,7 +42,9 @@ router.get('/discovery', publicTokenLimiter, async (req, res) => {
                UNION ALL
                (SELECT t.*, 'migrated'::text AS category
                 FROM tokens t
-                WHERE t.stale = FALSE AND t.lifecycle_status IN ('migrated', 'trading')
+                WHERE t.stale = FALSE
+                  AND t.source = 'fervor_engine'
+                  AND t.lifecycle_status IN ('migrated', 'trading')
                 ORDER BY t.observed_at DESC NULLS LAST, t.mint
                 LIMIT $1)
              )
@@ -58,6 +62,7 @@ router.get('/discovery', publicTokenLimiter, async (req, res) => {
                SELECT s.volume_usd, s.buy_count, s.sell_count
                FROM market_state_snapshots s
                WHERE s.token_mint = candidates.mint AND s.stale = FALSE
+                 AND s.source = 'fervor_engine'
                ORDER BY s.observed_at DESC
                LIMIT 1
              ) snapshot ON TRUE
@@ -143,7 +148,8 @@ router.get('/:address/holders', publicTokenLimiter, async (req, res) => {
                 error: 'Helius holder reads are not configured',
             });
         }
-        const holders = await heliusTokens.getHolders(address, limit);
+        const supply = await tokenService.getTokenSupply(address);
+        const holders = await heliusTokens.getHolders(address, limit, supply);
         res.set('Cache-Control', 'public, max-age=15, stale-while-revalidate=45');
         res.json({ success: true, data: holders });
     } catch (error) {

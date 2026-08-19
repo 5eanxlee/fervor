@@ -20,56 +20,27 @@ describe('Helius token reads', () => {
         env.HELIUS_API_KEY = originalKey;
     });
 
-    it('exposes an exact on-chain supply observation for the Fervor metric input contract', async () => {
+    it('normalizes fungible metadata without importing provider supply', async () => {
         post.mockResolvedValue({ data: { result: {
-            context: { slot: 1234 },
-            value: {
-                amount: '123456789012345',
-                decimals: 6,
-                uiAmountString: '123456789.012345',
+            interface: 'FungibleToken',
+            content: {
+                json_uri: 'https://metadata.example/token.json',
+                links: { image: 'https://images.example/token.png', external_url: 'https://token.example' },
+                metadata: { name: 'Test Token', symbol: 'TEST', description: 'Token description' },
             },
+            token_info: { decimals: 6 },
         } } } as any);
 
-        await expect(new HeliusTokenService().getSupply('mint-address')).resolves.toMatchObject({
-            mint: 'mint-address',
-            rawAmount: '123456789012345',
-            uiAmount: '123456789.012345',
-            decimals: 6,
-            totalSupply: 123456789.012345,
-            slot: 1234,
-            source: 'helius_rpc',
-            stale: false,
-        });
-    });
-
-    it('normalizes fungible metadata and exact supply fields', async () => {
-        post.mockImplementation(async (_url, body: any) => {
-            if (body.method === 'getAsset') {
-                return { data: { result: {
-                    interface: 'FungibleToken',
-                    content: {
-                        json_uri: 'https://metadata.example/token.json',
-                        links: { image: 'https://images.example/token.png', external_url: 'https://token.example' },
-                        metadata: { name: 'Test Token', symbol: 'TEST', description: 'Token description' },
-                    },
-                    creators: [{ verified: true }],
-                } } } as any;
-            }
-            return { data: { result: { value: {
-                amount: '123456789012345',
-                decimals: 6,
-                uiAmountString: '123456789.012345',
-            } } } } as any;
-        });
-
-        await expect(new HeliusTokenService().getMetadata('mint-address')).resolves.toMatchObject({
+        const metadata = await new HeliusTokenService().getMetadata('mint-address');
+        expect(metadata).toMatchObject({
             mint: 'mint-address',
             name: 'Test Token',
             symbol: 'TEST',
             decimals: 6,
-            totalSupply: '123456789012345',
-            totalSupplyFormatted: '123456789.012345',
         });
+        expect(metadata).not.toHaveProperty('totalSupply');
+        expect(post).toHaveBeenCalledTimes(1);
+        expect((post.mock.calls[0][1] as any).method).toBe('getAsset');
     });
 
     it('resolves owners, aggregates duplicate accounts, and derives concentration', async () => {
@@ -81,11 +52,6 @@ describe('Helius token reads', () => {
                     { address: 'account-c', uiAmountString: '25' },
                 ] } } } as any;
             }
-            if (body.method === 'getTokenSupply') {
-                return { data: { result: { value: {
-                    amount: '1000000000', decimals: 6, uiAmountString: '1000',
-                } } } } as any;
-            }
             return { data: { result: { value: [
                 { data: { parsed: { info: { owner: 'wallet-a' } } } },
                 { data: { parsed: { info: { owner: 'wallet-a' } } } },
@@ -93,13 +59,32 @@ describe('Helius token reads', () => {
             ] } } } as any;
         });
 
-        await expect(new HeliusTokenService().getHolders('mint-address')).resolves.toEqual({
+        await expect(new HeliusTokenService().getHolders('mint-address', 20, 1000)).resolves.toEqual({
             items: [
                 { owner: 'wallet-a', amount: 150, supplyPercent: 15 },
                 { owner: 'wallet-b', amount: 25, supplyPercent: 2.5 },
             ],
             totalSupply: 1000,
             top10Percent: 17.5,
+            source: 'helius',
+        });
+        expect(post.mock.calls.map((call) => (call[1] as any).method)).toEqual([
+            'getTokenLargestAccounts',
+            'getMultipleAccounts',
+        ]);
+    });
+
+    it('omits concentration when Fervor supply is unavailable', async () => {
+        post.mockImplementation(async (_url, body: any) => body.method === 'getTokenLargestAccounts'
+            ? { data: { result: { value: [{ address: 'account-a', uiAmountString: '100' }] } } } as any
+            : { data: { result: { value: [
+                { data: { parsed: { info: { owner: 'wallet-a' } } } },
+            ] } } } as any);
+
+        await expect(new HeliusTokenService().getHolders('mint-address')).resolves.toEqual({
+            items: [{ owner: 'wallet-a', amount: 100, supplyPercent: undefined }],
+            totalSupply: undefined,
+            top10Percent: undefined,
             source: 'helius',
         });
     });

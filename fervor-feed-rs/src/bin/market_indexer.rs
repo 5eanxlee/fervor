@@ -5,6 +5,7 @@ use fervor_feed_rs::fervor_tx::{Commitment, Network, RawEnvelope, SourceAdapter,
 use fervor_feed_rs::market_decoder::{decode_swap, QuoteKind, Side, Venue};
 use fervor_feed_rs::market_journal::MarketJournal;
 use fervor_feed_rs::postgres::DbTls;
+use fervor_feed_rs::pump::{decode_pump_events, has_pump_create, pump_supply, SupplyEvidence};
 use fervor_feed_rs::stream_bus::{StreamBus, RAW_SOURCE, TRADE_STREAM};
 use fervor_feed_rs::yellowstone::{YellowstoneAdapter, WIRE_FORMAT, WIRE_VERSION};
 use futures_util::StreamExt;
@@ -110,6 +111,8 @@ struct TradeEvent<'a> {
     decode_version: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     compute_units: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    supply: Option<SupplyEvidence>,
 }
 
 #[derive(Serialize)]
@@ -364,6 +367,24 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
                         continue;
                     }
                 };
+                let pump_events = if has_pump_create(&tx) {
+                    match decode_pump_events(&tx) {
+                        Ok(events) => Some(events),
+                        Err(item) => {
+                            quarantined += 1;
+                            bus.dead_letter(
+                                "rust-market-indexer",
+                                RAW_SOURCE,
+                                &item.source_event_id,
+                                &serde_json::to_string(&item)?,
+                                "Pump supply decoder quarantined transaction",
+                            ).await?;
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
                 let swap = match decode_swap(&tx) {
                     Ok(Some(swap)) => swap,
                     Ok(None) => {
@@ -389,6 +410,15 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
                     network.as_str(),
                     swap.slot, swap.signature, swap.instruction_index, swap.event_index
                 );
+                let supply = pump_events.as_deref().and_then(|events| {
+                    pump_supply(
+                        events,
+                        &swap.token_mint,
+                        &args.source,
+                        &observed,
+                        source_commitment,
+                    )
+                });
                 let trade = TradeEvent {
                     source: &args.source,
                     source_event_id: &source_id,
@@ -430,6 +460,7 @@ async fn run_endpoint(args: &Args, endpoint: &str, reconnects: u64, tls: DbTls) 
                     commitment: &commitment_name,
                     decode_version: swap.decode_version,
                     compute_units: swap.compute_units,
+                    supply,
                 };
                 bus.publish(TRADE_STREAM, &trade).await?;
             }
@@ -516,6 +547,24 @@ mod tests {
         let signature = "BUguQsv2ZuHus54HAFzjdJHzZBkygAjKhEeYwSG19tUfUyvvz3worsdQCdAXDNjakJHioSiyxhFiDJrm8XpSXRA";
         let source_id = format!("helius_laserstream:mainnet-beta:42:{signature}:0:0");
         let route = [Venue::PumpFun];
+        let supply = SupplyEvidence {
+            contract: fervor_feed_rs::pump::SUPPLY_CONTRACT.to_string(),
+            token_mint: "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf".to_string(),
+            raw_amount: "1000000000000000".to_string(),
+            decimals: 6,
+            fixed: true,
+            layout: fervor_feed_rs::pump::PUMP_LAYOUT.to_string(),
+            source: "helius_laserstream".to_string(),
+            source_event_id: format!("helius_laserstream:supply:42:{signature}:0:0"),
+            slot: 42,
+            signature: signature.to_string(),
+            instruction_index: 0,
+            event_index: 0,
+            observed_at: "2024-11-19T00:00:00Z".to_string(),
+            confidence: 1.0,
+            stale: false,
+            commitment: Commitment::Confirmed,
+        };
         let trade = TradeEvent {
             source: "helius_laserstream",
             source_event_id: &source_id,
@@ -552,6 +601,7 @@ mod tests {
             commitment: "confirmed",
             decode_version: "balance-delta-v1",
             compute_units: Some(88_000),
+            supply: Some(supply),
         };
         let expected: serde_json::Value = serde_json::from_str(include_str!(
             "../../../tests/contracts/decoded-trade-v1.json"

@@ -1,6 +1,6 @@
 export type MarketSource = string;
 
-export type FervorSupplyPolicy = 'fervor_mint_supply_v1';
+export const fervorSupplyContract = 'fervor-supply-v1' as const;
 
 export type NormalizedEventKind =
     | 'trade'
@@ -28,6 +28,25 @@ export interface MetricQuality {
     stale: boolean;
     estimated: boolean;
     commitment?: 'processed' | 'confirmed' | 'finalized';
+}
+
+export interface FervorSupplyInput {
+    contract: typeof fervorSupplyContract;
+    tokenMint: string;
+    rawAmount: string;
+    decimals: number;
+    fixed: true;
+    layout: string;
+    source: MarketSource;
+    sourceEventId: string;
+    slot: number;
+    signature: string;
+    instructionIndex: number;
+    eventIndex: number;
+    observedAt: string;
+    confidence: number;
+    stale: boolean;
+    commitment: 'processed' | 'confirmed' | 'finalized';
 }
 
 export interface NormalizedTradeEvent extends SourceProvenance {
@@ -60,6 +79,7 @@ export interface NormalizedTradeEvent extends SourceProvenance {
     quoteKind?: 'wsol' | 'usdc' | 'usdt' | 'native_sol';
     decodeVersion?: string;
     computeUnits?: number;
+    supply?: FervorSupplyInput;
 }
 
 export interface NormalizedTokenEvent extends SourceProvenance {
@@ -108,7 +128,7 @@ export interface NormalizedMarketState extends Omit<SourceProvenance, 'source'> 
     idempotencyKey: string;
     source: 'fervor_engine';
     observationSource: MarketSource;
-    inputContract: 'fervor-market-input-v1';
+    inputContract: 'fervor-market-input-v2';
     metricSource: 'fervor_engine';
     metricVersion: string;
     tokenMint: string;
@@ -121,8 +141,7 @@ export interface NormalizedMarketState extends Omit<SourceProvenance, 'source'> 
     liquidityUsd?: number;
     liquiditySol?: number;
     totalSupply?: number;
-    circulatingSupply?: number;
-    supplyPolicy?: FervorSupplyPolicy;
+    supply?: FervorSupplyInput;
     volumeUsd?: Partial<Record<'1m' | '5m' | '1h' | '6h' | '24h', number>>;
     buyCount?: Partial<Record<'1m' | '5m' | '1h' | '6h' | '24h', number>>;
     sellCount?: Partial<Record<'1m' | '5m' | '1h' | '6h' | '24h', number>>;
@@ -152,7 +171,6 @@ export interface TokenMarketStateView {
     fdvUsd?: number;
     liquidityUsd?: number;
     totalSupply?: number;
-    circulatingSupply?: number;
     source: MarketSource;
     observedAt: string;
     stale: boolean;

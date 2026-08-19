@@ -1,18 +1,13 @@
 import { query } from '../../config/database';
 import { TokenData, TokenMarketStateView } from '../../types';
 
-const marketSource = (value: unknown): TokenMarketStateView['source'] => {
-    if (value === 'helius_laserstream' || value === 'fervor_engine') return value;
-    throw new Error('Stored market state has no supported source');
-};
-
 export class MarketStateRepository {
     async getTokenState(tokenMint: string): Promise<TokenMarketStateView | null> {
         const result = await query(
             `SELECT mint, price_usd, price_sol, market_cap_usd, fdv_usd, liquidity_usd,
-                    total_supply, circulating_supply, source, observed_at, stale
+                    total_supply, observed_at, stale
              FROM tokens
-             WHERE mint = $1`,
+             WHERE mint = $1 AND source = 'fervor_engine'`,
             [tokenMint]
         );
         const row = result.rows[0];
@@ -25,8 +20,7 @@ export class MarketStateRepository {
             fdvUsd: row.fdv_usd === null ? undefined : Number(row.fdv_usd),
             liquidityUsd: row.liquidity_usd === null ? undefined : Number(row.liquidity_usd),
             totalSupply: row.total_supply === null ? undefined : Number(row.total_supply),
-            circulatingSupply: row.circulating_supply === null ? undefined : Number(row.circulating_supply),
-            source: marketSource(row.source),
+            source: 'fervor_engine',
             observedAt: row.observed_at?.toISOString?.() || row.observed_at || new Date(0).toISOString(),
             stale: Boolean(row.stale),
             confidence: 1,
@@ -38,7 +32,7 @@ export class MarketStateRepository {
             `SELECT mint, name, symbol, image, price_usd, market_cap_usd, fdv_usd, liquidity_usd,
                     source, observed_at, stale, updated_at
              FROM tokens
-             WHERE mint = $1`,
+             WHERE mint = $1 AND source = 'fervor_engine'`,
             [tokenMint]
         );
         const row = result.rows[0];

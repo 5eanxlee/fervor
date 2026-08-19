@@ -1,23 +1,8 @@
 import { query, type DbQuery } from '../../config/database';
 import { env } from '../../config/env';
-import type { FervorSupplyPolicy } from '../../types';
-import { HeliusTokenService, SupplyObservation } from '../heliusTokenService';
 import { fervorInputContract } from './metricEngine';
 
 export { fervorInputContract } from './metricEngine';
-
-export interface FervorSupplyInput {
-    totalSupply: number;
-    circulatingSupply?: number;
-    supplyPolicy?: FervorSupplyPolicy;
-    rawAmount?: string;
-    decimals?: number;
-    source: string;
-    sourceEventId: string;
-    observedAt: string;
-    confidence: number;
-    stale: boolean;
-}
 
 export interface FervorLiquidityInput {
     liquidityUsd: number;
@@ -31,17 +16,11 @@ export interface FervorLiquidityInput {
 export interface FervorMarketInput {
     contract: typeof fervorInputContract;
     tokenMint: string;
-    supply?: FervorSupplyInput;
     liquidity?: FervorLiquidityInput;
 }
 
 export interface FervorInputSource {
     get(tokenMint: string): Promise<FervorMarketInput | null>;
-}
-
-interface SupplyCache {
-    value: FervorSupplyInput;
-    fetchedMs: number;
 }
 
 interface LiquidityCache {
@@ -54,73 +33,15 @@ const iso = (value: unknown): string => value instanceof Date
     : new Date(String(value)).toISOString();
 
 export class MarketInputService implements FervorInputSource {
-    private readonly supplies = new Map<string, SupplyCache>();
     private readonly liquidity = new Map<string, LiquidityCache>();
-    private readonly supplyReads = new Map<string, Promise<FervorSupplyInput | undefined>>();
     private readonly liquidityReads = new Map<string, Promise<FervorLiquidityInput | undefined>>();
 
-    constructor(
-        private readonly helius = new HeliusTokenService(),
-        private readonly db: DbQuery = query
-    ) {}
+    constructor(private readonly db: DbQuery = query) {}
 
     async get(tokenMint: string): Promise<FervorMarketInput | null> {
-        const [supply, liquidity] = await Promise.all([
-            this.getSupply(tokenMint),
-            this.getLiquidity(tokenMint),
-        ]);
-        if (!supply && !liquidity) return null;
-        return { contract: fervorInputContract, tokenMint, supply, liquidity };
-    }
-
-    private async getSupply(tokenMint: string): Promise<FervorSupplyInput | undefined> {
-        const cached = this.supplies.get(tokenMint);
-        if (cached && Date.now() - cached.fetchedMs <= env.SUPPLY_TTL_MS) return cached.value;
-        if (!HeliusTokenService.isConfigured()) return this.staleSupply(cached);
-
-        const active = this.supplyReads.get(tokenMint);
-        if (active) return active;
-        const read = this.readSupply(tokenMint, cached).finally(() => this.supplyReads.delete(tokenMint));
-        this.supplyReads.set(tokenMint, read);
-        return read;
-    }
-
-    private async readSupply(
-        tokenMint: string,
-        cached?: SupplyCache
-    ): Promise<FervorSupplyInput | undefined> {
-        try {
-            const observed = await this.helius.getSupply(tokenMint);
-            const value = this.mapSupply(observed);
-            this.supplies.set(tokenMint, { value, fetchedMs: Date.now() });
-            return value;
-        } catch {
-            return this.staleSupply(cached);
-        }
-    }
-
-    private mapSupply(observed: SupplyObservation): FervorSupplyInput {
-        return {
-            totalSupply: observed.totalSupply,
-            circulatingSupply: observed.totalSupply,
-            supplyPolicy: 'fervor_mint_supply_v1',
-            rawAmount: observed.rawAmount,
-            decimals: observed.decimals,
-            source: observed.source,
-            sourceEventId: `${observed.source}:supply:${observed.mint}:${observed.slot ?? observed.rawAmount}`,
-            observedAt: observed.observedAt,
-            confidence: observed.confidence,
-            stale: observed.stale,
-        };
-    }
-
-    private staleSupply(cached?: SupplyCache): FervorSupplyInput | undefined {
-        if (!cached || Date.now() - cached.fetchedMs > env.SUPPLY_MAX_STALE_MS) return undefined;
-        return {
-            ...cached.value,
-            confidence: Math.min(cached.value.confidence, 0.5),
-            stale: true,
-        };
+        const liquidity = await this.getLiquidity(tokenMint);
+        if (!liquidity) return null;
+        return { contract: fervorInputContract, tokenMint, liquidity };
     }
 
     private async getLiquidity(tokenMint: string): Promise<FervorLiquidityInput | undefined> {

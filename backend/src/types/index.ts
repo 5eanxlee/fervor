@@ -60,7 +60,7 @@ export interface FeedTick {
     swapType?: 'buy' | 'sell';
     sourceExchange?: string;
     observationSource?: import('./marketData').MarketSource;
-    inputContract?: 'fervor-market-input-v1';
+    inputContract?: 'fervor-market-input-v2';
     receivedAt: string;
     sourceEventId?: string;
     observedAt?: string;
@@ -154,11 +154,11 @@ export interface TokenMetadata {
     name: string;
     symbol: string;
     logo: string;
-    decimals: number;
+    decimals?: number;
     metadataUri: string;
     fullyDilutedValue?: string;
-    totalSupply: string;
-    totalSupplyFormatted: string;
+    totalSupply?: string;
+    totalSupplyFormatted?: string;
     links?: {
         website?: string;
         twitter?: string;

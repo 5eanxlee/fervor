@@ -5,7 +5,10 @@ use fervor_feed_rs::{
     fervor_tx::{Network, Quarantine},
     market_decoder::decode_swap,
     old_faithful::{ArchiveReader, OldFaithfulAdapter},
-    pump::{decode_pump_events, PumpEvent, PumpState, PUMP_LAYOUT},
+    pump::{
+        decode_pump_events, pump_supply, PumpEvent, PumpState, SupplyEvidence, PUMP_LAYOUT,
+        SUPPLY_CONTRACT,
+    },
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -15,11 +18,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SCHEMA: &str = "fervor-replay-v2";
+const SCHEMA: &str = "fervor-replay-v3";
 const TX_FILE: &str = "transactions.ndjson";
 const SWAP_FILE: &str = "swaps.ndjson";
 const PUMP_FILE: &str = "pump-events.ndjson";
 const STATE_FILE: &str = "pump-state.json";
+const SUPPLY_FILE: &str = "supply.json";
 
 #[derive(Debug, Parser)]
 #[command(name = "fervor-replay")]
@@ -60,6 +64,9 @@ struct ReplayManifest {
     pump_event_sha256: String,
     pump_state_file: &'static str,
     pump_state_sha256: String,
+    supply_contract: &'static str,
+    supply_file: &'static str,
+    supply_sha256: String,
     replay_sha256: String,
 }
 
@@ -125,6 +132,7 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     let mut swaps = 0_u64;
     let mut pump_count = 0_u64;
     let mut pump_events = Vec::<PumpEvent>::new();
+    let mut supply = None::<SupplyEvidence>;
     let mut first_slot = None;
     let mut last_slot = None;
 
@@ -143,11 +151,20 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
                 .map_err(|error| quarantine_error("archive transaction", error))?;
             matched = checked_count(matched, "matched transaction")?;
             tx_out.write_json(&tx)?;
-            for event in decode_pump_events(&tx)
-                .map_err(|error| quarantine_error("Pump event", error))?
-                .into_iter()
-                .filter(|event| event.mint() == mint)
-            {
+            let events =
+                decode_pump_events(&tx).map_err(|error| quarantine_error("Pump event", error))?;
+            if let Some(value) = pump_supply(
+                &events,
+                mint,
+                &tx.observation.provider,
+                &tx.observed_at,
+                tx.commitment,
+            ) {
+                if supply.replace(value).is_some() {
+                    bail!("replay found more than one qualified supply event for {mint}");
+                }
+            }
+            for event in events.into_iter().filter(|event| event.mint() == mint) {
                 pump_count = checked_count(pump_count, "Pump event")?;
                 pump_out.write_json(&event)?;
                 pump_events.push(event);
@@ -179,15 +196,26 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
     }
 
     let pump_state = PumpState::reconstruct(mint, &pump_events)?;
+    let supply =
+        supply.ok_or_else(|| anyhow!("replay found no qualified supply event for {mint}"))?;
+    if supply.token_mint != pump_state.mint
+        || supply.raw_amount != pump_state.supply_raw.to_string()
+        || supply.decimals != pump_state.decimals
+        || supply.fixed != pump_state.supply_fixed
+    {
+        bail!("supply contract differs from reconstructed Pump state");
+    }
     let transaction_sha256 = tx_out.finish()?;
     let swap_sha256 = swap_out.finish()?;
     let pump_event_sha256 = pump_out.finish()?;
     let pump_state_sha256 = write_json(&out.join(STATE_FILE), &pump_state)?;
+    let supply_sha256 = write_json(&out.join(SUPPLY_FILE), &supply)?;
     let replay_sha256 = replay_hash(&[
         &transaction_sha256,
         &swap_sha256,
         &pump_event_sha256,
         &pump_state_sha256,
+        &supply_sha256,
     ]);
     let manifest = ReplayManifest {
         schema: SCHEMA,
@@ -216,6 +244,9 @@ fn replay(corpus: &Path, out: &Path, source: &ExtractManifest) -> Result<()> {
         pump_event_sha256,
         pump_state_file: STATE_FILE,
         pump_state_sha256,
+        supply_contract: SUPPLY_CONTRACT,
+        supply_file: SUPPLY_FILE,
+        supply_sha256,
         replay_sha256,
     };
     let mut bytes = serde_json::to_vec_pretty(&manifest)?;

@@ -1,14 +1,14 @@
-import type { FervorSupplyPolicy } from '../../types';
+import { fervorSupplyContract, type FervorSupplyInput } from '../../types';
+import { parseU64 } from '../../types/amount';
 
 export const fervorMetricSource = 'fervor_engine' as const;
-export const fervorMetricVersion = 'fervor-market-v1' as const;
-export const fervorInputContract = 'fervor-market-input-v1' as const;
+export const fervorMetricVersion = 'fervor-market-v2' as const;
+export const fervorInputContract = 'fervor-market-input-v2' as const;
 
 export interface FervorMetricInput {
+    tokenMint: string;
     priceUsd?: number;
-    totalSupply?: number;
-    circulatingSupply?: number;
-    supplyPolicy?: FervorSupplyPolicy;
+    supply?: FervorSupplyInput;
     liquidityUsd?: number;
 }
 
@@ -23,6 +23,33 @@ export interface FervorMetricValue {
 const nonNegative = (value: number | undefined): number | undefined =>
     value !== undefined && Number.isFinite(value) && value >= 0 ? value : undefined;
 
+export const supplyAmount = (
+    supply: FervorSupplyInput | undefined,
+    tokenMint: string
+): number | undefined => {
+    if (!supply
+        || supply.contract !== fervorSupplyContract
+        || supply.tokenMint !== tokenMint
+        || supply.fixed !== true
+        || !Number.isInteger(supply.decimals)
+        || supply.decimals < 0
+        || supply.decimals > 18) return undefined;
+    const raw = parseU64(supply.rawAmount);
+    if (raw === undefined || raw === 0n) return undefined;
+    const divisor = 10n ** BigInt(supply.decimals);
+    if (raw > BigInt(Number.MAX_SAFE_INTEGER) * divisor) return undefined;
+    const amount = Number(raw) / Number(divisor);
+    return Number.isFinite(amount) && amount > 0 && amount <= Number.MAX_SAFE_INTEGER
+        ? amount
+        : undefined;
+};
+
+const product = (left: number | undefined, right: number | undefined): number | undefined => {
+    if (left === undefined || right === undefined) return undefined;
+    const value = left * right;
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
+};
+
 /**
  * The sole public derivation boundary for canonical market metrics.
  *
@@ -31,20 +58,13 @@ const nonNegative = (value: number | undefined): number | undefined =>
  */
 export const deriveFervorMetrics = (input: FervorMetricInput): FervorMetricValue => {
     const priceUsd = nonNegative(input.priceUsd);
-    const totalSupply = nonNegative(input.totalSupply);
-    const circulatingSupply = input.supplyPolicy
-        ? nonNegative(input.circulatingSupply)
-        : undefined;
+    const totalSupply = supplyAmount(input.supply, input.tokenMint);
 
     return {
         metricSource: fervorMetricSource,
         metricVersion: fervorMetricVersion,
-        marketCapUsd: priceUsd === undefined || circulatingSupply === undefined
-            ? undefined
-            : priceUsd * circulatingSupply,
-        fdvUsd: priceUsd === undefined || totalSupply === undefined
-            ? undefined
-            : priceUsd * totalSupply,
+        marketCapUsd: undefined,
+        fdvUsd: product(priceUsd, totalSupply),
         liquidityUsd: nonNegative(input.liquidityUsd),
     };
 };

@@ -136,8 +136,6 @@ const EnvSchema = z.object({
     JUPITER_RETRY_MAX_MS: z.coerce.number().int().min(1000).max(3600000).default(300000),
     REF_PRICE_TTL_MS: z.coerce.number().int().min(250).max(60000).default(5000),
     REF_PRICE_MAX_STALE_MS: z.coerce.number().int().min(1000).max(600000).default(60000),
-    SUPPLY_TTL_MS: z.coerce.number().int().min(1000).max(3600000).default(60000),
-    SUPPLY_MAX_STALE_MS: z.coerce.number().int().min(1000).max(86400000).default(300000),
     LIQUIDITY_TTL_MS: z.coerce.number().int().min(50).max(60000).default(250),
     SOLANA_RPC_URL: z.string().url().optional(),
     TRADING_MODE: z.enum(['disabled', 'live']).default('disabled'),
