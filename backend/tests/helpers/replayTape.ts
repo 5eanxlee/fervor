@@ -5,6 +5,10 @@ export const replayMint = 'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf';
 export const replaySha = '1'.repeat(64);
 export const replayQuoteMint = 'So11111111111111111111111111111111111111112';
 
+const observedAt = (index: number): string => new Date(
+    Date.UTC(2024, 10, 19, 0, 0, index * 10)
+).toISOString().replace('.000Z', 'Z');
+
 const trade = (index: number): NormalizedTradeEvent => ({
     kind: 'trade',
     source: 'old_faithful',
@@ -23,8 +27,8 @@ const trade = (index: number): NormalizedTradeEvent => ({
     txIndex: 0,
     instructionIndex: 0,
     eventIndex: 0,
-    observedAt: new Date(Date.UTC(2024, 10, 19, 0, 0, index * 10)).toISOString(),
-    receivedAt: new Date(Date.UTC(2024, 10, 19, 0, 0, index * 10)).toISOString(),
+    observedAt: observedAt(index),
+    receivedAt: observedAt(index),
     confidence: 1,
     stale: false,
 });

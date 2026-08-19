@@ -126,6 +126,7 @@ describe('replay runtime', () => {
         });
         await expect(runtime.checkpoint()).resolves.toMatchObject({ key: { seq: 0, cursor: 0 } });
         runtime.step();
+        expect(runtime.state().snapshot.now).toBe('2024-11-19T00:00:00.000Z');
         await runtime.checkpoint();
         runtime.step();
         const filled = await runtime.checkpoint();

@@ -177,10 +177,17 @@ export const addMs = (base: number, delta: number): number => {
 };
 
 export const parseTime = (value: string): number => {
-    const parsed = Date.parse(value);
-    if (!Number.isSafeInteger(parsed) || toIso(parsed) !== value) {
-        throw new Error('Paper broker requires canonical replay time');
+    if (!paperTime.safeParse(value).success) {
+        throw new Error('Paper broker requires a valid replay time');
     }
+    const parsed = Date.parse(value);
+    if (!Number.isSafeInteger(parsed)) throw new Error('Paper broker requires a valid replay time');
+    return parsed;
+};
+
+export const parseCanonicalTime = (value: string): number => {
+    const parsed = parseTime(value);
+    if (toIso(parsed) !== value) throw new Error('Paper checkpoint time is not canonical');
     return parsed;
 };
 

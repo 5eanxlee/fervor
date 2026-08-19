@@ -22,6 +22,7 @@ import {
     paperModelContract,
     paperModelSchema,
     paperOrderSchema,
+    parseCanonicalTime,
     parseTime,
     priceOf,
     protocolFee,
@@ -93,7 +94,7 @@ export class ReplayPaperBroker {
     private now: string | null;
 
     constructor(snapshot: ReplaySnapshot, model: unknown) {
-        if (snapshot.now !== null) parseTime(snapshot.now);
+        if (snapshot.now !== null) parseCanonicalTime(snapshot.now);
         if (!Number.isSafeInteger(snapshot.cursor)
             || !Number.isSafeInteger(snapshot.total)
             || !Number.isSafeInteger(snapshot.epoch)
@@ -146,7 +147,7 @@ export class ReplayPaperBroker {
             throw new Error('Paper order mints must differ');
         }
         if (this.orderMap.has(request.id)) throw new Error('Paper order ID already exists');
-        const placedMs = this.now === null ? null : parseTime(this.now);
+        const placedMs = this.now === null ? null : parseCanonicalTime(this.now);
         const eligibleMs = placedMs === null ? null : addMs(placedMs, this.latencyMs());
         const price = priceOf(request.kind === 'market' ? request.reference : request.limit);
         const order: MutableOrder = {
@@ -186,7 +187,8 @@ export class ReplayPaperBroker {
             throw new Error('Paper broker event is stale or out of sequence');
         }
         const eventMs = parseTime(event.trade.observedAt);
-        if (this.now !== null && eventMs < parseTime(this.now)) {
+        const observedAt = toIso(eventMs);
+        if (this.now !== null && eventMs < parseCanonicalTime(this.now)) {
             throw new Error('Paper broker event time moved backwards');
         }
         const factStart = this.factLog.length;
@@ -199,20 +201,20 @@ export class ReplayPaperBroker {
             }
             if (eventMs >= order.expiresMs!) {
                 order.status = 'expired';
-                this.emit(order, 'expired', event.cursor, event.trade.observedAt, 'lookahead_elapsed');
+                this.emit(order, 'expired', event.cursor, observedAt, 'lookahead_elapsed');
                 continue;
             }
             if (eventMs >= order.eligibleMs! && order.status === 'pending') {
                 order.status = 'eligible';
-                this.emit(order, 'eligible', event.cursor, event.trade.observedAt);
+                this.emit(order, 'eligible', event.cursor, observedAt);
             }
             if (order.status === 'eligible' || order.status === 'partially_filled') active.push(order);
         }
 
         const matching = active.filter((order) => this.matches(order, event));
-        if (matching.length > 0) this.fillEvent(matching, event);
+        if (matching.length > 0) this.fillEvent(matching, event, observedAt);
         this.cursor += 1;
-        this.now = event.trade.observedAt;
+        this.now = observedAt;
         return Object.freeze(this.factLog.slice(factStart));
     }
 
@@ -294,7 +296,7 @@ export class ReplayPaperBroker {
         return Object.freeze(this.factLog.slice(after, after + limit));
     }
 
-    private fillEvent(orders: MutableOrder[], event: ReplayEvent): void {
+    private fillEvent(orders: MutableOrder[], event: ReplayEvent, observedAt: string): void {
         const tokenRaw = BigInt(amountSchema.parse(event.trade.tokenAmountRaw));
         const quoteRaw = BigInt(amountSchema.parse(event.trade.quoteAmountRaw));
         const tradePrice = priceOf({ quoteRaw: quoteRaw.toString(), tokenRaw: tokenRaw.toString() });
@@ -327,7 +329,7 @@ export class ReplayPaperBroker {
             const fill: PaperFill = Object.freeze({
                 tradeId: event.trade.idempotencyKey,
                 cursor: event.cursor,
-                observedAt: event.trade.observedAt,
+                observedAt,
                 inputMint: side === 'buy' ? order.request.quoteMint : order.request.tokenMint,
                 outputMint: side === 'buy' ? order.request.tokenMint : order.request.quoteMint,
                 inputRaw: asU64(input, 'Paper fill input'),
@@ -343,9 +345,9 @@ export class ReplayPaperBroker {
             order.fills.push(fill);
             available -= input;
             order.status = order.remaining === 0n ? 'filled' : 'partially_filled';
-            this.emit(order, 'fill', event.cursor, event.trade.observedAt, undefined, fill);
+            this.emit(order, 'fill', event.cursor, observedAt, undefined, fill);
             if (order.status === 'filled') {
-                this.emit(order, 'filled', event.cursor, event.trade.observedAt);
+                this.emit(order, 'filled', event.cursor, observedAt);
             }
         }
     }
@@ -434,8 +436,8 @@ export class ReplayPaperBroker {
                 price: order.price,
                 placedCursor: order.placedCursor,
                 placedAt: order.placedAt,
-                eligibleMs: order.eligibleAt === null ? null : parseTime(order.eligibleAt),
-                expiresMs: order.expiresAt === null ? null : parseTime(order.expiresAt),
+                eligibleMs: order.eligibleAt === null ? null : parseCanonicalTime(order.eligibleAt),
+                expiresMs: order.expiresAt === null ? null : parseCanonicalTime(order.expiresAt),
                 status: order.status,
                 remaining: BigInt(order.remainingRaw),
                 filledInput: BigInt(order.filledInputRaw),

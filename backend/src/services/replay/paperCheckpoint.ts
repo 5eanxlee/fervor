@@ -18,7 +18,7 @@ import {
     paperOrderId,
     paperStatusSchema,
     paperTime,
-    parseTime,
+    parseCanonicalTime,
     priceOf,
     protocolFee,
     rawPriceSchema,
@@ -155,7 +155,7 @@ const validateState = (checkpoint: PaperCheckpoint): void => {
         || (checkpoint.cursor === 0) !== (checkpoint.now === null)) {
         throw new Error('Paper checkpoint cursor is invalid');
     }
-    const checkpointMs = checkpoint.now === null ? null : parseTime(checkpoint.now);
+    const checkpointMs = checkpoint.now === null ? null : parseCanonicalTime(checkpoint.now);
     const orderMap = new Map<string, PaperOrder>();
     for (const order of checkpoint.orders) {
         if (orderMap.has(order.id)
@@ -166,10 +166,11 @@ const validateState = (checkpoint: PaperCheckpoint): void => {
             || (order.eligibleAt === null) !== (order.expiresAt === null)) {
             throw new Error('Paper checkpoint order identity is invalid');
         }
-        if (order.placedAt !== null) parseTime(order.placedAt);
+        if (order.placedAt !== null) parseCanonicalTime(order.placedAt);
         if (order.eligibleAt !== null) {
-            const eligibleMs = parseTime(order.eligibleAt);
-            if (parseTime(order.expiresAt!) !== addMs(eligibleMs, checkpoint.model.maxLookaheadMs)) {
+            const eligibleMs = parseCanonicalTime(order.eligibleAt);
+            if (parseCanonicalTime(order.expiresAt!)
+                !== addMs(eligibleMs, checkpoint.model.maxLookaheadMs)) {
                 throw new Error('Paper checkpoint order window is invalid');
             }
         }
@@ -211,7 +212,7 @@ const validateFills = (
             || fill.cursor >= checkpoint.cursor
             || fill.cursor <= priorCursor
             || checkpointMs === null
-            || parseTime(fill.observedAt) > checkpointMs
+            || parseCanonicalTime(fill.observedAt) > checkpointMs
             || fill.inputMint !== inputMint
             || fill.outputMint !== outputMint
             || gross !== expectedGross
@@ -258,7 +259,8 @@ const validateFacts = (
             || fact.key !== `${checkpoint.sourceReplaySha256}:${checkpoint.runId}:${fact.orderId}:${fact.seq}`
             || (fact.kind === 'fill') !== (fact.fill !== undefined)
             || (fact.observedAt !== null
-                && (checkpointMs === null || parseTime(fact.observedAt) > checkpointMs))) {
+                && (checkpointMs === null
+                    || parseCanonicalTime(fact.observedAt) > checkpointMs))) {
             throw new Error('Paper checkpoint fact binding is invalid');
         }
         priorCursor = fact.cursor;
@@ -296,7 +298,7 @@ const validateOrderFacts = (
                 || fact.status !== 'eligible'
                 || fact.observedAt === null
                 || order.eligibleAt === null
-                || parseTime(fact.observedAt) < parseTime(order.eligibleAt)
+                || parseCanonicalTime(fact.observedAt) < parseCanonicalTime(order.eligibleAt)
                 || fact.reason !== undefined) {
                 throw new Error('Paper checkpoint eligibility fact is invalid');
             }
@@ -332,7 +334,8 @@ const validateOrderFacts = (
             const expiryOk = fact.reason !== 'lookahead_elapsed'
                 || (fact.observedAt !== null
                     && order.expiresAt !== null
-                    && parseTime(fact.observedAt) >= parseTime(order.expiresAt));
+                    && parseCanonicalTime(fact.observedAt)
+                        >= parseCanonicalTime(order.expiresAt));
             const tapeEndOk = fact.reason !== 'end_of_tape'
                 || (fact.cursor === checkpoint.cursor && fact.observedAt === checkpoint.now);
             if (state === null
