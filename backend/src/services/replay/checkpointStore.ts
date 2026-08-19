@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, unlink } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readdir, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import {
     parseReplayCheckpoint,
+    replayCheckpointContract,
     type ReplayCheckpoint,
 } from './projection';
 
 const maxBytes = 32 * 1024 * 1024;
 const hashPattern = /^[0-9a-f]{64}$/;
+const filePattern = /^(\d{16})\.json$/;
+const tempPattern = /^\.\d+\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.tmp$/;
 
 export interface CheckpointKey {
     readonly sourceReplaySha256: string;
@@ -23,6 +26,23 @@ const syncDir = async (dir: string): Promise<void> => {
     } finally {
         await handle.close();
     }
+};
+
+const requireDir = async (dir: string, label: string): Promise<void> => {
+    const info = await lstat(dir);
+    if (!info.isDirectory() || info.isSymbolicLink()) {
+        throw new Error(`Replay checkpoint ${label} is not a regular directory`);
+    }
+};
+
+const createDir = async (dir: string, parent: string, label: string): Promise<void> => {
+    try {
+        await mkdir(dir, { mode: 0o700 });
+        await syncDir(parent);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+    await requireDir(dir, label);
 };
 
 const bytesOf = (checkpoint: ReplayCheckpoint): string =>
@@ -75,34 +95,50 @@ export class CheckpointStore {
             throw new Error('Replay checkpoint exceeds the durable size limit');
         }
         const dir = await this.prepare(key.sourceReplaySha256);
-        const target = path.join(dir, this.fileName(key));
+        const target = path.join(dir, this.fileName(key.cursor));
         const temporary = path.join(dir, `.${process.pid}.${randomUUID()}.tmp`);
+        let created = false;
         try {
             const handle = await open(temporary, 'wx', 0o600);
+            created = true;
             try {
                 await handle.writeFile(bytes);
                 await handle.sync();
             } finally {
                 await handle.close();
             }
-            await link(temporary, target);
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-            if (await this.readBytes(target) !== bytes) {
-                throw new Error('Stored replay checkpoint collides with different bytes');
+            try {
+                await link(temporary, target);
+            } catch (error) {
+                if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+                if (await this.readBytes(target) !== bytes) {
+                    throw new Error('Stored replay checkpoint collides with different bytes');
+                }
             }
         } finally {
-            await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
-                if (error.code !== 'ENOENT') throw error;
-            });
+            if (created) {
+                await unlink(temporary).catch((error: NodeJS.ErrnoException) => {
+                    if (error.code !== 'ENOENT') throw error;
+                });
+                await syncDir(dir);
+            }
         }
-        await syncDir(dir);
         return key;
     }
 
     async read(value: unknown): Promise<ReplayCheckpoint> {
         const key = parseKey(value);
-        const file = path.join(this.root, key.sourceReplaySha256, this.fileName(key));
+        const dir = await this.existing(key.sourceReplaySha256);
+        const file = path.join(dir, this.fileName(key.cursor));
+        return this.readFile(file, key.sourceReplaySha256, key.cursor, key.checkpointSha256);
+    }
+
+    private async readFile(
+        file: string,
+        sourceSha: string,
+        cursor: number,
+        checkpointSha?: string
+    ): Promise<ReplayCheckpoint> {
         const bytes = await this.readBytes(file);
         let checkpoint: ReplayCheckpoint;
         try {
@@ -112,42 +148,71 @@ export class CheckpointStore {
             throw new Error(`Stored replay checkpoint is invalid: ${detail}`);
         }
         const storedKey = keyOf(checkpoint);
-        if (storedKey.sourceReplaySha256 !== key.sourceReplaySha256
-            || storedKey.cursor !== key.cursor
-            || storedKey.checkpointSha256 !== key.checkpointSha256
+        if (storedKey.sourceReplaySha256 !== sourceSha
+            || storedKey.cursor !== cursor
+            || (checkpointSha !== undefined && storedKey.checkpointSha256 !== checkpointSha)
             || bytesOf(checkpoint) !== bytes) {
             throw new Error('Stored replay checkpoint differs from its key or canonical bytes');
         }
         return checkpoint;
     }
 
+    async nearest(sourceValue: unknown, cursorValue: unknown): Promise<ReplayCheckpoint | null> {
+        if (typeof sourceValue !== 'string'
+            || !hashPattern.test(sourceValue)
+            || !Number.isSafeInteger(cursorValue)
+            || (cursorValue as number) < 0) {
+            throw new Error('Replay checkpoint selection is invalid');
+        }
+        let dir: string;
+        try {
+            dir = await this.existing(sourceValue);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            throw error;
+        }
+
+        let best = -1;
+        for (const entry of await readdir(dir, { withFileTypes: true })) {
+            if (tempPattern.test(entry.name)) {
+                if (!entry.isFile()) throw new Error('Replay checkpoint directory entry is invalid');
+                continue;
+            }
+            const match = filePattern.exec(entry.name);
+            const cursor = match === null ? NaN : Number(match[1]);
+            if (!entry.isFile()
+                || match === null
+                || !Number.isSafeInteger(cursor)
+                || cursor.toString().padStart(16, '0') !== match[1]) {
+                throw new Error('Replay checkpoint directory entry is invalid');
+            }
+            if (cursor > (cursorValue as number) || cursor < best) continue;
+            best = cursor;
+        }
+        if (best === -1) return null;
+        return this.readFile(path.join(dir, this.fileName(best)), sourceValue, best);
+    }
+
     private async prepare(sourceSha: string): Promise<string> {
-        try {
-            await mkdir(this.root, { mode: 0o700 });
-            await syncDir(path.dirname(this.root));
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        }
-        const rootInfo = await lstat(this.root);
-        if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) {
-            throw new Error('Replay checkpoint root is not a regular directory');
-        }
-        const dir = path.join(this.root, sourceSha);
-        try {
-            await mkdir(dir, { mode: 0o700 });
-            await syncDir(this.root);
-        } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        }
-        const info = await lstat(dir);
-        if (!info.isDirectory() || info.isSymbolicLink()) {
-            throw new Error('Replay checkpoint source path is not a regular directory');
-        }
+        await createDir(this.root, path.dirname(this.root), 'root');
+        const source = path.join(this.root, sourceSha);
+        await createDir(source, this.root, 'source path');
+        const dir = path.join(source, replayCheckpointContract);
+        await createDir(dir, source, 'contract path');
         return dir;
     }
 
-    private fileName(key: CheckpointKey): string {
-        return `${key.cursor.toString().padStart(16, '0')}-${key.checkpointSha256}.json`;
+    private async existing(sourceSha: string): Promise<string> {
+        await requireDir(this.root, 'root');
+        const source = path.join(this.root, sourceSha);
+        await requireDir(source, 'source path');
+        const dir = path.join(source, replayCheckpointContract);
+        await requireDir(dir, 'contract path');
+        return dir;
+    }
+
+    private fileName(cursor: number): string {
+        return `${cursor.toString().padStart(16, '0')}.json`;
     }
 
     private async readBytes(file: string): Promise<string> {

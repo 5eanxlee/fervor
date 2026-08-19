@@ -158,14 +158,36 @@ describe('replay projection checkpoints', () => {
         expect(new Set(keys.map((key) => JSON.stringify(key))).size).toBe(1);
         await expect(new CheckpointStore(store.root).read(keys[0])).resolves.toEqual(checkpoint);
 
-        const sourceDir = path.join(store.root, sourceSha);
+        const sourceDir = path.join(store.root, sourceSha, 'fervor-replay-checkpoint-v1');
         const files = await readdir(sourceDir);
         expect(files).toHaveLength(1);
         expect(files[0]).toMatch(/\.json$/);
         await expect(store.read({ ...keys[0], ignored: true })).rejects.toThrow('key is invalid');
+        await expect(store.nearest(sourceSha, 0)).resolves.toBeNull();
+        await expect(store.nearest(sourceSha, 1)).resolves.toEqual(checkpoint);
+        await expect(store.nearest(sourceSha, 100)).resolves.toEqual(checkpoint);
+
+        const divergent = JSON.parse(JSON.stringify(checkpoint));
+        divergent.latestUsd.value += 1;
+        await expect(store.write(resign(divergent))).rejects.toThrow('collides');
+        expect(await readdir(sourceDir)).toEqual(files);
+
+        projection.apply(coordinator.step()!);
+        const second = projection.checkpoint(coordinator);
+        await store.write(second);
+        await expect(store.nearest(sourceSha, 1)).resolves.toEqual(checkpoint);
+        await expect(store.nearest(sourceSha, 2)).resolves.toEqual(second);
+        await expect(store.nearest(sourceSha, 100)).resolves.toEqual(second);
+
+        await writeFile(
+            path.join(sourceDir, '.999.00000000-0000-4000-8000-000000000000.tmp'),
+            '{'
+        );
+        await expect(store.nearest(sourceSha, 2)).resolves.toEqual(second);
 
         await writeFile(path.join(sourceDir, files[0]), '{');
         await expect(store.read(keys[0])).rejects.toThrow('invalid');
+        await expect(store.nearest(sourceSha, 1)).rejects.toThrow('invalid');
     });
 });
 
