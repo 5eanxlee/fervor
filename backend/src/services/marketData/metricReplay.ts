@@ -340,6 +340,24 @@ export const projectMetricData = async (input: MetricInput): Promise<MetricRepla
         });
     }
 
+    const curvePrices = new Map<string, number>();
+    for (const point of curve) {
+        if (point.priceUsd === undefined) continue;
+        const key = `${point.slot}:${point.signature}:${point.instructionIndex}`;
+        if (curvePrices.has(key)) {
+            throw new Error('Pump curve contains an ambiguous trade price');
+        }
+        curvePrices.set(key, point.priceUsd);
+    }
+    for (let index = 0; index < trades.length; index += 1) {
+        const trade = trades[index];
+        const key = `${trade.slot}:${trade.signature}:${trade.instructionIndex}`;
+        const chartPriceUsd = curvePrices.get(key);
+        if (chartPriceUsd !== undefined) {
+            trades[index] = { ...trade, chartPriceUsd, chartPriceSource: 'curve_spot' };
+        }
+    }
+
     const finalMs = Date.parse(rawTrades.at(-1)!.observedAt);
     const enrichedById = new Map(trades.map((trade) => [trade.idempotencyKey, trade]));
     const book = new RollingMetricBook(input.manifest.mint);

@@ -57,11 +57,26 @@ export interface ReplayTrade {
     solAmount?: number;
     usdAmount?: number;
     priceUsd?: number;
+    chartPriceUsd?: number;
+    chartPriceSource?: 'curve_spot';
+    replayCursor?: number;
     supply?: {
         rawAmount: string;
         decimals: number;
         fixed: boolean;
     };
+}
+
+export interface ReplayDeltaPage {
+    epoch: number;
+    after: number;
+    cutCursor: number;
+    next: number | null;
+    items: Array<{
+        cursor: number;
+        epoch: number;
+        trade: ReplayTrade;
+    }>;
 }
 
 export type ReplayOp =
@@ -157,7 +172,32 @@ export const isReplayTrade = (value: unknown): value is ReplayTrade => object(va
     && typeof value.observedAt === 'string' && Number.isFinite(Date.parse(value.observedAt))
     && (value.side === 'buy' || value.side === 'sell')
     && (value.priceUsd === undefined || finite(value.priceUsd))
+    && (value.chartPriceUsd === undefined || finite(value.chartPriceUsd))
     && (value.usdAmount === undefined || finite(value.usdAmount));
+
+export const isReplayDeltaPage = (value: unknown): value is ReplayDeltaPage => object(value)
+    && Number.isSafeInteger(value.epoch) && Number(value.epoch) >= 1
+    && Number.isSafeInteger(value.after) && Number(value.after) >= 0
+    && Number.isSafeInteger(value.cutCursor) && Number(value.cutCursor) >= Number(value.after)
+    && (value.next === null || (Number.isSafeInteger(value.next) && Number(value.next) >= Number(value.after)))
+    && Array.isArray(value.items)
+    && value.items.every((item) => object(item)
+        && Number.isSafeInteger(item.cursor) && Number(item.cursor) >= 0
+        && Number.isSafeInteger(item.epoch) && Number(item.epoch) === Number(value.epoch)
+        && isReplayTrade(item.trade));
+
+export const chartPriceOf = (trade: ReplayTrade): number | undefined => {
+    const value = finite(trade.chartPriceUsd) ? trade.chartPriceUsd : trade.priceUsd;
+    return finite(value) && value > 0 ? value : undefined;
+};
+
+export const replayTickDelay = (pending: number, usdAmount: number, quick = false): number => {
+    if (quick) return 16;
+    const queueSize = Number.isSafeInteger(pending) && pending > 0 ? pending : 1;
+    const notional = finite(usdAmount) && usdAmount > 0 ? usdAmount : 0;
+    const volumeBoost = 1 + Math.min(0.4, Math.log10(notional + 1) * 0.1);
+    return Math.max(28, Math.min(110, Math.round(700 / (queueSize + 1) / volumeBoost)));
+};
 
 export const supplyOf = (trade: ReplayTrade): number | undefined => {
     const supply = trade.supply;
@@ -185,16 +225,17 @@ export const mergeCandles = (
     const next = new Map(current.map((candle) => [candle.timestamp, { ...candle }]));
     const intervalMs = intervalSeconds * 1_000;
     for (const trade of trades) {
-        if (!finite(trade.priceUsd) || trade.priceUsd <= 0) continue;
+        const price = chartPriceOf(trade);
+        if (price === undefined) continue;
         const observed = Date.parse(trade.observedAt);
         if (!Number.isFinite(observed)) continue;
         const timestamp = Math.floor(observed / intervalMs) * intervalMs;
         const found = next.get(timestamp);
         const volume = finite(trade.usdAmount) && trade.usdAmount >= 0 ? trade.usdAmount : 0;
-        if (found) {
-            found.high = Math.max(found.high, trade.priceUsd);
-            found.low = Math.min(found.low, trade.priceUsd);
-            found.close = trade.priceUsd;
+        if (found && found.txCount > 0) {
+            found.high = Math.max(found.high, price);
+            found.low = Math.min(found.low, price);
+            found.close = price;
             found.volumeUsd += volume;
             found.buyCount += trade.side === 'buy' ? 1 : 0;
             found.sellCount += trade.side === 'sell' ? 1 : 0;
@@ -202,10 +243,10 @@ export const mergeCandles = (
         } else {
             next.set(timestamp, {
                 timestamp,
-                open: trade.priceUsd,
-                high: trade.priceUsd,
-                low: trade.priceUsd,
-                close: trade.priceUsd,
+                open: price,
+                high: price,
+                low: price,
+                close: price,
                 volumeUsd: volume,
                 buyCount: trade.side === 'buy' ? 1 : 0,
                 sellCount: trade.side === 'sell' ? 1 : 0,
@@ -213,7 +254,27 @@ export const mergeCandles = (
             });
         }
     }
-    return Array.from(next.values())
-        .sort((left, right) => left.timestamp - right.timestamp)
-        .slice(-limit);
+    const ordered = Array.from(next.values()).sort((left, right) => left.timestamp - right.timestamp);
+    const filled: TokenCandle[] = [];
+    for (const candle of ordered) {
+        const previous = filled.at(-1);
+        const missing = previous ? Math.round((candle.timestamp - previous.timestamp) / intervalMs) - 1 : 0;
+        if (previous && missing > 0 && missing <= 120) {
+            for (let index = 1; index <= missing; index += 1) {
+                filled.push({
+                    timestamp: previous.timestamp + intervalMs * index,
+                    open: previous.close,
+                    high: previous.close,
+                    low: previous.close,
+                    close: previous.close,
+                    volumeUsd: 0,
+                    buyCount: 0,
+                    sellCount: 0,
+                    txCount: 0,
+                });
+            }
+        }
+        filled.push(candle);
+    }
+    return filled.slice(-limit);
 };

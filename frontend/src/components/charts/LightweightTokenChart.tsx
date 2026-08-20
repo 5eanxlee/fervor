@@ -170,6 +170,17 @@ function getPaddedDisplayRange(
     };
 }
 
+function focusLatest(chart: IChartApi, candleCount: number, compact: boolean) {
+    const rightOffset = compact ? 8 : 12;
+    if (compact && candleCount > 180) {
+        const to = candleCount - 1 + rightOffset;
+        chart.timeScale().setVisibleLogicalRange({ from: to - 180, to });
+        return;
+    }
+    chart.timeScale().fitContent();
+    chart.timeScale().applyOptions({ rightOffset });
+}
+
 export default function LightweightTokenChart({
     dataset,
     height = 520,
@@ -306,7 +317,7 @@ export default function LightweightTokenChart({
                 borderColor: 'rgba(161, 161, 170, 0.24)',
                 timeVisible: true,
                 secondsVisible: true,
-                rightOffset: 22,
+                rightOffset: compact ? 8 : 12,
                 barSpacing: 6,
                 minBarSpacing: 1.5,
                 fixLeftEdge: false,
@@ -383,8 +394,7 @@ export default function LightweightTokenChart({
         }));
         createSeriesMarkers(candleSeries, markers);
 
-        chart.timeScale().fitContent();
-        chart.timeScale().applyOptions({ rightOffset: 22 });
+        focusLatest(chart, initialCandles.length, compact);
         const initialRange = getPaddedDisplayRange(initialCandles, current.totalSupply, valueMode);
         if (initialRange && !autoScale) {
             candleSeries.priceScale().setVisibleRange(initialRange);
@@ -432,7 +442,7 @@ export default function LightweightTokenChart({
             dataCountRef.current = 0;
             trimCountRef.current = 0;
         };
-    }, [autoScale, dataset.tokenAddress, dataset.totalSupply, logActive, replayMode, showVolume, valueMode]);
+    }, [autoScale, compact, dataset.tokenAddress, dataset.totalSupply, logActive, replayMode, showVolume, valueMode]);
 
     useEffect(() => {
         const series = drawApi?.series;
@@ -470,6 +480,7 @@ export default function LightweightTokenChart({
         const firstTime = dataset.candles[0]?.timestamp;
         const lastTime = dataset.candles.at(-1)?.timestamp;
         const previousLast = lastTimeRef.current;
+        const firstPopulation = dataCountRef.current === 0 && dataset.candles.length > 0;
         const windowShift = firstTimeRef.current !== firstTime
             && dataset.candles.length === dataCountRef.current
             && previousLast !== undefined
@@ -497,13 +508,19 @@ export default function LightweightTokenChart({
         }
         volumeSeries.applyOptions({ visible: showVolume });
         candleSeries.priceScale().setAutoScale(autoScale);
+        if (autoScale && (firstPopulation || requiresReset)) {
+            const chart = chartRef.current;
+            if (chart) focusLatest(chart, dataset.candles.length, compact);
+        } else if (autoScale && previousLast !== undefined && lastTime !== undefined && lastTime > previousLast) {
+            chartRef.current?.timeScale().scrollToRealTime();
+        }
         setAutoActive(autoScale);
         dataKeyRef.current = nextKey;
         firstTimeRef.current = firstTime;
         lastTimeRef.current = lastTime;
         dataCountRef.current = dataset.candles.length;
         setVisibleCount(dataset.candles.length);
-    }, [autoScale, dataset.candles, dataset.intervalSeconds, dataset.tokenAddress, dataset.totalSupply, live, showVolume, valueMode]);
+    }, [autoScale, compact, dataset.candles, dataset.intervalSeconds, dataset.tokenAddress, dataset.totalSupply, live, showVolume, valueMode]);
 
     useEffect(() => {
         if (!live) return;
@@ -804,8 +821,7 @@ export default function LightweightTokenChart({
         const series = candleSeriesRef.current;
         if (!chart || !series) return;
         series.priceScale().setAutoScale(true);
-        chart.timeScale().fitContent();
-        chart.timeScale().applyOptions({ rightOffset: 22 });
+        focusLatest(chart, dataset.candles.length, compact);
         setAutoActive(true);
         onAutoScaleChange?.(true);
     };

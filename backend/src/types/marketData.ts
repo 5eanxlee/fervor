@@ -68,6 +68,8 @@ export interface NormalizedTradeEvent extends SourceProvenance {
     usdAmount?: number;
     priceSol?: number;
     priceUsd?: number;
+    chartPriceUsd?: number;
+    chartPriceSource?: 'curve_spot';
     priceQuote?: number;
     usdSource?: string;
     usdObservedAt?: string;
