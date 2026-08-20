@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import {
+    frameDelay,
     isRtFrame,
     rtContract,
     type RtConnect,
@@ -30,6 +31,7 @@ let flushTimer: number | undefined;
 let pending: RtFrame[] = [];
 let batchId = 0;
 let inFlight: number | undefined;
+let lastFlushAt = 0;
 let stopped = true;
 let terminal = false;
 
@@ -43,9 +45,15 @@ const flush = (): void => {
     if (!pending.length || inFlight !== undefined) return;
     const frames = pending;
     pending = [];
+    lastFlushAt = performance.now();
     batchId += 1;
     inFlight = batchId;
     post({ type: 'frames', id: batchId, frames });
+};
+
+const scheduleFlush = (): void => {
+    if (!pending.length || inFlight !== undefined || flushTimer !== undefined) return;
+    flushTimer = scope.setTimeout(flush, frameDelay(lastFlushAt, performance.now()));
 };
 
 const stateKey = (frame: RtFrame): string | undefined => {
@@ -74,7 +82,7 @@ const enqueue = (frame: RtFrame): void => {
         return;
     }
     pending.push(frame);
-    flushTimer ??= scope.setTimeout(flush, 16);
+    scheduleFlush();
 };
 
 const send = (frame: unknown): void => {
@@ -184,6 +192,7 @@ const disconnect = (): void => {
     resume = undefined;
     pending = [];
     inFlight = undefined;
+    lastFlushAt = 0;
     if (retryTimer !== undefined) scope.clearTimeout(retryTimer);
     if (flushTimer !== undefined) scope.clearTimeout(flushTimer);
     retryTimer = undefined;
@@ -197,7 +206,7 @@ scope.onmessage = (event: MessageEvent<RtWorkerIn>) => {
     if (event.data.op === 'ack') {
         if (event.data.id !== inFlight) return;
         inFlight = undefined;
-        if (pending.length) flushTimer ??= scope.setTimeout(flush, 0);
+        scheduleFlush();
         return;
     }
     disconnect();

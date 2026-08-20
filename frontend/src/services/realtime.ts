@@ -1,4 +1,11 @@
 export const rtContract = 'fervor-realtime-v1' as const;
+export const renderFps = 60;
+
+export function frameDelay(lastAt: number, now: number): number {
+    if (!Number.isFinite(lastAt) || lastAt <= 0) return 0;
+    const elapsed = Math.max(0, now - lastAt);
+    return Math.max(0, 1_000 / renderFps - elapsed);
+}
 
 export type RtStream = 'trade' | 'market' | 'candle' | 'order' | 'fill' | 'alert' | 'wallet' | 'replay';
 export type RtMode = 'live' | 'historical_replay';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isRtFrame, rtContract, rtUrl } from './realtime';
+import { frameDelay, isRtFrame, renderFps, rtContract, rtUrl } from './realtime';
 
 describe('realtime client contract', () => {
     it('maps absolute and same-origin API URLs to the websocket endpoint', () => {
@@ -26,5 +26,15 @@ describe('realtime client contract', () => {
         })).toBe(true);
         expect(isRtFrame({ contract: rtContract, type: 'delta', epoch: 1 })).toBe(false);
         expect(isRtFrame({ contract: 'other', type: 'error', message: 'no', retryable: false })).toBe(false);
+    });
+});
+
+describe('realtime render pacing', () => {
+    it('caps UI delivery at 60 frames per second', () => {
+        const frameMs = 1_000 / renderFps;
+        expect(frameDelay(0, 1)).toBe(0);
+        expect(frameDelay(100, 108)).toBeCloseTo(frameMs - 8);
+        expect(frameDelay(100, 100 + frameMs)).toBeCloseTo(0);
+        expect(frameDelay(100, 150)).toBe(0);
     });
 });

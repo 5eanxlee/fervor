@@ -30,7 +30,7 @@ import ReplayControls from './ReplayControls';
 import { terminalSkin, useTerminalSettings } from '../../services/terminalSettings';
 import { hasStar, onShelf, rememberToken, toggleStar } from '../../services/tokenShelf';
 import { useRealtime } from '../../hooks/useRealtime';
-import type { RtFrame } from '../../services/realtime';
+import { frameDelay, type RtFrame } from '../../services/realtime';
 import {
     advanceReplayParticipants,
     amountOf,
@@ -215,7 +215,8 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     const [controlBusy, setControlBusy] = useState(false);
     const chartSplitRef = useRef<HTMLElement>(null);
     const queue = useRef<Array<{ event: string; data: any }>>([]);
-    const frame = useRef<number | undefined>(undefined);
+    const renderTimer = useRef<number | undefined>(undefined);
+    const lastRenderAt = useRef(0);
     const replayTrades = useRef<ReplayTrade[]>([]);
     const participantView = useRef<ReplayParticipants | undefined>(undefined);
     const replayCut = useRef<{ epoch: number; cursor: number } | undefined>(undefined);
@@ -435,7 +436,8 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     }, [chartKey, interval, isAuthenticated, replayMode, tokenMint]);
 
     const flush = useCallback(() => {
-        frame.current = undefined;
+        renderTimer.current = undefined;
+        lastRenderAt.current = performance.now();
         const events = queue.current.splice(0);
         if (!events.length) return;
         let marketPatch: MarketView = {};
@@ -490,7 +492,10 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
             if (event === 'batch' && Array.isArray(data.events)) queue.current.push(...data.events);
             else queue.current.push({ event, data });
             if (queue.current.length > 4_000) queue.current.splice(0, queue.current.length - 4_000);
-            if (frame.current === undefined) frame.current = requestAnimationFrame(flush);
+            if (renderTimer.current === undefined) {
+                const delay = frameDelay(lastRenderAt.current, performance.now());
+                renderTimer.current = window.setTimeout(flush, delay);
+            }
         };
         const parsed = (message: Event) => {
             try { return JSON.parse((message as MessageEvent).data); } catch { return undefined; }
@@ -505,7 +510,9 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
         source.onerror = () => setStreamState('offline');
         return () => {
             source.close();
-            if (frame.current !== undefined) cancelAnimationFrame(frame.current);
+            if (renderTimer.current !== undefined) window.clearTimeout(renderTimer.current);
+            renderTimer.current = undefined;
+            lastRenderAt.current = 0;
         };
     }, [flush, isAuthenticated, replayMode, tokenMint]);
 
