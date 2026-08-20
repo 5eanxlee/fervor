@@ -27,6 +27,7 @@ import {
     WalletPosition,
 } from '../../services/api';
 import { FervorMark, SolanaMark, UsdcMark } from '../../components/trading/BrandMarks';
+import PortfolioPnlChart from '../../components/charts/PortfolioPnlChart';
 
 type Range = '1d' | '7d' | '30d' | 'max';
 type PositionTab = 'active' | 'history' | 'top';
@@ -254,7 +255,7 @@ export default function PortfolioPage() {
 
                         <section className="relative min-w-0 border-r border-[var(--term-border)]">
                             <PanelTitle title="Realized PNL"><CalendarDaysIcon className="h-4 w-4" /></PanelTitle>
-                            <PnlChart values={chartValues} />
+                            <PortfolioPnlChart values={chartValues} />
                             <FervorMark className="absolute bottom-4 left-4 h-6 w-6 text-white" />
                         </section>
 
@@ -335,29 +336,6 @@ function Value({ children, tone }: { children: React.ReactNode; tone?: 'buy' | '
 
 function Stat({ label, value, tone, split }: { label: string; value: string; tone?: 'buy' | 'sell'; split?: boolean }) {
     return <div className="mb-3 flex items-center"><span>{label}</span><span className={`ml-auto tabular-nums ${tone === 'buy' ? 'text-[var(--term-buy)]' : tone === 'sell' ? 'text-[var(--term-sell)]' : 'text-white'}`}>{split ? <>{value.split(' ')[0]} <i className="not-italic text-[var(--term-buy)]">{value.split(' ')[1]}</i> / <i className="not-italic text-[var(--term-sell)]">{value.split(' ')[3]}</i></> : value}</span></div>;
-}
-
-function PnlChart({ values }: { values: number[] }) {
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const span = Math.max(1, max - min);
-    const points = values.map((value, index) => {
-        const x = 70 + index / Math.max(1, values.length - 1) * 860;
-        const y = 310 - (value - min) / span * 225;
-        return [x, y] as const;
-    });
-    const line = points.map(([x, y], index) => `${index ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
-    const area = `${line} L ${points.at(-1)?.[0] || 930} 325 L ${points[0]?.[0] || 70} 325 Z`;
-    const positive = values.at(-1)! >= values[0]!;
-    const color = positive ? 'var(--term-buy)' : 'var(--term-sell)';
-    return (
-        <svg viewBox="0 0 1000 360" preserveAspectRatio="none" className="absolute inset-x-3 bottom-8 top-12 h-[calc(100%-5rem)] w-[calc(100%-1.5rem)]" aria-label="Realized PNL chart" role="img">
-            <defs><linearGradient id="portfolio-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".34" /><stop offset="1" stopColor={color} stopOpacity=".03" /></linearGradient></defs>
-            {[100, 175, 250, 325].map((y) => <line key={y} x1="45" y1={y} x2="955" y2={y} stroke="var(--term-border)" strokeWidth="1" opacity=".35" />)}
-            <path d={area} fill="url(#portfolio-area)" />
-            <path d={line} fill="none" stroke={color} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-    );
 }
 
 function Position({ position }: { position: PositionRow }) {

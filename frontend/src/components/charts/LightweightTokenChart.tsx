@@ -10,9 +10,11 @@ import {
     PriceScaleMode,
     createChart,
     createSeriesMarkers,
+    createTextWatermark,
     type IChartApi,
     type IRange,
     type ISeriesApi,
+    type ITextWatermarkPluginApi,
     type SeriesMarker,
     type Time,
     type UTCTimestamp,
@@ -150,30 +152,43 @@ function axisModeButtonClass(isActive: boolean) {
     ].join(' ');
 }
 
-function getPaddedDisplayRange(
-    candles: ChartDataset['candles'],
-    totalSupply: number,
-    valueMode: ChartValueMode
-) {
-    if (candles.length === 0) return null;
-
-    const lows = candles.map(candle => toDisplayValue(candle.low, totalSupply, valueMode));
-    const highs = candles.map(candle => toDisplayValue(candle.high, totalSupply, valueMode));
-    const min = Math.min(...lows);
-    const max = Math.max(...highs);
-    const span = Math.max(max - min, Math.abs(max) * 0.08, valueMode === 'market_cap' ? 1_000 : 0.000000001);
-    const lowerPad = span * 0.1;
-    const upperPad = span * 0.16;
-    const lowerBound = min > 0 ? Math.max(min * 0.65, min - lowerPad) : min - lowerPad;
-
-    return {
-        from: Math.max(0, lowerBound),
-        to: max + upperPad,
-    };
-}
-
 function focusLatest(chart: IChartApi, candleCount: number, compact: boolean) {
     chart.timeScale().setVisibleLogicalRange(latestLogicalRange(candleCount, compact));
+}
+
+function watermarkLines(
+    dataset: ChartDataset,
+    candle: ChartDataset['candles'][number] | undefined,
+    valueMode: ChartValueMode,
+    timeframe: ChartTimeframe | undefined,
+    fontFamily: string
+) {
+    const priceChange = candle && candle.open > 0 ? (candle.close - candle.open) / candle.open : 0;
+    let value = 'Waiting for chart data';
+    if (candle && valueMode === 'market_cap') {
+        value = `MCap ${formatCompact(candle.marketCapUsd)} · Price $${formatPrice(candle.close)}`;
+    } else if (candle) {
+        value = `Price $${formatPrice(candle.close)} · MCap ${formatCompact(candle.marketCapUsd)}`;
+    }
+
+    return [
+        {
+            text: `  ${dataset.tokenSymbol}/SOL · ${timeframe ? getTimeframeLabel(timeframe) : `${dataset.intervalSeconds}s`}`,
+            color: '#e4e4e7',
+            fontSize: 14,
+            lineHeight: 22,
+            fontFamily,
+            fontStyle: '500',
+        },
+        {
+            text: `  ${value}`,
+            color: priceChange >= 0 ? '#2eddb2' : '#f83279',
+            fontSize: 13,
+            lineHeight: 19,
+            fontFamily,
+            fontStyle: '500',
+        },
+    ];
 }
 
 export default function LightweightTokenChart({
@@ -204,6 +219,7 @@ export default function LightweightTokenChart({
     const chartRef = useRef<IChartApi | null>(null);
     const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+    const watermarkRef = useRef<ITextWatermarkPluginApi<Time> | null>(null);
     const replayIndexRef = useRef(0);
     const onReplayCompleteRef = useRef(onReplayComplete);
     const onAutoScaleRef = useRef(onAutoScaleChange);
@@ -352,7 +368,7 @@ export default function LightweightTokenChart({
                 horzLine: { color: 'rgba(161, 161, 170, 0.62)', style: LineStyle.Dashed, labelBackgroundColor: '#222225' },
             },
             rightPriceScale: {
-                autoScale: priceAutoRef.current,
+                autoScale: true,
                 mode: logRef.current ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
                 borderColor: 'rgba(161, 161, 170, 0.24)',
                 scaleMargins: { top: 0.1, bottom: 0.1 },
@@ -367,7 +383,8 @@ export default function LightweightTokenChart({
                 maxBarSpacing: compact ? 24 : 30,
                 fixLeftEdge: false,
                 fixRightEdge: false,
-                lockVisibleTimeRangeOnResize: false,
+                lockVisibleTimeRangeOnResize: true,
+                rightBarStaysOnScroll: true,
                 shiftVisibleRangeOnNewBar: followRef.current,
             },
             handleScale: {
@@ -439,11 +456,24 @@ export default function LightweightTokenChart({
         }));
         createSeriesMarkers(candleSeries, markers);
 
+        const watermark = createTextWatermark(chart.panes()[0], {
+            horzAlign: 'left',
+            vertAlign: 'top',
+            lines: watermarkLines(
+                current,
+                initialCandles.at(-1),
+                valueMode,
+                undefined,
+                `${chartFontFamily}, system-ui, sans-serif`
+            ),
+        });
+        watermarkRef.current = watermark;
+
         if (followRef.current) focusLatest(chart, initialCandles.length, compact);
         else if (timeRangeRef.current) chart.timeScale().setVisibleLogicalRange(timeRangeRef.current);
-        const initialRange = getPaddedDisplayRange(initialCandles, current.totalSupply, valueMode);
         if (!priceAutoRef.current) {
-            const range = priceRangeRef.current ?? initialRange;
+            const range = priceRangeRef.current;
+            candleSeries.priceScale().setAutoScale(false);
             if (range) candleSeries.priceScale().setVisibleRange(range);
         }
 
@@ -460,17 +490,14 @@ export default function LightweightTokenChart({
         setVisibleCount(initialCandles.length);
         setRenderMs(performance.now() - startedAt);
 
-        const resizeObserver = new ResizeObserver(() => {
-            chart.applyOptions({ autoSize: true });
-        });
-        resizeObserver.observe(container);
-
         let disposed = false;
         let dragStart: { x: number; y: number } | undefined;
         const captureRange = () => {
             if (disposed) return;
-            timeRangeRef.current = chart.timeScale().getVisibleLogicalRange();
             priceRangeRef.current = candleSeries.priceScale().getVisibleRange();
+        };
+        const trackRange = (range: IRange<number> | null) => {
+            if (!followRef.current) timeRangeRef.current = range;
         };
         const suspendFollow = () => {
             if (followRef.current) {
@@ -500,27 +527,31 @@ export default function LightweightTokenChart({
             window.requestAnimationFrame(captureRange);
         };
 
-        container.addEventListener('wheel', suspendFollow, { passive: true });
-        container.addEventListener('pointerdown', beginDrag);
-        container.addEventListener('pointermove', trackDrag);
-        container.addEventListener('pointerup', endDrag);
-        container.addEventListener('pointercancel', endDrag);
+        const chartElement = chart.chartElement();
+        chart.timeScale().subscribeVisibleLogicalRangeChange(trackRange);
+        chartElement.addEventListener('wheel', suspendFollow, { passive: true });
+        chartElement.addEventListener('pointerdown', beginDrag);
+        chartElement.addEventListener('pointermove', trackDrag);
+        chartElement.addEventListener('pointerup', endDrag);
+        chartElement.addEventListener('pointercancel', endDrag);
 
         return () => {
             if (!followRef.current) captureRange();
             disposed = true;
-            resizeObserver.disconnect();
-            container.removeEventListener('wheel', suspendFollow);
-            container.removeEventListener('pointerdown', beginDrag);
-            container.removeEventListener('pointermove', trackDrag);
-            container.removeEventListener('pointerup', endDrag);
-            container.removeEventListener('pointercancel', endDrag);
+            chart.timeScale().unsubscribeVisibleLogicalRangeChange(trackRange);
+            chartElement.removeEventListener('wheel', suspendFollow);
+            chartElement.removeEventListener('pointerdown', beginDrag);
+            chartElement.removeEventListener('pointermove', trackDrag);
+            chartElement.removeEventListener('pointerup', endDrag);
+            chartElement.removeEventListener('pointercancel', endDrag);
             drawManager.detach();
+            watermark.detach();
             chart.remove();
             setDrawApi(undefined);
             chartRef.current = null;
             candleSeriesRef.current = null;
             volumeSeriesRef.current = null;
+            watermarkRef.current = null;
             dataKeyRef.current = '';
             firstTimeRef.current = undefined;
             lastTimeRef.current = undefined;
@@ -890,14 +921,37 @@ export default function LightweightTokenChart({
         return () => window.removeEventListener('keydown', handleKey);
     }, [drawTools]);
 
-    const latest = dataset.candles[Math.min(visibleCount || initialCount, dataset.candles.length) - 1] ?? dataset.candles[0] ?? {
-        timestamp: 0, open: 0, high: 0, low: 0, close: 0, volumeUsd: 0, volumeTokens: 0,
-        tradeCount: 0, buyCount: 0, sellCount: 0, uniqueBuyers: 0, uniqueSellers: 0,
-        marketCapUsd: 0, liquidityUsd: 0,
-    };
+    const latest = useMemo(() => (
+        dataset.candles[Math.min(visibleCount || initialCount, dataset.candles.length) - 1]
+        ?? dataset.candles[0]
+        ?? {
+            timestamp: 0, open: 0, high: 0, low: 0, close: 0, volumeUsd: 0, volumeTokens: 0,
+            tradeCount: 0, buyCount: 0, sellCount: 0, uniqueBuyers: 0, uniqueSellers: 0,
+            marketCapUsd: 0, liquidityUsd: 0,
+        }
+    ), [dataset.candles, initialCount, visibleCount]);
     const isReplayComplete = replayMode && visibleCount >= dataset.candles.length;
     const hasReplayControls = replayMode && onReplayStart && onReplayPause;
     const feedLabel = dataset.source.mode === 'historical_replay' ? 'Replay' : 'Live';
+    useEffect(() => {
+        const watermark = watermarkRef.current;
+        const container = containerRef.current;
+        if (!watermark || !container) return;
+        const fontFamily =
+            getComputedStyle(document.documentElement)
+                .getPropertyValue('--font-geist')
+                .trim() || 'Geist';
+        watermark.applyOptions({
+            lines: watermarkLines(
+                dataset,
+                latest,
+                valueMode,
+                timeframe,
+                `${fontFamily}, system-ui, sans-serif`
+            ),
+        });
+    }, [dataset, latest, timeframe, valueMode]);
+
     const startReplay = () => {
         if (isReplayComplete && onReplayReset) {
             onReplayReset();
@@ -1084,14 +1138,6 @@ export default function LightweightTokenChart({
                                 placeholder="Type note…"
                             />
                         )}
-                    </div>
-                    <div className="pointer-events-none absolute left-4 top-4 z-[4] text-xs text-slate-300">
-                        <div className="text-sm text-slate-200">{dataset.tokenSymbol}/SOL · {timeframe ? getTimeframeLabel(timeframe) : `${dataset.intervalSeconds}s`} · {feedLabel}</div>
-                        <div className={priceChangeClass}>
-                            {valueMode === 'market_cap'
-                                ? `MCap ${formatCompact(latest.marketCapUsd)} · Price $${formatPrice(latest.close)}`
-                                : `Price $${formatPrice(latest.close)} · MCap ${formatCompact(latest.marketCapUsd)}`}
-                        </div>
                     </div>
                     <div className="absolute bottom-0 right-0 z-[7] flex h-6 items-stretch overflow-hidden border-l border-t border-[var(--term-border)] bg-[color:var(--term-bg)] text-[10px]">
                         <button
