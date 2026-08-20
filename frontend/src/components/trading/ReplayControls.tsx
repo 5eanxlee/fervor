@@ -53,6 +53,9 @@ export default function ReplayControls({
     const canStep = Boolean(snapshot && (paused || complete));
     const canReset = Boolean(snapshot && snapshot.cursor > 0 && (paused || complete));
     const progress = snapshot?.total ? Math.min(100, snapshot.cursor / snapshot.total * 100) : 0;
+    let transportTitle = 'Play replay';
+    if (running) transportTitle = 'Pause replay';
+    else if (complete) transportTitle = 'Replay from the beginning';
 
     return (
         <section className="replay-controls" aria-label="Replay controls">
@@ -60,9 +63,9 @@ export default function ReplayControls({
                 <button
                     type="button"
                     onClick={() => onControl(running ? { op: 'pause' } : { op: 'play', speed })}
-                    disabled={busy || !snapshot || complete}
+                    disabled={busy || !snapshot}
                     className="replay-primary"
-                    title={running ? 'Pause replay' : 'Play replay'}
+                    title={transportTitle}
                 >
                     {running ? <PauseIcon /> : <PlayIcon />}
                     <span>{running ? 'Pause' : 'Play'}</span>

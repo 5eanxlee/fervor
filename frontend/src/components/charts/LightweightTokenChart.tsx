@@ -790,6 +790,7 @@ export default function LightweightTokenChart({
     };
     const isReplayComplete = replayMode && visibleCount >= dataset.candles.length;
     const hasReplayControls = replayMode && onReplayStart && onReplayPause;
+    const feedLabel = dataset.source.mode === 'historical_replay' ? 'Replay' : 'Live';
     const startReplay = () => {
         if (isReplayComplete && onReplayReset) {
             onReplayReset();
@@ -852,7 +853,7 @@ export default function LightweightTokenChart({
                 <div className="px-3 text-slate-400">TradingView Lightweight</div>
                 <div className="h-6 w-px bg-slate-800" />
                 <div className="hidden min-w-0 flex-1 items-center gap-2 truncate px-3 md:flex">
-                    <span className="truncate text-slate-300">{dataset.tokenSymbol}/SOL {dataset.source.mode} feed</span>
+                    <span className="truncate text-slate-300">{dataset.tokenSymbol}/SOL {feedLabel} feed</span>
                     <span className="text-slate-600">·</span>
                     <span>{timeframe ? getTimeframeLabel(timeframe) : `${dataset.intervalSeconds}s`}</span>
                     <span className={priceChangeClass}>
@@ -973,7 +974,7 @@ export default function LightweightTokenChart({
                         )}
                     </div>
                     <div className="pointer-events-none absolute left-4 top-4 z-[4] text-xs text-slate-300">
-                        <div className="text-sm text-slate-200">{dataset.tokenSymbol}/SOL · {timeframe ? getTimeframeLabel(timeframe) : `${dataset.intervalSeconds}s`} · {dataset.source.mode}</div>
+                        <div className="text-sm text-slate-200">{dataset.tokenSymbol}/SOL · {timeframe ? getTimeframeLabel(timeframe) : `${dataset.intervalSeconds}s`} · {feedLabel}</div>
                         <div className={priceChangeClass}>
                             {valueMode === 'market_cap'
                                 ? `MCap ${formatCompact(latest.marketCapUsd)} · Price $${formatPrice(latest.close)}`

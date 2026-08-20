@@ -445,17 +445,26 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         setControlBusy(true);
         setReplayError(undefined);
         try {
-            const response = await apiService.controlReplay({
-                contract: replayControlContract,
-                epoch: replay.snapshot.epoch,
-                cursor: replay.snapshot.cursor,
-                fact: replay.paper.factCount,
-                ...command,
-            } as ReplayControl);
-            if (!response.data || !isReplayState(response.data.state)) {
-                throw new Error('Replay control returned invalid state');
+            const send = async (state: ReplayState, action: ReplayOp): Promise<ReplayState> => {
+                const response = await apiService.controlReplay({
+                    contract: replayControlContract,
+                    epoch: state.snapshot.epoch,
+                    cursor: state.snapshot.cursor,
+                    fact: state.paper.factCount,
+                    ...action,
+                } as ReplayControl);
+                if (!response.data || !isReplayState(response.data.state)) {
+                    throw new Error('Replay control returned invalid state');
+                }
+                return response.data.state;
+            };
+
+            let state = replay;
+            if (command.op === 'play' && state.snapshot.status === 'complete') {
+                state = await send(state, { op: 'seek', target: 0 });
+                applyReplay(state);
             }
-            applyReplay(response.data.state);
+            applyReplay(await send(state, command));
         } catch (error: any) {
             setReplayError(error?.error || error?.message || 'Replay control failed');
             setSessionKey((value) => value + 1);
@@ -591,7 +600,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                         )}
                         <div className="relative min-h-0 flex-1">
                             <LightweightTokenChart dataset={chartDataset} height="100%" live={false} replayMode={false} axis={settings.chartAxis} onAxisChange={(chartAxis) => setSettings((value) => ({ ...value, chartAxis }))} autoScale={settings.chartAutoScale} onAutoScaleChange={(chartAutoScale) => setSettings((value) => ({ ...value, chartAutoScale }))} logScale={settings.chartLogScale} onLogScaleChange={(chartLogScale) => setSettings((value) => ({ ...value, chartLogScale }))} showVolume={settings.chartVolume} targetMarketCap={limitTarget} compact drawTools />
-                            {!candles.length && <div className="pointer-events-none absolute inset-0 grid place-items-center text-xs text-[var(--term-dim)]">{replayMode ? 'Reset, then play the historical tape' : 'Waiting for market candles'}</div>}
+                            {!candles.length && <div className="pointer-events-none absolute inset-0 grid place-items-center text-xs text-[var(--term-dim)]">{replayMode ? 'Play the replay to populate the chart' : 'Waiting for market candles'}</div>}
                         </div>
                     </div>
                     {!chartFull && (
