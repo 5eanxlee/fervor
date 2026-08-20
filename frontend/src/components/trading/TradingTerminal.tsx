@@ -75,7 +75,7 @@ const intervalSecs: Record<ChartInterval, number> = {
     '5m': 300,
     '1h': 3_600,
 };
-const replayMode = process.env.NEXT_PUBLIC_DATA_MODE === 'replay';
+const replayBuild = process.env.NEXT_PUBLIC_DATA_MODE === 'replay';
 const replaySymbol = process.env.NEXT_PUBLIC_REPLAY_SYMBOL || 'REPLAY';
 const replayName = process.env.NEXT_PUBLIC_REPLAY_NAME || 'Token';
 const replayLogo = process.env.NEXT_PUBLIC_REPLAY_LOGO?.trim();
@@ -178,7 +178,8 @@ const datasetFrom = (
     };
 };
 
-export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
+export default function TradingTerminal({ tokenMint, replayView = false }: { tokenMint: string; replayView?: boolean }) {
+    const replayMode = replayBuild && replayView;
     const { isAuthenticated, isLoading: authLoading, token: authToken } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -422,7 +423,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
             }
         }).catch(() => undefined).finally(() => active && setLoading(false));
         return () => { active = false; };
-    }, [applyReplay, hydrateParticipants, hydrateReplayHistory, isAuthenticated, sessionKey, tokenMint]);
+    }, [applyReplay, hydrateParticipants, hydrateReplayHistory, isAuthenticated, replayMode, sessionKey, tokenMint]);
 
     useEffect(() => {
         if (!isAuthenticated || replayMode) return;
@@ -431,7 +432,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
             if (active) setCandles(response.data || []);
         }).catch(() => undefined);
         return () => { active = false; };
-    }, [chartKey, interval, isAuthenticated, tokenMint]);
+    }, [chartKey, interval, isAuthenticated, replayMode, tokenMint]);
 
     const flush = useCallback(() => {
         frame.current = undefined;
@@ -506,7 +507,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
             source.close();
             if (frame.current !== undefined) cancelAnimationFrame(frame.current);
         };
-    }, [flush, isAuthenticated, tokenMint]);
+    }, [flush, isAuthenticated, replayMode, tokenMint]);
 
     const totalSupply = replayMode
         ? replaySupply ?? 1
@@ -610,7 +611,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     useEffect(() => {
         if (!replayMode) return;
         setCandles(mergeCandles([], replayTrades.current, intervalRef.current));
-    }, [chartKey]);
+    }, [chartKey, replayMode]);
 
     useEffect(() => {
         const cut = replay?.snapshot;
@@ -627,11 +628,11 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         if (cut.status !== 'running' || replaySpeed === 'max') return;
         const timer = window.setInterval(update, 100);
         return () => window.clearInterval(timer);
-    }, [replay?.snapshot, replaySpeed]);
+    }, [replay?.snapshot, replayMode, replaySpeed]);
 
     const chartDataset = useMemo(
         () => datasetFrom(tokenMint, symbol, totalSupply, market.liquidity || 0, intervalSeconds, candles, replayMode),
-        [candles, intervalSeconds, market.liquidity, symbol, tokenMint, totalSupply]
+        [candles, intervalSeconds, market.liquidity, replayMode, symbol, tokenMint, totalSupply]
     );
     const ticketFlow = useMemo(() => ({
         volumeUsd: market.volume5m,
@@ -691,7 +692,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
             marketCap: token?.market_cap,
             price: token?.price,
         });
-    }, [displayLogo, displayName, metadata, symbol, token, tokenMint]);
+    }, [displayLogo, displayName, metadata, replayMode, symbol, token, tokenMint]);
 
     useEffect(() => {
         const sync = () => setStarred(hasStar(tokenMint));
