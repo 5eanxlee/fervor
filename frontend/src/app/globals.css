@@ -909,6 +909,10 @@
     min-height: clamp(2.1rem, 3.72vh, 2.3rem);
 }
 
+.trade-row:nth-child(even) {
+    background: color-mix(in srgb, var(--term-panel) 55%, var(--term-bg));
+}
+
 .ticket-tools {
     height: clamp(2.6rem, 4.43vh, 2.75rem);
 }

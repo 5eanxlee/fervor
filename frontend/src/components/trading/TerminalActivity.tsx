@@ -219,7 +219,7 @@ function TradeTable({ trades, now }: { trades: ActivityTrade[]; now?: string | n
             <TableHead columns="grid-cols-[70px_90px_70px_1fr_1fr_1fr_1fr_105px_28px]" labels={['Age ↓', 'Tip & Prio', 'Side', 'MCap ↔', 'Amount', 'Total USD', 'Total SOL', 'Maker', '']} />
             <div className="min-h-0 flex-1 overflow-y-auto">
                 {trades.map((trade) => (
-                    <div key={trade.id} className="activity-row grid grid-cols-[70px_90px_70px_1fr_1fr_1fr_1fr_105px_28px] items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums">
+                    <div key={trade.id} className="activity-row trade-row grid grid-cols-[70px_90px_70px_1fr_1fr_1fr_1fr_105px_28px] items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums">
                         <span className="text-[var(--term-dim)]">{Math.max(0, Math.floor((clock - new Date(trade.observedAt).getTime()) / 1000))}s</span>
                         <span className="text-[var(--term-dim)]">—</span>
                         <span className={trade.side === 'buy' ? 'text-[var(--term-buy)]' : 'text-[var(--term-sell)]'}>{trade.side === 'buy' ? 'Buy' : 'Sell'}</span>
