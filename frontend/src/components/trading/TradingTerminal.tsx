@@ -44,6 +44,7 @@ import {
     replayFromRt,
     replaySlice,
     replayTickDelay,
+    stabilizeReplayPrices,
     supplyOf,
     type ReplayControl,
     type ReplayOp,
@@ -311,7 +312,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
 
         const cut = replayCut.current;
         if (sequence !== hydrateSeq.current || !cut || cut.epoch !== epoch || cut.cursor < target) return;
-        const combined = mergeReplayTape(history, replayTrades.current);
+        const combined = stabilizeReplayPrices(mergeReplayTape(history, replayTrades.current));
         replayTrades.current = combined;
         visualQueue.current = [];
         if (visualTimer.current !== undefined) window.clearTimeout(visualTimer.current);
@@ -549,12 +550,13 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                 setReplaySupply(supply);
             }
         }
-        replayTrades.current = mergeReplayTape(replayTrades.current, fresh);
+        const stableFresh = stabilizeReplayPrices(fresh, latestReplayPrice(replayTrades.current));
+        replayTrades.current = mergeReplayTape(replayTrades.current, stableFresh);
         setTrades((current) => [
-            ...fresh.map((item) => activityTrade(item, supplyRef.current)).reverse(),
+            ...stableFresh.map((item) => activityTrade(item, supplyRef.current)).reverse(),
             ...current,
         ].slice(0, 500));
-        visualQueue.current.push(...fresh);
+        visualQueue.current.push(...stableFresh);
         if (visualTimer.current === undefined) drainReplayVisuals();
     }, [applyProjection, applyReplay, drainReplayVisuals, hydrateReplayHistory]);
 

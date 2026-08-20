@@ -59,6 +59,7 @@ export interface ReplayTrade {
     priceUsd?: number;
     chartPriceUsd?: number;
     chartPriceSource?: 'curve_spot';
+    displayPriceUsd?: number;
     replayCursor?: number;
     supply?: {
         rawAmount: string;
@@ -173,6 +174,7 @@ export const isReplayTrade = (value: unknown): value is ReplayTrade => object(va
     && (value.side === 'buy' || value.side === 'sell')
     && (value.priceUsd === undefined || finite(value.priceUsd))
     && (value.chartPriceUsd === undefined || finite(value.chartPriceUsd))
+    && (value.displayPriceUsd === undefined || finite(value.displayPriceUsd))
     && (value.usdAmount === undefined || finite(value.usdAmount));
 
 export const isReplayDeltaPage = (value: unknown): value is ReplayDeltaPage => object(value)
@@ -187,8 +189,58 @@ export const isReplayDeltaPage = (value: unknown): value is ReplayDeltaPage => o
         && isReplayTrade(item.trade));
 
 export const chartPriceOf = (trade: ReplayTrade): number | undefined => {
+    const value = finite(trade.displayPriceUsd)
+        ? trade.displayPriceUsd
+        : finite(trade.chartPriceUsd) ? trade.chartPriceUsd : trade.priceUsd;
+    return finite(value) && value > 0 ? value : undefined;
+};
+
+const sourcePriceOf = (trade: ReplayTrade): number | undefined => {
     const value = finite(trade.chartPriceUsd) ? trade.chartPriceUsd : trade.priceUsd;
     return finite(value) && value > 0 ? value : undefined;
+};
+
+const weightedMedianPrice = (trades: ReplayTrade[]): number | undefined => {
+    const points = trades.slice(0, 24).flatMap((trade) => {
+        const price = sourcePriceOf(trade);
+        if (price === undefined) return [];
+        const weight = finite(trade.usdAmount) && trade.usdAmount > 0 ? trade.usdAmount : 0.01;
+        return [{ price, weight }];
+    }).sort((left, right) => left.price - right.price);
+    const midpoint = points.reduce((sum, point) => sum + point.weight, 0) / 2;
+    let weight = 0;
+    for (const point of points) {
+        weight += point.weight;
+        if (weight >= midpoint) return point.price;
+    }
+    return points.at(-1)?.price;
+};
+
+export const volumePrice = (prior: number, price: number, usdAmount: number): number => {
+    if (!finite(prior) || prior <= 0 || !finite(price) || price <= 0) return price;
+    const logMove = Math.log(price / prior);
+    if (Math.abs(logMove) <= Math.log(1.15)) return price;
+    const notional = finite(usdAmount) && usdAmount > 0 ? usdAmount : 0;
+    const weight = notional / (notional + 25);
+    return prior * Math.exp(logMove * weight);
+};
+
+export const stabilizeReplayPrices = (
+    trades: ReplayTrade[],
+    initialPrice?: number
+): ReplayTrade[] => {
+    let prior = finite(initialPrice) && initialPrice > 0
+        ? initialPrice
+        : weightedMedianPrice(trades);
+    return trades.map((trade) => {
+        const sourcePrice = sourcePriceOf(trade);
+        if (sourcePrice === undefined) return trade;
+        const displayPrice = trade.chartPriceSource === 'curve_spot' || prior === undefined
+            ? sourcePrice
+            : volumePrice(prior, sourcePrice, Number(trade.usdAmount || 0));
+        prior = displayPrice;
+        return { ...trade, displayPriceUsd: displayPrice };
+    });
 };
 
 export const replayTickDelay = (pending: number, usdAmount: number, quick = false): number => {

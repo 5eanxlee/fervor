@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { amountOf, chartPriceOf, mergeCandles, replayTickDelay, supplyOf, type ReplayTrade } from './replay';
+import {
+    amountOf,
+    chartPriceOf,
+    mergeCandles,
+    replayTickDelay,
+    stabilizeReplayPrices,
+    supplyOf,
+    volumePrice,
+    type ReplayTrade,
+} from './replay';
 
 const trade = (overrides: Partial<ReplayTrade> = {}): ReplayTrade => ({
     kind: 'trade',
@@ -50,5 +59,20 @@ describe('historical replay projection', () => {
         expect(replayTickDelay(12, 100)).toBeLessThan(replayTickDelay(2, 100));
         expect(replayTickDelay(4, 10_000)).toBeLessThan(replayTickDelay(4, 1));
         expect(replayTickDelay(1, 1, true)).toBe(16);
+    });
+
+    it('dampens dust-price outliers while preserving liquid and verified moves', () => {
+        expect(volumePrice(2, 2.2, 1)).toBe(2.2);
+        expect(volumePrice(2, 20, 1)).toBeLessThan(2.2);
+        expect(volumePrice(2, 20, 10_000)).toBeGreaterThan(19.8);
+
+        const stabilized = stabilizeReplayPrices([
+            trade({ priceUsd: 2, usdAmount: 100 }),
+            trade({ idempotencyKey: 'dust', priceUsd: 20, usdAmount: 1 }),
+            trade({ idempotencyKey: 'verified', chartPriceUsd: 4, chartPriceSource: 'curve_spot', usdAmount: 1 }),
+        ], 2);
+        expect(chartPriceOf(stabilized[1])).toBeLessThan(2.2);
+        expect(chartPriceOf(stabilized[2])).toBe(4);
+        expect(stabilized[1].priceUsd).toBe(20);
     });
 });
