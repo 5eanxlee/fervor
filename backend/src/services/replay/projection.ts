@@ -110,7 +110,7 @@ const pricedWithin = (all: StoredRollup, priced: StoredRollup): boolean => {
         for (const bucket of priced.windows[name]) {
             const total = allBuckets.get(bucket.startMs);
             if (!total
-                || bucket.volumeMicroUsd !== total.volumeMicroUsd
+                || bucket.volumeMicroUsd > total.volumeMicroUsd
                 || bucket.buyCount > total.buyCount
                 || bucket.sellCount > total.sellCount
                 || bucket.txCount > total.txCount) {
@@ -247,6 +247,10 @@ export class ReplayProjection {
         const nowMs = Date.parse(event.trade.observedAt);
         const usdPriced = event.trade.priceUsd !== undefined && event.trade.usdAmount !== undefined;
         const partialUsd = (event.trade.priceUsd === undefined) !== (event.trade.usdAmount === undefined);
+        const displayTrade = event.trade.usdAmount === undefined
+            && event.trade.chartUsdAmount !== undefined
+            ? { ...event.trade, usdAmount: event.trade.chartUsdAmount }
+            : event.trade;
         if (!Number.isSafeInteger(nowMs)
             || (this.state.now !== null && nowMs < Date.parse(this.state.now))
             || partialUsd
@@ -254,7 +258,7 @@ export class ReplayProjection {
             || (event.trade.priceSol !== undefined
                 && (!Number.isFinite(event.trade.priceSol) || event.trade.priceSol <= 0))
             || usdPriced !== event.usdPriced
-            || !this.state.all.add(event.trade, nowMs)
+            || !this.state.all.add(displayTrade, nowMs)
             || (usdPriced && !this.state.priced.add(event.trade, nowMs))) {
             throw new Error('Replay event cannot update the trade projection');
         }

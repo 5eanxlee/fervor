@@ -63,7 +63,11 @@ const snapshot: ReplaySnapshot = {
 
 describe('replay participants', () => {
     it('projects exact holder balances and trader flow at an explicit cursor', () => {
-        const view = projectReplayParticipants(snapshot, trades);
+        const displayTrades = [
+            { ...trades[0], usdAmount: undefined, chartUsdAmount: 20 },
+            ...trades.slice(1),
+        ];
+        const view = projectReplayParticipants(snapshot, displayTrades);
         expect(view).toMatchObject({
             contract: replayParticipantsContract,
             epoch: 2,
@@ -99,7 +103,7 @@ describe('replay participants', () => {
             }),
         ]);
 
-        const prefix = projectReplayParticipants(snapshot, trades, 2);
+        const prefix = projectReplayParticipants(snapshot, displayTrades, 2);
         expect(prefix).toMatchObject({
             cutCursor: 2,
             cutAt: at(2),

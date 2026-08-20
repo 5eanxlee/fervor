@@ -94,6 +94,8 @@ export const projectReplayParticipants = (
             throw new Error('Replay participant trade is incomplete');
         }
         const amount = BigInt(trade.tokenAmountRaw);
+        const usdAmount = positive(trade.usdAmount ?? trade.chartUsdAmount);
+        const hasUsd = usdAmount > 0;
         const row = rows.get(trade.maker) ?? {
             wallet: trade.maker,
             bought: 0n,
@@ -114,22 +116,22 @@ export const projectReplayParticipants = (
         rows.set(trade.maker, row);
         row.tradeCount += 1;
         row.lastTradeAt = trade.observedAt;
-        if (trade.usdAmount !== undefined) {
+        if (hasUsd) {
             row.pricedTradeCount += 1;
             pricedTradeCount += 1;
         }
         if (trade.side === 'buy') {
             row.buyCount += 1;
             row.bought += amount;
-            row.boughtUsd += positive(trade.usdAmount);
+            row.boughtUsd += usdAmount;
             row.boughtSol += positive(trade.solAmount);
-            if (trade.usdAmount !== undefined) row.pricedBuy += amount;
+            if (hasUsd) row.pricedBuy += amount;
         } else {
             row.sellCount += 1;
             row.sold += amount;
-            row.soldUsd += positive(trade.usdAmount);
+            row.soldUsd += usdAmount;
             row.soldSol += positive(trade.solAmount);
-            if (trade.usdAmount !== undefined) row.pricedSell += amount;
+            if (hasUsd) row.pricedSell += amount;
         }
     }
 

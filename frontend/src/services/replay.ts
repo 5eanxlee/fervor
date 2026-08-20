@@ -330,7 +330,8 @@ export const advanceReplayParticipants = (
             firstTradeAt: trade.observedAt,
             lastTradeAt: trade.observedAt,
         };
-        const hasUsd = finite(trade.usdAmount) && trade.usdAmount! > 0;
+        const usdAmount = trade.usdAmount ?? trade.chartUsdAmount;
+        const hasUsd = finite(usdAmount) && usdAmount > 0;
         row.tradeCount += 1;
         row.lastTradeAt = trade.observedAt;
         if (hasUsd) {
@@ -340,13 +341,13 @@ export const advanceReplayParticipants = (
         if (trade.side === 'buy') {
             row.buyCount += 1;
             row.boughtRaw = (BigInt(row.boughtRaw) + amount).toString();
-            row.boughtUsd += hasUsd ? trade.usdAmount! : 0;
+            row.boughtUsd += hasUsd ? usdAmount : 0;
             row.boughtSol += finite(trade.solAmount) && trade.solAmount! > 0 ? trade.solAmount! : 0;
             if (hasUsd) row.pricedBuyRaw = (BigInt(row.pricedBuyRaw) + amount).toString();
         } else {
             row.sellCount += 1;
             row.soldRaw = (BigInt(row.soldRaw) + amount).toString();
-            row.soldUsd += hasUsd ? trade.usdAmount! : 0;
+            row.soldUsd += hasUsd ? usdAmount : 0;
             row.soldSol += finite(trade.solAmount) && trade.solAmount! > 0 ? trade.solAmount! : 0;
             if (hasUsd) row.pricedSellRaw = (BigInt(row.pricedSellRaw) + amount).toString();
         }

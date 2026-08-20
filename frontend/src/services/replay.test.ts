@@ -164,7 +164,7 @@ describe('historical replay projection', () => {
         };
         expect(isReplayParticipants(base)).toBe(true);
         const next = advanceReplayParticipants(base, [
-            trade({ maker, tokenAmountRaw: '100', tokenDecimals: 0, replayCursor: 0, usdAmount: 20 }),
+            trade({ maker, tokenAmountRaw: '100', tokenDecimals: 0, replayCursor: 0, usdAmount: undefined, chartUsdAmount: 20 }),
             trade({ maker, side: 'sell', tokenAmountRaw: '40', tokenDecimals: 0, replayCursor: 1, usdAmount: 12 }),
         ]);
         expect(next).toMatchObject({
@@ -178,6 +178,8 @@ describe('historical replay projection', () => {
                 boughtRaw: '100',
                 soldRaw: '40',
                 balanceRaw: '60',
+                pricedBuyRaw: '100',
+                boughtUsd: 20,
                 tradeCount: 2,
             }],
         });

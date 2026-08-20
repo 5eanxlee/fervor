@@ -281,7 +281,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                 price,
                 marketCap: price !== undefined && supply !== undefined ? price * supply : undefined,
             } : {}),
-            volume5m: projection.pricedRolling.volumeUsd['5m'],
+            volume5m: projection.rolling.volumeUsd['5m'],
             buys5m: projection.rolling.buyCount['5m'],
             sells5m: projection.rolling.sellCount['5m'],
         }));

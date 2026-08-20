@@ -33,6 +33,25 @@ const resign = (value: any): any => {
 };
 
 describe('replay projection checkpoints', () => {
+    it('uses verified replay display USD in total volume without changing causal coverage', () => {
+        const base = replay(2);
+        const source = {
+            ...base,
+            sourceTrades: [
+                base.sourceTrades[0],
+                { ...base.sourceTrades[1], chartUsdAmount: 7 },
+            ],
+        };
+        const coordinator = new ReplayCoordinator(source, 'display-usd');
+        const projection = ReplayProjection.start(coordinator);
+        projection.apply(coordinator.step()!);
+        projection.apply(coordinator.step()!);
+
+        expect(projection.view().rolling.volumeUsd['5m']).toBe(27);
+        expect(projection.view().pricedRolling.volumeUsd['5m']).toBe(20);
+        expect(() => parseReplayCheckpoint(projection.checkpoint(coordinator))).not.toThrow();
+    });
+
     it('restores a cut and deterministically continues without stale work', () => {
         const source = replay();
         const baseline = new ReplayCoordinator(source, 'baseline');
