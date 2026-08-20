@@ -519,15 +519,21 @@ export default function LightweightTokenChart({
 
         let disposed = false;
         let emptyFitFrame: number | undefined;
+        const fitEmptyChart = () => {
+            if (emptyFitFrame !== undefined) window.cancelAnimationFrame(emptyFitFrame);
+            emptyFitFrame = window.requestAnimationFrame(() => {
+                if (!disposed && dataCountRef.current === 0 && followRef.current) {
+                    chart.timeScale().fitContent();
+                }
+            });
+        };
+        const emptyResize = new ResizeObserver(fitEmptyChart);
+        emptyResize.observe(container);
         if (followRef.current) {
             if (initialCandles.length) focusLatest(chart, initialCandles.length, compact);
             else {
                 chart.timeScale().fitContent();
-                emptyFitFrame = window.requestAnimationFrame(() => {
-                    emptyFitFrame = window.requestAnimationFrame(() => {
-                        if (!disposed) chart.timeScale().fitContent();
-                    });
-                });
+                fitEmptyChart();
             }
         }
         else if (timeRangeRef.current) chart.timeScale().setVisibleLogicalRange(timeRangeRef.current);
@@ -598,6 +604,7 @@ export default function LightweightTokenChart({
             if (!followRef.current) captureRange();
             disposed = true;
             if (emptyFitFrame !== undefined) window.cancelAnimationFrame(emptyFitFrame);
+            emptyResize.disconnect();
             chart.timeScale().unsubscribeVisibleLogicalRangeChange(trackRange);
             chartElement.removeEventListener('wheel', suspendFollow);
             chartElement.removeEventListener('pointerdown', beginDrag);
