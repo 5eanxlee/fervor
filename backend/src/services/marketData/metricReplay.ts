@@ -349,17 +349,36 @@ export const projectMetricData = async (input: MetricInput): Promise<MetricRepla
         }
         curvePrices.set(key, point.priceUsd);
     }
-    for (let index = 0; index < trades.length; index += 1) {
-        const trade = trades[index];
-        const key = `${trade.slot}:${trade.signature}:${trade.instructionIndex}`;
-        const chartPriceUsd = curvePrices.get(key);
-        if (chartPriceUsd !== undefined) {
-            trades[index] = { ...trade, chartPriceUsd, chartPriceSource: 'curve_spot' };
-        }
+    const pricedById = new Map(trades.map((trade) => [trade.idempotencyKey, trade]));
+    const chartTrades: NormalizedTradeEvent[] = [];
+    for (const raw of rawTrades) {
+        const trade = pricedById.get(raw.idempotencyKey) ?? raw;
+        const key = `${raw.slot}:${raw.signature}:${raw.instructionIndex}`;
+        const curvePrice = curvePrices.get(key);
+        const chartFx = await prices.getChartUsd(raw.quoteMint!, raw.observedAt);
+        const fxPrice = raw.priceSol !== undefined && chartFx
+            ? raw.priceSol * chartFx.usdPrice
+            : undefined;
+        const chartPriceUsd = curvePrice ?? fxPrice ?? trade.priceUsd;
+        const chartUsdAmount = trade.usdAmount
+            ?? (raw.solAmount !== undefined && chartFx
+                ? raw.solAmount * chartFx.usdPrice
+                : undefined);
+        const chartTrade: NormalizedTradeEvent = {
+            ...trade,
+            ...(chartPriceUsd !== undefined ? {
+                chartPriceUsd,
+                chartPriceSource: curvePrice !== undefined ? 'curve_spot' : 'verified_fx',
+            } as const : {}),
+            ...(chartUsdAmount !== undefined ? { chartUsdAmount } : {}),
+        };
+        chartTrades.push(chartTrade);
+        if (pricedById.has(raw.idempotencyKey)) pricedById.set(raw.idempotencyKey, chartTrade);
     }
+    const chartPricedTrades = trades.map((trade) => pricedById.get(trade.idempotencyKey)!);
 
     const finalMs = Date.parse(rawTrades.at(-1)!.observedAt);
-    const enrichedById = new Map(trades.map((trade) => [trade.idempotencyKey, trade]));
+    const enrichedById = new Map(chartPricedTrades.map((trade) => [trade.idempotencyKey, trade]));
     const book = new RollingMetricBook(input.manifest.mint);
     const pricedBook = new RollingMetricBook(input.manifest.mint);
     for (const raw of rawTrades) {
@@ -376,7 +395,7 @@ export const projectMetricData = async (input: MetricInput): Promise<MetricRepla
     }
     const rolling = book.metrics(finalMs);
     const pricedRolling = pricedBook.metrics(finalMs);
-    const latest = trades.at(-1);
+    const latest = chartPricedTrades.at(-1);
     const latestSol = [...rawTrades].reverse().find((trade) => trade.priceSol !== undefined);
     const lastCurve = curve.at(-1)!;
     const totalSupply = supplyAmount(supply, input.manifest.mint);
@@ -397,9 +416,9 @@ export const projectMetricData = async (input: MetricInput): Promise<MetricRepla
         asOf: new Date(finalMs).toISOString(),
         phase: input.phase,
         tradeCount: rawTrades.length,
-        pricedTradeCount: trades.length,
-        unpricedTradeCount: rawTrades.length - trades.length,
-        priceCoverageBps: coverage(trades.length, rawTrades.length),
+        pricedTradeCount: chartPricedTrades.length,
+        unpricedTradeCount: rawTrades.length - chartPricedTrades.length,
+        priceCoverageBps: coverage(chartPricedTrades.length, rawTrades.length),
         priceUsd: latest?.priceUsd ?? null,
         priceObservedAt: latest?.observedAt ?? null,
         priceSourceEventId: latest?.usdSourceEventId ?? null,
@@ -430,10 +449,10 @@ export const projectMetricData = async (input: MetricInput): Promise<MetricRepla
     return {
         sourceManifestSha256: input.manifestSha256,
         source: input.manifest,
-        sourceTrades: rawTrades,
-        trades,
+        sourceTrades: chartTrades,
+        trades: chartPricedTrades,
         curve,
-        candles: aggregateCandles(trades),
+        candles: aggregateCandles(chartPricedTrades),
         state,
     };
 };

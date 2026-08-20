@@ -52,6 +52,31 @@ describe('historical replay projection', () => {
         ]);
     });
 
+    it('charts verified FX display fields from the first trade on the replay timeline', () => {
+        const candles = mergeCandles([], [
+            trade({
+                priceUsd: undefined,
+                usdAmount: undefined,
+                chartPriceUsd: 2.5,
+                chartUsdAmount: 7,
+                replayAt: '2024-11-19T00:00:01.000Z',
+            }),
+            trade({
+                idempotencyKey: 'trade-2',
+                observedAt: '2024-11-19T00:03:54.000Z',
+                replayAt: '2024-11-19T00:00:02.000Z',
+                chartPriceUsd: 3,
+                usdAmount: undefined,
+                chartUsdAmount: 11,
+            }),
+        ], 1);
+
+        expect(candles).toEqual([
+            expect.objectContaining({ timestamp: Date.parse('2024-11-19T00:00:01.000Z'), close: 2.5, volumeUsd: 7 }),
+            expect.objectContaining({ timestamp: Date.parse('2024-11-19T00:00:02.000Z'), close: 3, volumeUsd: 11 }),
+        ]);
+    });
+
     it('derives exact display amounts only from bounded fixed-point inputs', () => {
         expect(amountOf(trade({ tokenAmountRaw: '2500000', tokenDecimals: 6 }))).toBe(2.5);
         expect(supplyOf(trade({ supply: { rawAmount: '1000000000000000', decimals: 6, fixed: true } }))).toBe(1_000_000_000);

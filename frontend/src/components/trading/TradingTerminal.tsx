@@ -103,7 +103,7 @@ const activityTrade = (item: ReplayTrade, supply?: number): ActivityTrade => {
         id: item.idempotencyKey,
         side: item.side || 'buy',
         maker: item.maker,
-        usdAmount: item.usdAmount,
+        usdAmount: item.usdAmount ?? item.chartUsdAmount,
         tokenAmount: amountOf(item),
         priceUsd: item.priceUsd,
         marketCapUsd: chartPrice !== undefined && supply !== undefined
@@ -630,19 +630,6 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         return () => window.clearInterval(timer);
     }, [replay?.snapshot, replaySpeed]);
 
-    useEffect(() => {
-        if (!replayMode || replay?.snapshot.status !== 'running' || !replayNow) return;
-        const through = Date.parse(replayNow);
-        if (!Number.isFinite(through)) return;
-        setCandles((current) => mergeCandles(
-            current,
-            [],
-            intervalSeconds,
-            replayHistoryLimit,
-            through
-        ));
-    }, [intervalSeconds, replay?.snapshot.status, replayNow]);
-
     const chartDataset = useMemo(
         () => datasetFrom(tokenMint, symbol, totalSupply, market.liquidity || 0, intervalSeconds, candles, replayMode),
         [candles, intervalSeconds, market.liquidity, symbol, tokenMint, totalSupply]
@@ -802,7 +789,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                 >
                     <div className="chart-panel flex min-h-0 flex-col overflow-hidden bg-[var(--term-bg)]">
                         <div className="chart-tools flex shrink-0 items-center justify-start overflow-x-auto border-b border-[var(--term-border)] bg-[var(--term-bg)] text-[clamp(.58rem,.68vw,.66rem)] text-[var(--term-muted)]">
-                            {intervals.map((value) => <button key={value} onClick={() => changeInterval(value)} className={`chart-tool ${interval === value ? 'bg-[var(--term-control)] text-white' : 'hover:text-white'}`}>{value}</button>)}
+                            {intervals.map((value) => <button key={value} data-active={interval === value} onClick={() => changeInterval(value)} className={`chart-tool timeframe-tool ${interval === value ? 'text-white' : 'hover:text-white'}`}>{value}</button>)}
                             <span className="h-4 border-l border-[var(--term-border)]" />
                             <button onClick={() => setSettings((value) => ({ ...value, chartAxis: 'price' }))} className={`chart-tool ${settings.chartAxis === 'price' ? 'text-[var(--term-accent)]' : 'hover:text-white'}`}>Price</button>
                             <button onClick={() => setSettings((value) => ({ ...value, chartAxis: 'market_cap' }))} className={`chart-tool ${settings.chartAxis === 'market_cap' ? 'text-[var(--term-accent)]' : 'hover:text-white'}`}>MCap</button>

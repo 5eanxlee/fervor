@@ -179,4 +179,26 @@ export class FxTapeSource implements PriceSource {
             estimated: found.value.estimated,
         };
     }
+
+    async getChartUsd(mint: string, at?: string): Promise<RefPrice | null> {
+        const causal = await this.getUsd(mint, at);
+        if (causal || !at || mint !== SOL_MINT) return causal;
+        const atMs = Date.parse(at);
+        if (!Number.isFinite(atMs)) return null;
+        const point = this.points.find((candidate) =>
+            candidate.bucketMs <= atMs
+            && atMs < candidate.bucketMs + candidate.value.bucketMs
+        );
+        if (!point) return null;
+        return {
+            mint,
+            usdPrice: point.priceUsd,
+            fetchedAt: point.value.observedAt,
+            stale: false,
+            source: point.value.policy,
+            sourceEventId: point.value.sourceEventId,
+            confidence: point.value.confidence,
+            estimated: point.value.estimated,
+        };
+    }
 }

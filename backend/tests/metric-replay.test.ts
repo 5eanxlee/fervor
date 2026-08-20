@@ -271,6 +271,11 @@ describe('metric replay', () => {
 
         expect(replay.sourceTrades.map((trade) => trade.idempotencyKey))
             .toEqual(trades().map((trade) => trade.idempotencyKey));
+        expect(replay.sourceTrades[0]).toMatchObject({
+            chartPriceUsd: 400,
+            chartPriceSource: 'verified_fx',
+            chartUsdAmount: 800,
+        });
         expect(replay.trades).toHaveLength(1);
         expect(replay.trades[0]).toMatchObject({
             priceUsd: 400,

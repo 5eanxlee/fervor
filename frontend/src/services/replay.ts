@@ -59,8 +59,10 @@ export interface ReplayTrade {
     usdAmount?: number;
     priceUsd?: number;
     chartPriceUsd?: number;
-    chartPriceSource?: 'curve_spot';
+    chartPriceSource?: 'curve_spot' | 'verified_fx';
+    chartUsdAmount?: number;
     displayPriceUsd?: number;
+    replayAt?: string;
     replayCursor?: number;
     supply?: {
         rawAmount: string;
@@ -87,6 +89,7 @@ export interface ReplayParticipant {
     soldRaw: string;
     balanceRaw: string;
     pricedBuyRaw: string;
+    pricedSellRaw: string;
     boughtUsd: number;
     soldUsd: number;
     boughtSol: number;
@@ -220,7 +223,10 @@ export const isReplayTrade = (value: unknown): value is ReplayTrade => object(va
     && (value.side === 'buy' || value.side === 'sell')
     && (value.priceUsd === undefined || finite(value.priceUsd))
     && (value.chartPriceUsd === undefined || finite(value.chartPriceUsd))
+    && (value.chartUsdAmount === undefined || finite(value.chartUsdAmount))
     && (value.displayPriceUsd === undefined || finite(value.displayPriceUsd))
+    && (value.replayAt === undefined || (typeof value.replayAt === 'string'
+        && Number.isFinite(Date.parse(value.replayAt))))
     && (value.usdAmount === undefined || finite(value.usdAmount));
 
 export const isReplayDeltaPage = (value: unknown): value is ReplayDeltaPage => object(value)
@@ -244,7 +250,7 @@ const count = (value: unknown): value is number =>
 const isReplayParticipant = (value: unknown): value is ReplayParticipant => object(value)
     && typeof value.wallet === 'string' && address.test(value.wallet)
     && unsigned(value.boughtRaw) && unsigned(value.soldRaw)
-    && signed(value.balanceRaw) && unsigned(value.pricedBuyRaw)
+    && signed(value.balanceRaw) && unsigned(value.pricedBuyRaw) && unsigned(value.pricedSellRaw)
     && finite(value.boughtUsd) && value.boughtUsd >= 0
     && finite(value.soldUsd) && value.soldUsd >= 0
     && finite(value.boughtSol) && value.boughtSol >= 0
@@ -312,6 +318,7 @@ export const advanceReplayParticipants = (
             soldRaw: '0',
             balanceRaw: '0',
             pricedBuyRaw: '0',
+            pricedSellRaw: '0',
             boughtUsd: 0,
             soldUsd: 0,
             boughtSol: 0,
@@ -341,6 +348,7 @@ export const advanceReplayParticipants = (
             row.soldRaw = (BigInt(row.soldRaw) + amount).toString();
             row.soldUsd += hasUsd ? trade.usdAmount! : 0;
             row.soldSol += finite(trade.solAmount) && trade.solAmount! > 0 ? trade.solAmount! : 0;
+            if (hasUsd) row.pricedSellRaw = (BigInt(row.pricedSellRaw) + amount).toString();
         }
         row.balanceRaw = (BigInt(row.boughtRaw) - BigInt(row.soldRaw)).toString();
         rows.set(row.wallet, row);
@@ -383,7 +391,8 @@ const weightedMedianPrice = (trades: ReplayTrade[]): number | undefined => {
     const points = trades.slice(0, 24).flatMap((trade) => {
         const price = sourcePriceOf(trade);
         if (price === undefined) return [];
-        const weight = finite(trade.usdAmount) && trade.usdAmount > 0 ? trade.usdAmount : 0.01;
+        const amount = finite(trade.usdAmount) ? trade.usdAmount : trade.chartUsdAmount;
+        const weight = finite(amount) && amount > 0 ? amount : 0.01;
         return [{ price, weight }];
     }).sort((left, right) => left.price - right.price);
     const midpoint = points.reduce((sum, point) => sum + point.weight, 0) / 2;
@@ -416,7 +425,7 @@ export const stabilizeReplayPrices = (
         if (sourcePrice === undefined) return trade;
         const displayPrice = trade.chartPriceSource === 'curve_spot' || prior === undefined
             ? sourcePrice
-            : volumePrice(prior, sourcePrice, Number(trade.usdAmount || 0));
+            : volumePrice(prior, sourcePrice, Number(trade.usdAmount ?? trade.chartUsdAmount ?? 0));
         prior = displayPrice;
         return { ...trade, displayPriceUsd: displayPrice };
     });
@@ -472,11 +481,12 @@ export const mergeCandles = (
     for (const trade of trades) {
         const price = chartPriceOf(trade);
         if (price === undefined) continue;
-        const observed = Date.parse(trade.observedAt);
+        const observed = Date.parse(trade.replayAt ?? trade.observedAt);
         if (!Number.isFinite(observed)) continue;
         const timestamp = Math.floor(observed / intervalMs) * intervalMs;
         const found = next.get(timestamp);
-        const volume = finite(trade.usdAmount) && trade.usdAmount >= 0 ? trade.usdAmount : 0;
+        const displayAmount = finite(trade.usdAmount) ? trade.usdAmount : trade.chartUsdAmount;
+        const volume = finite(displayAmount) && displayAmount >= 0 ? displayAmount : 0;
         if (found && found.txCount > 0) {
             found.high = Math.max(found.high, price);
             found.low = Math.min(found.low, price);

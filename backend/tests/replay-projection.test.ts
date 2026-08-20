@@ -250,6 +250,45 @@ describe('replay scheduler', () => {
         });
     });
 
+    it('compresses a migration-sized idle gap and still spreads the resumed burst', async () => {
+        const base = replay(4);
+        const times = [
+            '2024-11-19T00:00:00.000Z',
+            '2024-11-19T00:02:53.000Z',
+            '2024-11-19T00:02:53.000Z',
+            '2024-11-19T00:02:54.000Z',
+        ];
+        const source = {
+            ...base,
+            sourceTrades: base.sourceTrades.map((trade, index) => ({
+                ...trade,
+                observedAt: times[index],
+            })),
+            trades: base.trades.map((trade, index) => ({
+                ...trade,
+                observedAt: times[index],
+            })),
+        };
+        const coordinator = new ReplayCoordinator(source, 'migration-gap');
+        const waits: number[] = [];
+        const replayTimes: string[] = [];
+        await new ReplayScheduler(
+            coordinator,
+            (event) => replayTimes.push(event.trade.replayAt!),
+            fakeTimer(waits)
+        ).run(1);
+
+        expect(waits).toEqual([1_000, 500, 500]);
+        expect(Date.parse(replayTimes[1]) - Date.parse(replayTimes[0])).toBe(1_000);
+        expect(replayTimes.map((value) => Date.parse(value))).toEqual([
+            Date.parse(times[0]),
+            Date.parse(times[0]) + 1_000,
+            Date.parse(times[0]) + 1_500,
+            Date.parse(times[0]) + 2_000,
+        ]);
+        expect(coordinator.snapshot().now).toBe(times[3]);
+    });
+
     it('does not emit across a pause or pre-aborted run', async () => {
         const source = replay();
         const coordinator = new ReplayCoordinator(source, 'controlled');

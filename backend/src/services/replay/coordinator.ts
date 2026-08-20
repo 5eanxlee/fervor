@@ -78,19 +78,26 @@ export type ReplayDeltaResult =
     | { readonly page?: never; readonly resync: ReplayResync };
 
 const hashPattern = /^[0-9a-f]{64}$/;
+const idleGapMs = 30_000;
+const resumeGapMs = 1_000;
 
 const buildPaceTimes = (times: readonly number[]): number[] => {
-    const paced = [...times];
+    if (times.length === 0) return [];
+    const paced = [times[0]];
+    for (let index = 1; index < times.length; index += 1) {
+        const gap = times[index] - times[index - 1];
+        paced.push(paced[index - 1] + (gap > idleGapMs ? resumeGapMs : gap));
+    }
     let start = 0;
     while (start < times.length) {
         let end = start + 1;
         while (end < times.length && times[end] === times[start]) end += 1;
         const count = end - start;
         if (count > 1) {
-            const nextGap = end < times.length ? times[end] - times[start] : 1_000;
+            const nextGap = end < times.length ? paced[end] - paced[start] : 1_000;
             const span = Math.min(1_000, Math.max(1, nextGap));
             for (let index = start + 1; index < end; index += 1) {
-                paced[index] = times[start] + Math.floor(span * (index - start) / count);
+                paced[index] = paced[start] + Math.floor(span * (index - start) / count);
             }
         }
         start = end;
@@ -338,7 +345,10 @@ export class ReplayCoordinator {
     }
 
     private eventAt(cursor: number, epoch: number): ReplayEvent {
-        const trade = this.events[cursor];
+        const trade = Object.freeze({
+            ...this.events[cursor],
+            replayAt: new Date(this.paceTimes[cursor]).toISOString(),
+        });
         return Object.freeze({
             runId: this.runId,
             epoch,

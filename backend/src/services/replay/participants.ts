@@ -9,6 +9,7 @@ export interface ReplayParticipant {
     readonly soldRaw: string;
     readonly balanceRaw: string;
     readonly pricedBuyRaw: string;
+    readonly pricedSellRaw: string;
     readonly boughtUsd: number;
     readonly soldUsd: number;
     readonly boughtSol: number;
@@ -51,6 +52,7 @@ interface MutableParticipant {
     bought: bigint;
     sold: bigint;
     pricedBuy: bigint;
+    pricedSell: bigint;
     boughtUsd: number;
     soldUsd: number;
     boughtSol: number;
@@ -97,6 +99,7 @@ export const projectReplayParticipants = (
             bought: 0n,
             sold: 0n,
             pricedBuy: 0n,
+            pricedSell: 0n,
             boughtUsd: 0,
             soldUsd: 0,
             boughtSol: 0,
@@ -126,6 +129,7 @@ export const projectReplayParticipants = (
             row.sold += amount;
             row.soldUsd += positive(trade.usdAmount);
             row.soldSol += positive(trade.solAmount);
+            if (trade.usdAmount !== undefined) row.pricedSell += amount;
         }
     }
 
@@ -137,6 +141,7 @@ export const projectReplayParticipants = (
             soldRaw: row.sold.toString(),
             balanceRaw: (row.bought - row.sold).toString(),
             pricedBuyRaw: row.pricedBuy.toString(),
+            pricedSellRaw: row.pricedSell.toString(),
             boughtUsd: row.boughtUsd,
             soldUsd: row.soldUsd,
             boughtSol: row.boughtSol,

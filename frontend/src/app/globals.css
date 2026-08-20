@@ -96,6 +96,7 @@
     min-height: clamp(4rem, 7vh, 4.25rem);
     height: auto;
     padding-block: clamp(.7rem, 1.25vh, .8rem);
+    background: #000;
 }
 
 .terminal-tape {
@@ -643,6 +644,15 @@
     background: var(--term-raised);
 }
 
+.timeframe-tool:hover {
+    background: transparent;
+}
+
+.timeframe-tool[data-active="true"],
+.timeframe-tool[data-active="true"]:hover {
+    background: var(--term-control);
+}
+
 .replay-controls {
     display: flex;
     min-height: 2.85rem;
@@ -909,7 +919,11 @@
     min-height: clamp(2.1rem, 3.72vh, 2.3rem);
 }
 
-.trade-row:nth-child(even) {
+.top-trader-row {
+    min-height: clamp(2.75rem, 5vh, 3.1rem);
+}
+
+.activity-row:nth-child(even) {
     background: color-mix(in srgb, var(--term-panel) 55%, var(--term-bg));
 }
 
