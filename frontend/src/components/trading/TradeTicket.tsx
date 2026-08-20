@@ -5,7 +5,6 @@ import bs58 from 'bs58';
 import { VersionedTransaction } from '@solana/web3.js';
 import toast from 'react-hot-toast';
 import {
-    ArrowPathIcon,
     ChevronDownIcon,
     CurrencyDollarIcon,
     FireIcon,
@@ -23,6 +22,7 @@ import {
     OrderRecord,
     SwapQuote,
 } from '../../services/api';
+import type { ReplayParticipant, ReplayParticipants } from '../../services/replay';
 import { SolanaMark } from './BrandMarks';
 
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -92,6 +92,82 @@ const formatCap = (value: number): string => {
     return `${sign}${Math.round(abs)}`;
 };
 
+type StatTone = 'buy' | 'sell' | 'neutral';
+
+export interface TicketFlow {
+    volumeUsd?: number;
+    buys?: number;
+    sells?: number;
+}
+
+export interface TicketStat {
+    label: string;
+    value: string;
+    tone: StatTone;
+}
+
+interface TokenStat extends TicketStat {
+    icon: string;
+}
+
+interface WalletStat extends TicketStat {
+    unit: 'sol' | 'token' | 'none';
+}
+
+const metric = (value?: number): number | undefined =>
+    value !== undefined && Number.isFinite(value) && value >= 0 ? value : undefined;
+
+const formatMetric = (value?: number): string => value === undefined
+    ? '—'
+    : new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(value);
+
+const formatUsd = (value?: number): string => value === undefined ? '—' : `$${formatMetric(value)}`;
+
+const signedTone = (value?: number): StatTone => {
+    if (value === undefined || value === 0) return 'neutral';
+    return value > 0 ? 'buy' : 'sell';
+};
+
+const holderTone = (value?: number): StatTone => {
+    if (value === undefined) return 'neutral';
+    return value > 15 ? 'sell' : 'buy';
+};
+
+export const ticketFlowStats = (flow: TicketFlow = {}): TicketStat[] => {
+    const volume = metric(flow.volumeUsd);
+    const buys = metric(flow.buys);
+    const sells = metric(flow.sells);
+    const net = buys === undefined || sells === undefined ? undefined : buys - sells;
+    return [
+        { label: '5m Volume', value: formatUsd(volume), tone: 'neutral' },
+        { label: 'Buys', value: formatMetric(buys), tone: 'buy' },
+        { label: 'Sells', value: formatMetric(sells), tone: 'sell' },
+        {
+            label: 'Net trades',
+            value: net === undefined ? '—' : `${net > 0 ? '+' : ''}${formatMetric(net)}`,
+            tone: signedTone(net),
+        },
+    ];
+};
+
+const rawAmount = (value: string, decimals: number): number => Number(value) / 10 ** decimals;
+
+interface TradeTicketProps {
+    tokenMint: string;
+    tokenSymbol: string;
+    tokenDecimals?: number;
+    defaultAmount?: string;
+    defaultSlippage?: number;
+    clearOnSuccess?: boolean;
+    currentMarketCap?: number;
+    currentPrice?: number;
+    totalSupply?: number;
+    flow?: TicketFlow;
+    participants?: ReplayParticipants;
+    replayMode?: boolean;
+    onLimitChange?: (state: { active: boolean; marketCap?: number }) => void;
+}
+
 type Tab = 'market' | 'limit';
 type OrderKind = 'limit' | 'trailing' | 'oco' | 'otoco';
 
@@ -105,19 +181,11 @@ export default function TradeTicket({
     currentMarketCap,
     currentPrice,
     totalSupply = 1_000_000_000,
+    flow,
+    participants,
+    replayMode = false,
     onLimitChange,
-}: {
-    tokenMint: string;
-    tokenSymbol: string;
-    tokenDecimals?: number;
-    defaultAmount?: string;
-    defaultSlippage?: number;
-    clearOnSuccess?: boolean;
-    currentMarketCap?: number;
-    currentPrice?: number;
-    totalSupply?: number;
-    onLimitChange?: (state: { active: boolean; marketCap?: number }) => void;
-}) {
+}: TradeTicketProps) {
     const wallet = useWallet();
     const [tab, setTab] = useState<Tab>('market');
     const [side, setSide] = useState<'buy' | 'sell'>('buy');
@@ -160,6 +228,53 @@ export default function TradeTicket({
     const outputMint = side === 'buy' ? tokenMint : SOL_MINT;
     const inputDecimals = side === 'buy' ? 9 : tokenDecimals;
     const modeLabel = executionMode?.mode === 'live' ? 'Live' : 'Off';
+    const flowStats = ticketFlowStats(flow);
+    const buyCount = metric(flow?.buys);
+    const sellCount = metric(flow?.sells);
+    const flowCount = (buyCount ?? 0) + (sellCount ?? 0);
+    const top10 = replayMode ? metric(participants?.top10Percent) : undefined;
+    const tokenStats: TokenStat[] = [
+        {
+            icon: '♙',
+            value: top10 === undefined ? '—' : `${top10.toFixed(2)}%`,
+            label: replayMode ? 'Top 10 obs.' : 'Top 10 H.',
+            tone: holderTone(top10),
+        },
+        { icon: '♔', value: '—', label: 'Dev H.', tone: 'neutral' },
+        { icon: '⌖', value: '—', label: 'Snipers H.', tone: 'neutral' },
+        { icon: '♙', value: '—', label: 'Insiders', tone: 'neutral' },
+        { icon: '◫', value: '—', label: 'Bundlers', tone: 'neutral' },
+        { icon: '♨', value: '—', label: 'LP Burned', tone: 'neutral' },
+    ];
+    const replayWallet: ReplayParticipant | undefined = replayMode && wallet.publicKey
+        ? participants?.items.find((row) => row.wallet === wallet.publicKey)
+        : undefined;
+    const hasWalletStats = replayMode && wallet.connected && participants !== undefined;
+    const walletStats: WalletStat[] = [
+        {
+            label: 'Bought',
+            value: hasWalletStats ? formatMetric(replayWallet?.boughtSol ?? 0) : '—',
+            tone: 'buy',
+            unit: 'sol',
+        },
+        {
+            label: 'Sold',
+            value: hasWalletStats ? formatMetric(replayWallet?.soldSol ?? 0) : '—',
+            tone: 'sell',
+            unit: 'sol',
+        },
+        {
+            label: replayMode ? 'Obs. balance' : 'Holding',
+            value: hasWalletStats
+                ? formatMetric(replayWallet
+                    ? rawAmount(replayWallet.balanceRaw, participants?.tokenDecimals ?? tokenDecimals)
+                    : 0)
+                : '—',
+            tone: 'neutral',
+            unit: 'token',
+        },
+        { label: 'PnL', value: '—', tone: 'neutral', unit: 'none' },
+    ];
 
     const refreshOrders = async () => {
         try {
@@ -581,12 +696,7 @@ export default function TradeTicket({
         <aside className="flex h-full min-h-0 flex-col bg-[var(--term-bg)] text-[clamp(.7rem,.76vw,.78rem)] text-[var(--term-muted)]">
             <section className="shrink-0 border-b border-[var(--term-border)] px-[clamp(.75rem,1.15vw,1.25rem)] py-3">
                 <div className="grid grid-cols-4 gap-[clamp(.35rem,.8vw,.9rem)]">
-                    {[
-                        ['5m Vol', '$5.27K', 'neutral'],
-                        ['Buys', '40 / $2.93K', 'buy'],
-                        ['Sells', '29 / $2.34K', 'sell'],
-                        ['Net Vol.', '+$587.3', 'buy'],
-                    ].map(([label, value, tone]) => (
+                    {flowStats.map(({ label, value, tone }) => (
                         <div key={label} className="min-w-0">
                             <div className="truncate text-[clamp(.61rem,.75vw,.74rem)] text-[var(--term-muted)]">{label}</div>
                             <div
@@ -598,9 +708,11 @@ export default function TradeTicket({
                         </div>
                     ))}
                 </div>
-                <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-                    <span className="h-[3px] rounded-full" style={{ background: BUY_COLOR }} />
-                    <span className="h-[3px] rounded-full" style={{ background: SELL_COLOR }} />
+                <div className="mt-2.5 flex h-[3px] gap-1.5 overflow-hidden rounded-full bg-[var(--term-border)]">
+                    {flowCount > 0 && <>
+                        <span className="h-full basis-0 rounded-full transition-[flex-grow]" style={{ background: BUY_COLOR, flexGrow: buyCount ?? 0 }} />
+                        <span className="h-full basis-0 rounded-full transition-[flex-grow]" style={{ background: SELL_COLOR, flexGrow: sellCount ?? 0 }} />
+                    </>}
                 </div>
             </section>
 
@@ -828,16 +940,13 @@ export default function TradeTicket({
                 </div>
 
                 <section className="grid grid-cols-4 border-y border-[var(--term-border)] px-[clamp(.35rem,.7vw,.75rem)] py-2.5">
-                    {[
-                        ['Bought', '0', 'buy'],
-                        ['Sold', '0', 'sell'],
-                        ['Holding', '0', 'neutral'],
-                        ['PnL', '+0 (+0%)', 'buy'],
-                    ].map(([label, value, tone], index) => (
+                    {walletStats.map(({ label, value, tone, unit }, index) => (
                         <div key={label} className={`min-w-0 px-1.5 text-center ${index > 0 ? 'border-l border-[var(--term-border)]' : ''}`}>
                             <div className="truncate text-[var(--term-muted)]">{label}</div>
                             <div className="mt-1 flex items-center justify-center gap-1 truncate" style={{ color: tone === 'buy' ? BUY_COLOR : tone === 'sell' ? SELL_COLOR : 'var(--term-text)' }}>
-                                <SolanaMark className="h-3.5 w-3.5 shrink-0" />{value}
+                                {unit === 'sol' && value !== '—' && <SolanaMark className="h-3.5 w-3.5 shrink-0" />}
+                                {unit === 'token' && value !== '—' && <span className="shrink-0 text-[.58rem] text-[var(--term-dim)]">{tokenSymbol}</span>}
+                                {value}
                             </div>
                         </div>
                     ))}
@@ -856,20 +965,13 @@ export default function TradeTicket({
                         <button type="button" onClick={() => setTokenInfoOpen((value) => !value)} className="flex items-center text-left" aria-expanded={tokenInfoOpen}>
                             Token Info <ChevronDownIcon className={`ml-1.5 h-3.5 w-3.5 transition-transform ${tokenInfoOpen ? '' : '-rotate-90'}`} />
                         </button>
-                        <button aria-label="Refresh token info" className="ml-auto grid h-6 w-6 place-items-center rounded-full text-[var(--term-muted)] hover:bg-[var(--term-raised)] hover:text-white"><ArrowPathIcon className="h-3.5 w-3.5" /></button>
+                        <span className="ml-auto text-[.6rem] text-[var(--term-dim)]">{replayMode ? 'Replay cut' : 'Verified only'}</span>
                     </div>
                     {tokenInfoOpen && <>
                     <div className="mt-3 grid grid-cols-3 gap-2">
-                        {[
-                            ['♙', '17.85%', 'Top 10 H.', 'bad'],
-                            ['♔', '0.5%', 'Dev H.', 'good'],
-                            ['⌖', '0.5%', 'Snipers H.', 'good'],
-                            ['♙', '0.21%', 'Insiders', 'good'],
-                            ['◫', '0.5%', 'Bundlers', 'good'],
-                            ['♨', '100%', 'LP Burned', 'good'],
-                        ].map(([icon, value, label, tone]) => (
-                            <div key={label} className="rounded-lg border border-[var(--term-border)] px-1.5 py-2.5 text-center">
-                                <div className="truncate text-[clamp(.68rem,.82vw,.84rem)]" style={{ color: tone === 'good' ? BUY_COLOR : SELL_COLOR }}>{icon} {value}</div>
+                        {tokenStats.map(({ icon, value, label, tone }) => (
+                            <div key={label} title={value === '—' ? 'Unavailable from verified source data' : undefined} className="rounded-lg border border-[var(--term-border)] px-1.5 py-2.5 text-center">
+                                <div className="truncate text-[clamp(.68rem,.82vw,.84rem)]" style={{ color: tone === 'buy' ? BUY_COLOR : tone === 'sell' ? SELL_COLOR : 'var(--term-muted)' }}>{icon} {value}</div>
                                 <div className="mt-1.5 truncate text-[clamp(.58rem,.7vw,.7rem)] text-[var(--term-muted)]">{label}</div>
                             </div>
                         ))}
@@ -878,15 +980,15 @@ export default function TradeTicket({
                     <div className="my-4 h-px bg-[var(--term-border)]" />
                     <div className="grid grid-cols-3 gap-2">
                         <div className="rounded-lg border border-[var(--term-border)] px-1.5 py-2.5 text-center">
-                            <div className="flex items-center justify-center gap-1.5 text-[var(--term-text)]"><UserGroupIcon className="h-4 w-4" />115</div>
-                            <div className="mt-1.5 truncate text-[clamp(.58rem,.7vw,.7rem)] text-[var(--term-muted)]">Holders</div>
+                            <div className="flex items-center justify-center gap-1.5 text-[var(--term-text)]"><UserGroupIcon className="h-4 w-4" />{replayMode ? formatMetric(participants?.holderCount) : '—'}</div>
+                            <div className="mt-1.5 truncate text-[clamp(.58rem,.7vw,.7rem)] text-[var(--term-muted)]">{replayMode ? 'Obs. holders' : 'Holders'}</div>
                         </div>
                         <div className="rounded-lg border border-[var(--term-border)] px-1.5 py-2.5 text-center">
-                            <div className="flex items-center justify-center gap-1.5 text-[var(--term-text)]"><CurrencyDollarIcon className="h-4 w-4" />15</div>
-                            <div className="mt-1.5 truncate text-[clamp(.58rem,.7vw,.7rem)] text-[var(--term-muted)]">Pro Traders</div>
+                            <div className="flex items-center justify-center gap-1.5 text-[var(--term-text)]"><CurrencyDollarIcon className="h-4 w-4" />{replayMode ? formatMetric(participants?.traderCount) : '—'}</div>
+                            <div className="mt-1.5 truncate text-[clamp(.58rem,.7vw,.7rem)] text-[var(--term-muted)]">Traders</div>
                         </div>
-                        <div className="rounded-lg border border-[var(--term-border)] px-1.5 py-2.5 text-center">
-                            <div className="flex items-center justify-center gap-1.5" style={{ color: SELL_COLOR }}><ShieldCheckIcon className="h-4 w-4" />Unpaid</div>
+                        <div title="Unavailable from verified source data" className="rounded-lg border border-[var(--term-border)] px-1.5 py-2.5 text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-[var(--term-muted)]"><ShieldCheckIcon className="h-4 w-4" />—</div>
                             <div className="mt-1.5 truncate text-[clamp(.58rem,.7vw,.7rem)] text-[var(--term-muted)]">Dex Paid</div>
                         </div>
                     </div>

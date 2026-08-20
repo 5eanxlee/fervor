@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getLimitTrigger, parseFee, parseUnits } from './TradeTicket';
+import { getLimitTrigger, parseFee, parseUnits, ticketFlowStats } from './TradeTicket';
 
 describe('trade amount conversion', () => {
     it('converts display amounts to exact integer base units', () => {
@@ -30,5 +30,23 @@ describe('trade amount conversion', () => {
             price: 0.000208,
         });
         expect(() => getLimitTrigger(175_000, 0, 1_000_000_000)).toThrow(/unavailable/);
+    });
+
+    it('renders exact flow values without demo volume splits', () => {
+        expect(ticketFlowStats({ volumeUsd: 5_270, buys: 40, sells: 29 })).toEqual([
+            { label: '5m Volume', value: '$5.27K', tone: 'neutral' },
+            { label: 'Buys', value: '40', tone: 'buy' },
+            { label: 'Sells', value: '29', tone: 'sell' },
+            { label: 'Net trades', value: '+11', tone: 'buy' },
+        ]);
+    });
+
+    it('shows unavailable metrics instead of fabricated values', () => {
+        expect(ticketFlowStats()).toEqual([
+            { label: '5m Volume', value: '—', tone: 'neutral' },
+            { label: 'Buys', value: '—', tone: 'buy' },
+            { label: 'Sells', value: '—', tone: 'sell' },
+            { label: 'Net trades', value: '—', tone: 'neutral' },
+        ]);
     });
 });

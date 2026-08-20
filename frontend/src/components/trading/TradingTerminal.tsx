@@ -647,6 +647,11 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         () => datasetFrom(tokenMint, symbol, totalSupply, market.liquidity || 0, intervalSeconds, candles, replayMode),
         [candles, intervalSeconds, market.liquidity, symbol, tokenMint, totalSupply]
     );
+    const ticketFlow = useMemo(() => ({
+        volumeUsd: market.volume5m,
+        buys: market.buys5m,
+        sells: market.sells5m,
+    }), [market.buys5m, market.sells5m, market.volume5m]);
 
     const controlReplay = useCallback(async (command: ReplayOp) => {
         if (!replay || controlBusy) return;
@@ -843,9 +848,9 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                     )}
                     {!chartFull && <div className="activity-panel min-h-0 overflow-hidden"><TerminalActivity key={tokenMint} tokenMint={tokenMint} tokenDecimals={tokenDecimals} trades={trades} replayParticipants={participants} replayMode={replayMode} priceUsd={market.price} initialTab={activityTab} onInstantTrade={() => setInstantOpen(true)} now={replayMode ? replayNow : undefined} /></div>}
                 </section>
-                {!chartFull && <aside className="ticket-panel hidden min-h-0 overflow-hidden border-l border-[var(--term-border)] lg:block"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={tokenDecimals} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} onLimitChange={syncLimitTarget} /></aside>}
+                {!chartFull && <aside className="ticket-panel hidden min-h-0 overflow-hidden border-l border-[var(--term-border)] lg:block"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={tokenDecimals} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} flow={ticketFlow} participants={participants} replayMode={replayMode} onLimitChange={syncLimitTarget} /></aside>}
             </div>
-            <div className="border-t border-[var(--term-border)] lg:hidden"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={tokenDecimals} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} /></div>
+            <div className="border-t border-[var(--term-border)] lg:hidden"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={tokenDecimals} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} flow={ticketFlow} participants={participants} replayMode={replayMode} /></div>
             {settings.showDock && <TerminalDock live={replayMode ? realtime.state : streamState} onSettings={() => openSettings()} />}
             <InstantTradePanel open={instantOpen} onClose={() => setInstantOpen(false)} tokenSymbol={symbol} />
             <TerminalSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} setSettings={setSettings} initialSection={settingsSection} />
