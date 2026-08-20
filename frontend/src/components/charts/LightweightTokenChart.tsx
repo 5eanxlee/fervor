@@ -450,7 +450,7 @@ export default function LightweightTokenChart({
         });
 
         const gridSeries = chart.addSeries(LineSeries, {
-            color: 'rgba(15, 15, 18, 0)',
+            color: '#0f0f12',
             lineVisible: true,
             lineWidth: 1,
             pointMarkersVisible: false,
