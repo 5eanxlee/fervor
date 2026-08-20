@@ -391,12 +391,14 @@ export default function LightweightTokenChart({
                 horzLine: { color: 'rgba(161, 161, 170, 0.62)', style: LineStyle.Dashed, labelBackgroundColor: '#222225' },
             },
             rightPriceScale: {
+                visible: true,
                 autoScale: true,
                 mode: logRef.current ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
                 borderColor: 'rgba(161, 161, 170, 0.24)',
                 scaleMargins: { top: 0.1, bottom: 0.1 },
             },
             timeScale: {
+                visible: true,
                 borderColor: 'rgba(161, 161, 170, 0.24)',
                 timeVisible: true,
                 secondsVisible: true,
@@ -448,8 +450,9 @@ export default function LightweightTokenChart({
         });
 
         const gridSeries = chart.addSeries(LineSeries, {
-            color: 'transparent',
-            lineVisible: false,
+            color: 'rgba(15, 15, 18, 0)',
+            lineVisible: true,
+            lineWidth: 1,
             pointMarkersVisible: false,
             crosshairMarkerVisible: false,
             lastValueVisible: false,
