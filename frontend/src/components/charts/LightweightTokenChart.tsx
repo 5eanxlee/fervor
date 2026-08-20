@@ -6,6 +6,7 @@ import {
     ColorType,
     CrosshairMode,
     HistogramSeries,
+    LineSeries,
     LineStyle,
     PriceScaleMode,
     createChart,
@@ -157,6 +158,18 @@ function focusLatest(chart: IChartApi, candleCount: number, compact: boolean) {
     chart.timeScale().setVisibleLogicalRange(latestLogicalRange(candleCount, compact));
 }
 
+const emptyGridBars = 181;
+
+function emptyGridData(intervalSeconds: number, valueMode: ChartValueMode) {
+    const step = Math.max(1, Math.floor(intervalSeconds));
+    const end = Math.floor(Date.now() / 1_000 / step) * step;
+    const high = valueMode === 'market_cap' ? 100_000 : 0.0001;
+    return Array.from({ length: emptyGridBars }, (_, index) => ({
+        time: (end - (emptyGridBars - index - 1) * step) as UTCTimestamp,
+        value: index % 2 === 0 ? 0 : high,
+    }));
+}
+
 function watermarkLines(
     dataset: ChartDataset,
     candle: ChartDataset['candles'][number] | undefined,
@@ -173,6 +186,14 @@ function watermarkLines(
     }
 
     return [
+        {
+            text: ' ',
+            color: 'transparent',
+            fontSize: 7,
+            lineHeight: 9,
+            fontFamily,
+            fontStyle: '400',
+        },
         {
             text: `  ${dataset.tokenSymbol}/SOL · ${timeframe ? getTimeframeLabel(timeframe) : formatInterval(dataset.intervalSeconds)}`,
             color: '#e4e4e7',
@@ -220,6 +241,7 @@ export default function LightweightTokenChart({
     const chartRef = useRef<IChartApi | null>(null);
     const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
     const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+    const gridSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
     const watermarkRef = useRef<ITextWatermarkPluginApi<Time> | null>(null);
     const replayIndexRef = useRef(0);
     const onReplayCompleteRef = useRef(onReplayComplete);
@@ -360,8 +382,8 @@ export default function LightweightTokenChart({
                 fontFamily: `${chartFontFamily}, system-ui, sans-serif`,
             },
             grid: {
-                vertLines: { color: 'rgba(161, 161, 170, 0.08)', style: LineStyle.Dotted },
-                horzLines: { color: 'rgba(161, 161, 170, 0.08)', style: LineStyle.Dotted },
+                vertLines: { visible: true, color: 'rgba(161, 161, 170, 0.13)', style: LineStyle.Dotted },
+                horzLines: { visible: true, color: 'rgba(161, 161, 170, 0.13)', style: LineStyle.Dotted },
             },
             crosshair: {
                 mode: CrosshairMode.Normal,
@@ -425,9 +447,25 @@ export default function LightweightTokenChart({
             scaleMargins: { top: 0.78, bottom: 0 },
         });
 
+        const gridSeries = chart.addSeries(LineSeries, {
+            color: 'transparent',
+            lineVisible: false,
+            pointMarkersVisible: false,
+            crosshairMarkerVisible: false,
+            lastValueVisible: false,
+            priceLineVisible: false,
+            priceFormat: {
+                type: 'custom',
+                minMove: valueMode === 'market_cap' ? 0.01 : 0.000000001,
+                formatter: (value: number) => formatAxisValue(Number(value), valueMode),
+            },
+        });
+
         const initialCandles = current.candles.slice(0, currentCount);
         candleSeries.setData(toCandleData(initialCandles, current.totalSupply, valueMode));
         volumeSeries.setData(toVolumeData(initialCandles));
+        const initialGrid = initialCandles.length ? [] : emptyGridData(current.intervalSeconds, valueMode);
+        gridSeries.setData(initialGrid);
         volumeSeries.applyOptions({ visible: volumeVisibleRef.current });
         dataKeyRef.current = `${current.tokenAddress}:${current.intervalSeconds}:${valueMode}`;
         firstTimeRef.current = initialCandles[0]?.timestamp;
@@ -470,7 +508,7 @@ export default function LightweightTokenChart({
         });
         watermarkRef.current = watermark;
 
-        if (followRef.current) focusLatest(chart, initialCandles.length, compact);
+        if (followRef.current) focusLatest(chart, initialCandles.length || initialGrid.length, compact);
         else if (timeRangeRef.current) chart.timeScale().setVisibleLogicalRange(timeRangeRef.current);
         if (!priceAutoRef.current) {
             const range = priceRangeRef.current;
@@ -481,6 +519,7 @@ export default function LightweightTokenChart({
         chartRef.current = chart;
         candleSeriesRef.current = candleSeries;
         volumeSeriesRef.current = volumeSeries;
+        gridSeriesRef.current = gridSeries;
         const drawManager = drawManagerRef.current ?? new DrawingManager();
         drawManagerRef.current = drawManager;
         drawManager.attach(chart, candleSeries, container);
@@ -552,6 +591,7 @@ export default function LightweightTokenChart({
             chartRef.current = null;
             candleSeriesRef.current = null;
             volumeSeriesRef.current = null;
+            gridSeriesRef.current = null;
             watermarkRef.current = null;
             dataKeyRef.current = '';
             firstTimeRef.current = undefined;
@@ -592,7 +632,12 @@ export default function LightweightTokenChart({
         if (live) return;
         const candleSeries = candleSeriesRef.current;
         const volumeSeries = volumeSeriesRef.current;
-        if (!candleSeries || !volumeSeries) return;
+        const gridSeries = gridSeriesRef.current;
+        if (!candleSeries || !volumeSeries || !gridSeries) return;
+        const gridData = dataset.candles.length
+            ? []
+            : emptyGridData(dataset.intervalSeconds, valueMode);
+        gridSeries.setData(gridData);
         const nextKey = `${dataset.tokenAddress}:${dataset.intervalSeconds}:${valueMode}`;
         const firstTime = dataset.candles[0]?.timestamp;
         const lastTime = dataset.candles.at(-1)?.timestamp;
@@ -648,7 +693,7 @@ export default function LightweightTokenChart({
         candleSeries.priceScale().setAutoScale(priceAutoRef.current);
         if (followRef.current && (firstPopulation || requiresReset)) {
             const chart = chartRef.current;
-            if (chart) focusLatest(chart, dataset.candles.length, compact);
+            if (chart) focusLatest(chart, dataset.candles.length || gridData.length, compact);
         }
         setAutoActive(priceAutoRef.current);
         dataKeyRef.current = nextKey;
