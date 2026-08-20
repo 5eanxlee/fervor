@@ -517,7 +517,10 @@ export default function LightweightTokenChart({
         });
         watermarkRef.current = watermark;
 
-        if (followRef.current) focusLatest(chart, initialCandles.length || initialGrid.length, compact);
+        if (followRef.current) {
+            if (initialCandles.length) focusLatest(chart, initialCandles.length, compact);
+            else chart.timeScale().fitContent();
+        }
         else if (timeRangeRef.current) chart.timeScale().setVisibleLogicalRange(timeRangeRef.current);
         if (!priceAutoRef.current) {
             const range = priceRangeRef.current;
@@ -706,7 +709,10 @@ export default function LightweightTokenChart({
         candleSeries.priceScale().setAutoScale(priceAutoRef.current);
         if (followRef.current && (firstPopulation || requiresReset)) {
             const chart = chartRef.current;
-            if (chart) focusLatest(chart, dataset.candles.length || gridData.length, compact);
+            if (chart) {
+                if (dataset.candles.length) focusLatest(chart, dataset.candles.length, compact);
+                else chart.timeScale().fitContent();
+            }
         }
         setAutoActive(priceAutoRef.current);
         dataKeyRef.current = nextKey;
