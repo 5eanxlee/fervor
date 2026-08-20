@@ -12,6 +12,7 @@ const speeds: readonly ReplaySpeed[] = [1, 20, 100, 'max'];
 
 interface ReplayControlsProps {
     replay?: ReplayState;
+    now?: string;
     speed: ReplaySpeed;
     busy: boolean;
     notice?: string;
@@ -40,6 +41,7 @@ const replayTime = (value: string | null | undefined) => {
 
 export default function ReplayControls({
     replay,
+    now,
     speed,
     busy,
     notice,
@@ -115,7 +117,7 @@ export default function ReplayControls({
                         <i aria-hidden="true" />
                         {snapshot?.status || 'loading'}
                     </span>
-                    <time dateTime={snapshot?.now || undefined}>{replayTime(snapshot?.now)}</time>
+                    <time dateTime={now || snapshot?.now || undefined}>{replayTime(now || snapshot?.now)}</time>
                     <span className="replay-count">
                         {snapshot ? `${snapshot.cursor.toLocaleString()} / ${snapshot.total.toLocaleString()}` : '—'}
                     </span>

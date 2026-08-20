@@ -43,9 +43,9 @@ import {
     isReplayTrade,
     mergeCandles,
     replayControlContract,
+    replayClockAt,
     replayFromRt,
     replaySlice,
-    replayTickDelay,
     stabilizeReplayPrices,
     supplyOf,
     type ReplayControl,
@@ -199,6 +199,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     const [chartShare, setChartShare] = useState(56);
     const [limitTarget, setLimitTarget] = useState<number>();
     const [replay, setReplay] = useState<ReplayState>();
+    const [replayNow, setReplayNow] = useState<string>();
     const [participants, setParticipants] = useState<ReplayParticipants>();
     const [replaySpeed, setReplaySpeed] = useState<ReplaySpeed>(1);
     const [replaySupply, setReplaySupply] = useState<number | undefined>(configuredSupply);
@@ -213,19 +214,12 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     const replayResync = useRef(false);
     const supplyRef = useRef<number | undefined>(configuredSupply);
     const intervalRef = useRef(intervalSeconds);
-    const speedRef = useRef<ReplaySpeed>(replaySpeed);
-    const visualQueue = useRef<ReplayTrade[]>([]);
-    const visualTimer = useRef<number | undefined>(undefined);
     const hydrateSeq = useRef(0);
     const participantSeq = useRef(0);
 
     useEffect(() => {
         intervalRef.current = intervalSeconds;
     }, [intervalSeconds]);
-
-    useEffect(() => {
-        speedRef.current = replaySpeed;
-    }, [replaySpeed]);
 
     const resizeChart = useCallback((clientY: number) => {
         const region = chartSplitRef.current;
@@ -257,16 +251,19 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         setLimitTarget((current) => current === next ? current : next);
     }, []);
 
-    const applyProjection = useCallback((projection: ReplayState['projection']) => {
+    const applyProjection = useCallback((projection: ReplayState['projection'], includePrice = true) => {
         const price = projection.latestUsd?.value;
         const supply = supplyRef.current;
-        setMarket({
-            price,
-            marketCap: price !== undefined && supply !== undefined ? price * supply : undefined,
+        setMarket((current) => ({
+            ...current,
+            ...(includePrice ? {
+                price,
+                marketCap: price !== undefined && supply !== undefined ? price * supply : undefined,
+            } : {}),
             volume5m: projection.pricedRolling.volumeUsd['5m'],
             buys5m: projection.rolling.buyCount['5m'],
             sells5m: projection.rolling.sellCount['5m'],
-        });
+        }));
     }, []);
 
     const applyReplay = useCallback((state: ReplayState) => {
@@ -281,9 +278,6 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         if (replayResync.current || (prior && prior.epoch !== state.snapshot.epoch)) {
             hydrateSeq.current += 1;
             participantSeq.current += 1;
-            visualQueue.current = [];
-            if (visualTimer.current !== undefined) window.clearTimeout(visualTimer.current);
-            visualTimer.current = undefined;
             replayTrades.current = [];
             participantView.current = undefined;
             setTrades([]);
@@ -323,9 +317,6 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         if (sequence !== hydrateSeq.current || !cut || cut.epoch !== epoch || cut.cursor < target) return;
         const combined = stabilizeReplayPrices(mergeReplayTape(history, replayTrades.current));
         replayTrades.current = combined;
-        visualQueue.current = [];
-        if (visualTimer.current !== undefined) window.clearTimeout(visualTimer.current);
-        visualTimer.current = undefined;
 
         for (const item of combined) {
             const supply = supplyOf(item);
@@ -504,33 +495,9 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     const symbol = replayMode ? replaySymbol : token?.symbol || metadata?.symbol || 'TOKEN';
     const displayName = replayMode ? replayName : token?.name || metadata?.name || shortAddress(tokenMint);
     const displayLogo = replayMode ? replayLogo : metadata?.logo;
-    const drainReplayVisuals = useCallback(function drain() {
-        visualTimer.current = undefined;
-        if (!visualQueue.current.length) return;
-        const quick = speedRef.current !== 1 || visualQueue.current.length > 64;
-        const batch = quick
-            ? visualQueue.current.splice(0)
-            : visualQueue.current.splice(0, 1);
-        setCandles((current) => mergeCandles(current, batch, intervalRef.current));
-        const price = latestReplayPrice(batch);
-        if (price !== undefined) setMarket((current) => ({
-            ...current,
-            price,
-            marketCap: supplyRef.current === undefined ? undefined : price * supplyRef.current,
-        }));
-        if (!visualQueue.current.length) return;
-        const delay = replayTickDelay(
-            visualQueue.current.length,
-            Number(batch.at(-1)?.usdAmount || 0),
-            quick
-        );
-        visualTimer.current = window.setTimeout(drain, delay);
-    }, []);
-
     useEffect(() => () => {
         hydrateSeq.current += 1;
         participantSeq.current += 1;
-        if (visualTimer.current !== undefined) window.clearTimeout(visualTimer.current);
     }, []);
 
     const onReplayFrames = useCallback((frames: RtFrame[]) => {
@@ -567,7 +534,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
             }
             if (current.stream === 'market' && isReplayProjection(current.data)) {
                 const projection = current.data;
-                applyProjection(projection);
+                applyProjection(projection, false);
                 setReplay((prior) => prior ? { ...prior, projection } : prior);
             }
             if (current.stream === 'replay') {
@@ -603,9 +570,14 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
             ...stableFresh.map((item) => activityTrade(item, supplyRef.current)).reverse(),
             ...current,
         ].slice(0, 500));
-        visualQueue.current.push(...stableFresh);
-        if (visualTimer.current === undefined) drainReplayVisuals();
-    }, [applyProjection, applyReplay, drainReplayVisuals, hydrateParticipants, hydrateReplayHistory]);
+        setCandles((current) => mergeCandles(current, stableFresh, intervalRef.current));
+        const price = latestReplayPrice(stableFresh);
+        if (price !== undefined) setMarket((current) => ({
+            ...current,
+            price,
+            marketCap: supplyRef.current === undefined ? undefined : price * supplyRef.current,
+        }));
+    }, [applyProjection, applyReplay, hydrateParticipants, hydrateReplayHistory]);
 
     const realtime = useRealtime({
         enabled: replayMode && isAuthenticated,
@@ -617,11 +589,38 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
 
     useEffect(() => {
         if (!replayMode) return;
-        visualQueue.current = [];
-        if (visualTimer.current !== undefined) window.clearTimeout(visualTimer.current);
-        visualTimer.current = undefined;
         setCandles(mergeCandles([], replayTrades.current, intervalSeconds));
     }, [chartKey, intervalSeconds]);
+
+    useEffect(() => {
+        const cut = replay?.snapshot;
+        if (!replayMode || !cut) {
+            setReplayNow(undefined);
+            return;
+        }
+        const started = performance.now();
+        const update = () => {
+            const value = replayClockAt(cut, replaySpeed, performance.now() - started);
+            setReplayNow(value === undefined ? undefined : new Date(value).toISOString());
+        };
+        update();
+        if (cut.status !== 'running' || replaySpeed === 'max') return;
+        const timer = window.setInterval(update, 100);
+        return () => window.clearInterval(timer);
+    }, [replay?.snapshot, replaySpeed]);
+
+    useEffect(() => {
+        if (!replayMode || replay?.snapshot.status !== 'running' || !replayNow) return;
+        const through = Date.parse(replayNow);
+        if (!Number.isFinite(through)) return;
+        setCandles((current) => mergeCandles(
+            current,
+            [],
+            intervalSeconds,
+            replayHistoryLimit,
+            through
+        ));
+    }, [intervalSeconds, replay?.snapshot.status, replayNow]);
 
     const chartDataset = useMemo(
         () => datasetFrom(tokenMint, symbol, totalSupply, market.liquidity || 0, intervalSeconds, candles, replayMode),
@@ -788,6 +787,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                         {replayMode && (
                             <ReplayControls
                                 replay={replay}
+                                now={replayNow}
                                 speed={replaySpeed}
                                 busy={controlBusy}
                                 notice={replayNotice}
@@ -820,7 +820,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                             <span className="pointer-events-none absolute left-1/2 top-1/2 h-[2px] w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30 transition group-hover:bg-white/65 group-focus:bg-[var(--term-accent)]" />
                         </div>
                     )}
-                    {!chartFull && <div className="activity-panel min-h-0 overflow-hidden"><TerminalActivity key={tokenMint} tokenMint={tokenMint} tokenDecimals={tokenDecimals} trades={trades} replayParticipants={participants} replayMode={replayMode} priceUsd={market.price} initialTab={activityTab} onInstantTrade={() => setInstantOpen(true)} now={replayMode ? replay?.snapshot.now : undefined} /></div>}
+                    {!chartFull && <div className="activity-panel min-h-0 overflow-hidden"><TerminalActivity key={tokenMint} tokenMint={tokenMint} tokenDecimals={tokenDecimals} trades={trades} replayParticipants={participants} replayMode={replayMode} priceUsd={market.price} initialTab={activityTab} onInstantTrade={() => setInstantOpen(true)} now={replayMode ? replayNow : undefined} /></div>}
                 </section>
                 {!chartFull && <aside className="ticket-panel hidden min-h-0 overflow-hidden border-l border-[var(--term-border)] lg:block"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={tokenDecimals} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} onLimitChange={syncLimitTarget} /></aside>}
             </div>

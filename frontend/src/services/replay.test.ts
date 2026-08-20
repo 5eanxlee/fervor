@@ -5,7 +5,7 @@ import {
     chartPriceOf,
     mergeCandles,
     isReplayParticipants,
-    replayTickDelay,
+    replayClockAt,
     stabilizeReplayPrices,
     supplyOf,
     volumePrice,
@@ -37,7 +37,7 @@ describe('historical replay projection', () => {
         ]);
     });
 
-    it('uses verified spot prices and fills short inactive intervals', () => {
+    it('uses verified spot prices and fills inactive intervals', () => {
         const candles = mergeCandles([], [
             trade({ chartPriceUsd: 2.1, priceUsd: 8 }),
             trade({ idempotencyKey: 'trade-2', observedAt: '2024-11-19T00:00:04.000Z', chartPriceUsd: 3.1, priceUsd: 12 }),
@@ -58,10 +58,42 @@ describe('historical replay projection', () => {
         expect(supplyOf(trade({ supply: { rawAmount: '100', decimals: 0, fixed: false } }))).toBeUndefined();
     });
 
-    it('accelerates visual ticks for denser and higher-volume bursts', () => {
-        expect(replayTickDelay(12, 100)).toBeLessThan(replayTickDelay(2, 100));
-        expect(replayTickDelay(4, 10_000)).toBeLessThan(replayTickDelay(4, 1));
-        expect(replayTickDelay(1, 1, true)).toBe(16);
+    it('fills long one-second gaps without exceeding the bounded chart window', () => {
+        const candles = mergeCandles([], [
+            trade(),
+            trade({ idempotencyKey: 'trade-2', observedAt: '2024-11-19T00:50:01.000Z', priceUsd: 3 }),
+        ], 1, 2_000);
+
+        expect(candles).toHaveLength(2_000);
+        expect(candles[0].timestamp).toBe(Date.parse('2024-11-19T00:16:42.000Z'));
+        expect(candles.at(-1)).toMatchObject({
+            timestamp: Date.parse('2024-11-19T00:50:01.000Z'),
+            close: 3,
+            txCount: 1,
+        });
+        expect(candles.slice(0, -1).every((candle) => candle.close === 2 && candle.txCount === 0)).toBe(true);
+    });
+
+    it('advances flat candles with the running replay clock', () => {
+        const base = mergeCandles([], [trade()], 1);
+        const extended = mergeCandles(base, [], 1, 2_000, Date.parse('2024-11-19T00:00:04.000Z'));
+        expect(extended.map((candle) => [candle.timestamp, candle.close, candle.txCount])).toEqual([
+            [Date.parse('2024-11-19T00:00:01.000Z'), 2, 1],
+            [Date.parse('2024-11-19T00:00:02.000Z'), 2, 0],
+            [Date.parse('2024-11-19T00:00:03.000Z'), 2, 0],
+            [Date.parse('2024-11-19T00:00:04.000Z'), 2, 0],
+        ]);
+    });
+
+    it('projects a bounded replay clock between canonical trades', () => {
+        const cut = {
+            now: '2024-11-19T00:00:01.000Z',
+            nextAt: '2024-11-19T00:00:04.000Z',
+            status: 'running' as const,
+        };
+        expect(replayClockAt(cut, 1, 1_500)).toBe(Date.parse('2024-11-19T00:00:02.500Z'));
+        expect(replayClockAt(cut, 1, 5_000)).toBe(Date.parse(cut.nextAt));
+        expect(replayClockAt({ ...cut, status: 'paused' }, 20, 1_000)).toBe(Date.parse(cut.now));
     });
 
     it('dampens dust-price outliers while preserving liquid and verified moves', () => {

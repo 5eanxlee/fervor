@@ -13,6 +13,7 @@ export interface ReplayCut {
     total: number;
     status: ReplayStatus;
     now: string | null;
+    nextAt?: string | null;
 }
 
 export interface ReplayRolling {
@@ -185,6 +186,8 @@ export const isReplayState = (value: unknown): value is ReplayState => {
         && Number.isSafeInteger(snapshot.cursor) && Number(snapshot.cursor) >= 0
         && Number.isSafeInteger(snapshot.total) && Number(snapshot.total) >= Number(snapshot.cursor)
         && ['paused', 'running', 'complete', 'stopped'].includes(String(snapshot.status))
+        && (snapshot.nextAt === undefined || snapshot.nextAt === null
+            || (typeof snapshot.nextAt === 'string' && Number.isFinite(Date.parse(snapshot.nextAt))))
         && value.projection.cursor === snapshot.cursor
         && Number.isSafeInteger(value.paper.factCount) && Number(value.paper.factCount) >= 0;
 };
@@ -419,12 +422,18 @@ export const stabilizeReplayPrices = (
     });
 };
 
-export const replayTickDelay = (pending: number, usdAmount: number, quick = false): number => {
-    if (quick) return 16;
-    const queueSize = Number.isSafeInteger(pending) && pending > 0 ? pending : 1;
-    const notional = finite(usdAmount) && usdAmount > 0 ? usdAmount : 0;
-    const volumeBoost = 1 + Math.min(0.4, Math.log10(notional + 1) * 0.1);
-    return Math.max(28, Math.min(110, Math.round(700 / (queueSize + 1) / volumeBoost)));
+export const replayClockAt = (
+    cut: Pick<ReplayCut, 'now' | 'nextAt' | 'status'>,
+    speed: ReplaySpeed,
+    elapsedMs: number
+): number | undefined => {
+    if (!cut.now) return undefined;
+    const now = Date.parse(cut.now);
+    if (!Number.isFinite(now) || cut.status !== 'running' || speed === 'max') return now;
+    const elapsed = finite(elapsedMs) && elapsedMs > 0 ? elapsedMs : 0;
+    const projected = now + elapsed * speed;
+    const next = cut.nextAt ? Date.parse(cut.nextAt) : undefined;
+    return next !== undefined && Number.isFinite(next) ? Math.min(projected, next) : projected;
 };
 
 export const supplyOf = (trade: ReplayTrade): number | undefined => {
@@ -448,10 +457,18 @@ export const mergeCandles = (
     current: TokenCandle[],
     trades: ReplayTrade[],
     intervalSeconds: number,
-    limit = 2_000
+    limit = 2_000,
+    throughMs?: number
 ): TokenCandle[] => {
-    const next = new Map(current.map((candle) => [candle.timestamp, { ...candle }]));
     const intervalMs = intervalSeconds * 1_000;
+    const through = finite(throughMs)
+        ? Math.floor(throughMs / intervalMs) * intervalMs
+        : undefined;
+    const currentEnd = current.at(-1)?.timestamp;
+    if (!trades.length && (through === undefined || currentEnd === undefined || through <= currentEnd)) {
+        return current;
+    }
+    const next = new Map(current.map((candle) => [candle.timestamp, { ...candle }]));
     for (const trade of trades) {
         const price = chartPriceOf(trade);
         if (price === undefined) continue;
@@ -483,26 +500,35 @@ export const mergeCandles = (
         }
     }
     const ordered = Array.from(next.values()).sort((left, right) => left.timestamp - right.timestamp);
-    const filled: TokenCandle[] = [];
+    const last = ordered.at(-1);
+    if (!last) return [];
+    const end = Math.max(last.timestamp, through ?? last.timestamp);
+    const start = Math.max(ordered[0].timestamp, end - (limit - 1) * intervalMs);
+    let seed = ordered[0];
     for (const candle of ordered) {
-        const previous = filled.at(-1);
-        const missing = previous ? Math.round((candle.timestamp - previous.timestamp) / intervalMs) - 1 : 0;
-        if (previous && missing > 0 && missing <= 120) {
-            for (let index = 1; index <= missing; index += 1) {
-                filled.push({
-                    timestamp: previous.timestamp + intervalMs * index,
-                    open: previous.close,
-                    high: previous.close,
-                    low: previous.close,
-                    close: previous.close,
-                    volumeUsd: 0,
-                    buyCount: 0,
-                    sellCount: 0,
-                    txCount: 0,
-                });
-            }
-        }
-        filled.push(candle);
+        if (candle.timestamp > start) break;
+        seed = candle;
     }
-    return filled.slice(-limit);
+    const filled: TokenCandle[] = [];
+    let close = seed.close;
+    for (let timestamp = start; timestamp <= end; timestamp += intervalMs) {
+        const candle = next.get(timestamp);
+        if (candle) {
+            close = candle.close;
+            filled.push(candle);
+        } else {
+            filled.push({
+                timestamp,
+                open: close,
+                high: close,
+                low: close,
+                close,
+                volumeUsd: 0,
+                buyCount: 0,
+                sellCount: 0,
+                txCount: 0,
+            });
+        }
+    }
+    return filled;
 };

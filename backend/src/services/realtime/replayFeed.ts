@@ -38,6 +38,7 @@ const replayStateSchema = z.object({
         total: z.number().int().min(0),
         status: z.enum(['paused', 'running', 'complete', 'stopped']),
         now: time.nullable(),
+        nextAt: time.nullable().optional(),
     }).strict(),
     projection: z.unknown(),
     paper: z.unknown(),

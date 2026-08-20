@@ -11,6 +11,7 @@ import {
     createChart,
     createSeriesMarkers,
     type IChartApi,
+    type IRange,
     type ISeriesApi,
     type SeriesMarker,
     type Time,
@@ -211,7 +212,14 @@ export default function LightweightTokenChart({
     const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
     const replayIndexRef = useRef(0);
     const onReplayCompleteRef = useRef(onReplayComplete);
+    const onAutoScaleRef = useRef(onAutoScaleChange);
     const datasetRef = useRef(dataset);
+    const followRef = useRef(true);
+    const priceAutoRef = useRef(autoScale);
+    const logRef = useRef(logScale);
+    const volumeVisibleRef = useRef(showVolume);
+    const timeRangeRef = useRef<IRange<Time> | null>(null);
+    const priceRangeRef = useRef<IRange<number> | null>(null);
     const dataKeyRef = useRef('');
     const firstTimeRef = useRef<number | undefined>(undefined);
     const lastTimeRef = useRef<number | undefined>(undefined);
@@ -232,12 +240,20 @@ export default function LightweightTokenChart({
         series: ISeriesApi<'Candlestick'>;
     }>();
     const [autoActive, setAutoActive] = useState(autoScale);
+    const [following, setFollowing] = useState(true);
     const [logActive, setLogActive] = useState(logScale);
     const valueMode = axis || internalMode;
     const setValueMode = (mode: ChartValueMode) => {
         if (axis === undefined) setInternalMode(mode);
         onAxisChange?.(mode);
     };
+    useEffect(() => {
+        followRef.current = true;
+        timeRangeRef.current = null;
+        priceRangeRef.current = null;
+        setFollowing(true);
+    }, [dataset.tokenAddress]);
+
     useEffect(() => {
         drawManagerRef.current?.clearAll();
         pendingRef.current = [];
@@ -258,12 +274,30 @@ export default function LightweightTokenChart({
     }, [onReplayComplete]);
 
     useEffect(() => {
+        onAutoScaleRef.current = onAutoScaleChange;
+    }, [onAutoScaleChange]);
+
+    useEffect(() => {
+        priceAutoRef.current = autoScale;
         setAutoActive(autoScale);
         candleSeriesRef.current?.priceScale().setAutoScale(autoScale);
-    }, [autoScale]);
+        if (autoScale && !followRef.current && chartRef.current) {
+            followRef.current = true;
+            timeRangeRef.current = null;
+            priceRangeRef.current = null;
+            setFollowing(true);
+            focusLatest(chartRef.current, datasetRef.current.candles.length, compact);
+        }
+    }, [autoScale, compact]);
+
+    useEffect(() => {
+        volumeVisibleRef.current = showVolume;
+        volumeSeriesRef.current?.applyOptions({ visible: showVolume });
+    }, [showVolume]);
 
     useEffect(() => {
         setLogActive(logScale);
+        logRef.current = logScale;
         chartRef.current?.priceScale('right').applyOptions({
             mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
         });
@@ -308,8 +342,8 @@ export default function LightweightTokenChart({
                 horzLine: { color: 'rgba(161, 161, 170, 0.62)', style: LineStyle.Dashed, labelBackgroundColor: '#222225' },
             },
             rightPriceScale: {
-                autoScale,
-                mode: logActive ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+                autoScale: priceAutoRef.current,
+                mode: logRef.current ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
                 borderColor: 'rgba(161, 161, 170, 0.24)',
                 scaleMargins: { top: 0.1, bottom: 0.1 },
             },
@@ -365,7 +399,7 @@ export default function LightweightTokenChart({
         const initialCandles = current.candles.slice(0, currentCount);
         candleSeries.setData(toCandleData(initialCandles, current.totalSupply, valueMode));
         volumeSeries.setData(toVolumeData(initialCandles));
-        volumeSeries.applyOptions({ visible: showVolume });
+        volumeSeries.applyOptions({ visible: volumeVisibleRef.current });
         dataKeyRef.current = `${current.tokenAddress}:${current.intervalSeconds}:${valueMode}`;
         firstTimeRef.current = initialCandles[0]?.timestamp;
         lastTimeRef.current = initialCandles.at(-1)?.timestamp;
@@ -394,10 +428,12 @@ export default function LightweightTokenChart({
         }));
         createSeriesMarkers(candleSeries, markers);
 
-        focusLatest(chart, initialCandles.length, compact);
+        if (followRef.current) focusLatest(chart, initialCandles.length, compact);
+        else if (timeRangeRef.current) chart.timeScale().setVisibleRange(timeRangeRef.current);
         const initialRange = getPaddedDisplayRange(initialCandles, current.totalSupply, valueMode);
-        if (initialRange && !autoScale) {
-            candleSeries.priceScale().setVisibleRange(initialRange);
+        if (!priceAutoRef.current) {
+            const range = priceRangeRef.current ?? initialRange;
+            if (range) candleSeries.priceScale().setVisibleRange(range);
         }
 
         chartRef.current = chart;
@@ -407,7 +443,8 @@ export default function LightweightTokenChart({
         drawManagerRef.current = drawManager;
         drawManager.attach(chart, candleSeries, container);
         setDrawApi({ chart, series: candleSeries });
-        setAutoActive(autoScale);
+        setAutoActive(priceAutoRef.current);
+        setFollowing(followRef.current);
         replayIndexRef.current = currentCount;
         setVisibleCount(initialCandles.length);
         setRenderMs(performance.now() - startedAt);
@@ -417,19 +454,55 @@ export default function LightweightTokenChart({
         });
         resizeObserver.observe(container);
 
-        const syncScaleState = () => window.requestAnimationFrame(() => {
-            setAutoActive(candleSeries.priceScale().options().autoScale);
-        });
+        let disposed = false;
+        let dragStart: { x: number; y: number } | undefined;
+        const captureRange = () => {
+            if (disposed) return;
+            timeRangeRef.current = chart.timeScale().getVisibleRange();
+            priceRangeRef.current = candleSeries.priceScale().getVisibleRange();
+        };
+        const suspendFollow = () => {
+            if (followRef.current) {
+                followRef.current = false;
+                setFollowing(false);
+            }
+            if (priceAutoRef.current) {
+                priceAutoRef.current = false;
+                candleSeries.priceScale().setAutoScale(false);
+                setAutoActive(false);
+                onAutoScaleRef.current?.(false);
+            }
+            window.requestAnimationFrame(captureRange);
+        };
+        const beginDrag = (event: PointerEvent) => {
+            dragStart = { x: event.clientX, y: event.clientY };
+        };
+        const trackDrag = (event: PointerEvent) => {
+            if (!dragStart || event.buttons === 0) return;
+            if (Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) >= 3) {
+                suspendFollow();
+            }
+        };
+        const endDrag = () => {
+            dragStart = undefined;
+            window.requestAnimationFrame(captureRange);
+        };
 
-        container.addEventListener('wheel', syncScaleState, { passive: true });
-        container.addEventListener('pointerup', syncScaleState);
-        container.addEventListener('dblclick', syncScaleState);
+        container.addEventListener('wheel', suspendFollow, { passive: true });
+        container.addEventListener('pointerdown', beginDrag);
+        container.addEventListener('pointermove', trackDrag);
+        container.addEventListener('pointerup', endDrag);
+        container.addEventListener('pointercancel', endDrag);
 
         return () => {
+            if (!followRef.current) captureRange();
+            disposed = true;
             resizeObserver.disconnect();
-            container.removeEventListener('wheel', syncScaleState);
-            container.removeEventListener('pointerup', syncScaleState);
-            container.removeEventListener('dblclick', syncScaleState);
+            container.removeEventListener('wheel', suspendFollow);
+            container.removeEventListener('pointerdown', beginDrag);
+            container.removeEventListener('pointermove', trackDrag);
+            container.removeEventListener('pointerup', endDrag);
+            container.removeEventListener('pointercancel', endDrag);
             drawManager.detach();
             chart.remove();
             setDrawApi(undefined);
@@ -442,7 +515,7 @@ export default function LightweightTokenChart({
             dataCountRef.current = 0;
             trimCountRef.current = 0;
         };
-    }, [autoScale, compact, dataset.tokenAddress, dataset.totalSupply, logActive, replayMode, showVolume, valueMode]);
+    }, [compact, dataset.tokenAddress, dataset.totalSupply, replayMode, valueMode]);
 
     useEffect(() => {
         const series = drawApi?.series;
@@ -491,10 +564,18 @@ export default function LightweightTokenChart({
             || (firstTimeRef.current !== firstTime && (!windowShift || trimCountRef.current >= 250))
             || (previousLast !== undefined && lastTime !== undefined && lastTime < previousLast);
         if (requiresReset) {
-            const range = candleSeries.priceScale().getVisibleRange();
+            const priceRange = candleSeries.priceScale().getVisibleRange();
+            const timeRange = chartRef.current?.timeScale().getVisibleRange();
             candleSeries.setData(toCandleData(dataset.candles, dataset.totalSupply, valueMode));
             volumeSeries.setData(toVolumeData(dataset.candles));
-            if (!autoScale && range) candleSeries.priceScale().setVisibleRange(range);
+            if (!priceAutoRef.current && priceRange) {
+                candleSeries.priceScale().setVisibleRange(priceRange);
+                priceRangeRef.current = priceRange;
+            }
+            if (!followRef.current && timeRange) {
+                chartRef.current?.timeScale().setVisibleRange(timeRange);
+                timeRangeRef.current = timeRange;
+            }
             trimCountRef.current = 0;
         } else if (dataset.candles.length) {
             const from = previousLast === undefined
@@ -506,21 +587,21 @@ export default function LightweightTokenChart({
             }
             if (windowShift) trimCountRef.current += 1;
         }
-        volumeSeries.applyOptions({ visible: showVolume });
-        candleSeries.priceScale().setAutoScale(autoScale);
-        if (autoScale && (firstPopulation || requiresReset)) {
+        volumeSeries.applyOptions({ visible: volumeVisibleRef.current });
+        candleSeries.priceScale().setAutoScale(priceAutoRef.current);
+        if (followRef.current && (firstPopulation || requiresReset)) {
             const chart = chartRef.current;
             if (chart) focusLatest(chart, dataset.candles.length, compact);
-        } else if (autoScale && previousLast !== undefined && lastTime !== undefined && lastTime > previousLast) {
+        } else if (followRef.current && previousLast !== undefined && lastTime !== undefined && lastTime > previousLast) {
             chartRef.current?.timeScale().scrollToRealTime();
         }
-        setAutoActive(autoScale);
+        setAutoActive(priceAutoRef.current);
         dataKeyRef.current = nextKey;
         firstTimeRef.current = firstTime;
         lastTimeRef.current = lastTime;
         dataCountRef.current = dataset.candles.length;
         setVisibleCount(dataset.candles.length);
-    }, [autoScale, compact, dataset.candles, dataset.intervalSeconds, dataset.tokenAddress, dataset.totalSupply, live, showVolume, valueMode]);
+    }, [compact, dataset.candles, dataset.intervalSeconds, dataset.tokenAddress, dataset.totalSupply, live, valueMode]);
 
     useEffect(() => {
         if (!live) return;
@@ -540,26 +621,13 @@ export default function LightweightTokenChart({
 
             candleSeries.update(toCandleData([next], dataset.totalSupply, valueMode)[0]);
             volumeSeries.update(toVolumeData([next])[0]);
-            const priceScale = candleSeries.priceScale();
-            const range = priceScale.getVisibleRange();
-            const nextLow = toDisplayValue(next.low, dataset.totalSupply, valueMode);
-            const nextHigh = toDisplayValue(next.high, dataset.totalSupply, valueMode);
-            if (!autoScale && range && (nextLow < range.from || nextHigh > range.to)) {
-                const span = range.to - range.from;
-                const lowerBound = nextLow > 0
-                    ? Math.max(nextLow * 0.65, nextLow - span * 0.08)
-                    : nextLow - span * 0.08;
-                priceScale.setVisibleRange({
-                    from: Math.max(0, Math.min(range.from, lowerBound)),
-                    to: Math.max(range.to, nextHigh + span * 0.08),
-                });
-            }
+            if (followRef.current) chartRef.current?.timeScale().scrollToRealTime();
             replayIndexRef.current += 1;
             setVisibleCount(replayIndexRef.current);
         }, speedMs);
 
         return () => window.clearInterval(interval);
-    }, [autoScale, dataset.candles, dataset.totalSupply, initialCount, live, speedMs, valueMode]);
+    }, [dataset.candles, dataset.totalSupply, live, speedMs, valueMode]);
 
     const pointFrom = (clientX: number, clientY: number) => {
         const layer = drawLayerRef.current;
@@ -820,9 +888,14 @@ export default function LightweightTokenChart({
         const chart = chartRef.current;
         const series = candleSeriesRef.current;
         if (!chart || !series) return;
+        followRef.current = true;
+        priceAutoRef.current = true;
+        timeRangeRef.current = null;
+        priceRangeRef.current = null;
         series.priceScale().setAutoScale(true);
         focusLatest(chart, dataset.candles.length, compact);
         setAutoActive(true);
+        setFollowing(true);
         onAutoScaleChange?.(true);
     };
 
@@ -1008,9 +1081,9 @@ export default function LightweightTokenChart({
                         <button
                             type="button"
                             onClick={enableAutoScale}
-                            className={`px-2.5 transition-colors hover:bg-[var(--term-raised)] hover:text-white ${autoActive ? 'bg-[var(--term-raised)] text-[var(--term-accent)]' : 'text-white/80'}`}
-                            aria-pressed={autoActive}
-                            title="Fit visible candles and restore automatic price scaling"
+                            className={`px-2.5 transition-colors hover:bg-[var(--term-raised)] hover:text-white ${autoActive && following ? 'bg-[var(--term-raised)] text-[var(--term-accent)]' : 'text-white/80'}`}
+                            aria-pressed={autoActive && following}
+                            title="Follow the latest candle and restore automatic price scaling"
                         >Auto</button>
                     </div>
                 </div>

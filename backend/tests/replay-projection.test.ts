@@ -212,6 +212,44 @@ describe('replay scheduler', () => {
         expect(maximum.checkpoint).toEqual(one.checkpoint);
     });
 
+    it('spreads same-second trade bursts across their source second', async () => {
+        const base = replay(5);
+        const times = [
+            '2024-11-19T00:00:00.000Z',
+            '2024-11-19T00:00:00.000Z',
+            '2024-11-19T00:00:00.000Z',
+            '2024-11-19T00:00:00.000Z',
+            '2024-11-19T00:00:01.000Z',
+        ];
+        const source = {
+            ...base,
+            sourceTrades: base.sourceTrades.map((trade, index) => ({
+                ...trade,
+                observedAt: times[index],
+            })),
+            trades: base.trades.map((trade, index) => ({
+                ...trade,
+                observedAt: times[index],
+            })),
+        };
+        const coordinator = new ReplayCoordinator(source, 'same-second');
+        const waits: number[] = [];
+        const timer = fakeTimer(waits);
+
+        expect(coordinator.snapshot()).toMatchObject({
+            cursor: 0,
+            nextAt: times[0],
+        });
+        await new ReplayScheduler(coordinator, () => undefined, timer).run(1);
+
+        expect(waits).toEqual([250, 250, 250, 250]);
+        expect(coordinator.snapshot()).toMatchObject({
+            cursor: 5,
+            status: 'complete',
+            nextAt: null,
+        });
+    });
+
     it('does not emit across a pause or pre-aborted run', async () => {
         const source = replay();
         const coordinator = new ReplayCoordinator(source, 'controlled');

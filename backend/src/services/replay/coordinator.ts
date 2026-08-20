@@ -26,6 +26,7 @@ export interface ReplaySnapshot {
     readonly total: number;
     readonly status: ReplayStatus;
     readonly now: string | null;
+    readonly nextAt?: string | null;
 }
 
 export interface ReplayCut {
@@ -78,6 +79,25 @@ export type ReplayDeltaResult =
 
 const hashPattern = /^[0-9a-f]{64}$/;
 
+const buildPaceTimes = (times: readonly number[]): number[] => {
+    const paced = [...times];
+    let start = 0;
+    while (start < times.length) {
+        let end = start + 1;
+        while (end < times.length && times[end] === times[start]) end += 1;
+        const count = end - start;
+        if (count > 1) {
+            const nextGap = end < times.length ? times[end] - times[start] : 1_000;
+            const span = Math.min(1_000, Math.max(1, nextGap));
+            for (let index = start + 1; index < end; index += 1) {
+                paced[index] = times[start] + Math.floor(span * (index - start) / count);
+            }
+        }
+        start = end;
+    }
+    return paced;
+};
+
 export const parseReplayCut = (value: unknown): ReplayCut => {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new Error('Replay cut is invalid');
@@ -112,6 +132,7 @@ export class ReplayCoordinator {
     private clock = new VirtualClock(0);
     private readonly events: NormalizedTradeEvent[];
     private readonly times: number[] = [];
+    private readonly paceTimes: number[];
     private readonly sourceSha: string;
     private epoch = 1;
     private cursor = 0;
@@ -146,6 +167,7 @@ export class ReplayCoordinator {
         if (this.events.length !== replay.source.trades || enriched.size > 0) {
             throw new Error('Replay trade tape differs from its verified projection');
         }
+        this.paceTimes = buildPaceTimes(this.times);
     }
 
     snapshot(): ReplaySnapshot {
@@ -157,6 +179,9 @@ export class ReplayCoordinator {
             total: this.events.length,
             status: this.status,
             now: this.cursor === 0 ? null : new Date(this.clock.nowMs()).toISOString(),
+            nextAt: this.cursor === this.events.length
+                ? null
+                : new Date(this.times[this.cursor]).toISOString(),
         };
     }
 
@@ -300,7 +325,7 @@ export class ReplayCoordinator {
     nextDelayMs(): number | null {
         if (this.cursor === this.events.length || this.status === 'stopped') return null;
         if (this.cursor === 0) return 0;
-        return this.times[this.cursor] - this.clock.nowMs();
+        return this.paceTimes[this.cursor] - this.paceTimes[this.cursor - 1];
     }
 
     private take(): ReplayEvent {

@@ -29,6 +29,7 @@ const state = (cursor: number, epoch = 1) => ({
         total: 10,
         status: 'paused',
         now: cursor === 0 ? null : at(cursor),
+        nextAt: cursor === 10 ? null : at(cursor + 1),
     },
     projection: { cursor },
     paper: { orderCount: 0, factCount: 0 },
@@ -149,6 +150,7 @@ describe('realtime replay feed', () => {
         expect(fresh.frames[0]).toMatchObject({
             type: 'snapshot',
             cut: { trade: '2', market: '2' },
+            data: { trade: { nextAt: at(3) } },
         });
 
         const resumed = feed.seed(['trade'], {
