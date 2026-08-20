@@ -61,7 +61,8 @@ type MarketView = {
 const intervals = ['1s', '5s', '15s', '30s', '1m', '5m', '1h'] as const;
 const replayMode = process.env.NEXT_PUBLIC_DATA_MODE === 'replay';
 const replaySymbol = process.env.NEXT_PUBLIC_REPLAY_SYMBOL || 'REPLAY';
-const replayName = process.env.NEXT_PUBLIC_REPLAY_NAME || 'Historical replay';
+const replayName = process.env.NEXT_PUBLIC_REPLAY_NAME || 'Token';
+const replayLogo = process.env.NEXT_PUBLIC_REPLAY_LOGO?.trim();
 const configuredSupply = Number(process.env.NEXT_PUBLIC_REPLAY_SUPPLY) > 0
     ? Number(process.env.NEXT_PUBLIC_REPLAY_SUPPLY)
     : undefined;
@@ -352,6 +353,8 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         ? replaySupply ?? 1
         : Number(metadata?.totalSupplyFormatted || 1_000_000_000);
     const symbol = replayMode ? replaySymbol : token?.symbol || metadata?.symbol || 'TOKEN';
+    const displayName = replayMode ? replayName : token?.name || metadata?.name || shortAddress(tokenMint);
+    const displayLogo = replayMode ? replayLogo : metadata?.logo;
     const intervalSeconds = useMemo(() => ({
         '1s': 1, '5s': 5, '15s': 15, '30s': 30, '1m': 60, '5m': 300, '1h': 3600,
     })[interval], [interval]);
@@ -462,16 +465,16 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     }, [applyReplay, controlBusy, replay]);
 
     useEffect(() => {
-        if (!token && !metadata) return;
+        if (!replayMode && !token && !metadata) return;
         rememberToken({
             address: tokenMint,
             symbol,
-            name: token?.name || metadata?.name,
-            logo: metadata?.logo,
+            name: displayName,
+            logo: displayLogo,
             marketCap: token?.market_cap,
             price: token?.price,
         });
-    }, [metadata, symbol, token, tokenMint]);
+    }, [displayLogo, displayName, metadata, symbol, token, tokenMint]);
 
     useEffect(() => {
         const sync = () => setStarred(hasStar(tokenMint));
@@ -493,8 +496,8 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     const toggleCurrentStar = () => setStarred(toggleStar({
         address: tokenMint,
         symbol,
-        name: token?.name || metadata?.name,
-        logo: metadata?.logo,
+        name: displayName,
+        logo: displayLogo,
         marketCap: market.marketCap ?? token?.market_cap,
         price: market.price ?? token?.price,
     }));
@@ -507,7 +510,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                 <section className="token-strip grid shrink-0 border-b border-[var(--term-border)] bg-[var(--term-bg)]" data-full={chartFull}>
                     <div className="flex min-w-0 items-center overflow-hidden px-[clamp(.75rem,1.2vw,1rem)]">
                         <div className="flex min-w-0 shrink-0 items-center gap-[clamp(.5rem,.8vw,.7rem)] pr-[clamp(.9rem,1.4vw,1.25rem)]">
-                            <TokenLogo tokenAddress={tokenMint} tokenSymbol={symbol} size="md" />
+                            <TokenLogo tokenAddress={tokenMint} tokenSymbol={symbol} logoUrl={displayLogo} size="md" />
                             <div className="min-w-0">
                                 <div className="flex min-w-0 items-center gap-1.5">
                                     <h1 className="truncate text-[clamp(.75rem,1vw,.88rem)] font-[500]">{symbol}/SOL</h1>
@@ -518,8 +521,8 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                                     <BellIcon className="hidden h-3.5 w-3.5 shrink-0 text-[var(--term-muted)] md:block" />
                                 </div>
                                 <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[clamp(.58rem,.72vw,.7rem)] text-[var(--term-muted)]">
-                                    <span className="shrink-0">{replayMode ? 'Historical' : 'Live'}</span>
-                                    <span className="truncate">{replayMode ? replayName : token?.name || metadata?.name || shortAddress(tokenMint)}</span>
+                                    {!replayMode && <span className="shrink-0">Live</span>}
+                                    <span className="truncate">{displayName}</span>
                                     <button onClick={() => navigator.clipboard.writeText(tokenMint)} className="hover:text-white" title="Copy address"><ClipboardDocumentIcon className="h-3.5 w-3.5" /></button>
                                     <span className="hidden items-center gap-0.5 rounded-full border border-[var(--term-border)] px-1.5 py-0.5 text-[var(--term-text)] md:flex"><EyeIcon className="h-3 w-3" />{compact(market.buys5m)}</span>
                                 </div>

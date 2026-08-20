@@ -10,7 +10,8 @@ const nextConfig = {
         NEXT_PUBLIC_DATA_MODE: process.env.NEXT_PUBLIC_DATA_MODE || 'live',
         NEXT_PUBLIC_REPLAY_MINT: process.env.NEXT_PUBLIC_REPLAY_MINT || '',
         NEXT_PUBLIC_REPLAY_SYMBOL: process.env.NEXT_PUBLIC_REPLAY_SYMBOL || 'REPLAY',
-        NEXT_PUBLIC_REPLAY_NAME: process.env.NEXT_PUBLIC_REPLAY_NAME || 'Historical replay',
+        NEXT_PUBLIC_REPLAY_NAME: process.env.NEXT_PUBLIC_REPLAY_NAME || 'Token',
+        NEXT_PUBLIC_REPLAY_LOGO: process.env.NEXT_PUBLIC_REPLAY_LOGO || '',
         NEXT_PUBLIC_REPLAY_SUPPLY: process.env.NEXT_PUBLIC_REPLAY_SUPPLY || '',
     },
 }

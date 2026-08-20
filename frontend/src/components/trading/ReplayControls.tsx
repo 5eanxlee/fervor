@@ -24,7 +24,7 @@ const speedLabel = (speed: ReplaySpeed) => speed === 'max' ? 'Max' : `${speed}×
 const replayTime = (value: string | null | undefined) => {
     if (!value) return 'Waiting for replay data';
     const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) return 'Historical time unavailable';
+    if (!Number.isFinite(date.getTime())) return 'Replay time unavailable';
     return new Intl.DateTimeFormat('en-US', {
         month: 'short',
         day: '2-digit',
@@ -55,14 +55,14 @@ export default function ReplayControls({
     const progress = snapshot?.total ? Math.min(100, snapshot.cursor / snapshot.total * 100) : 0;
 
     return (
-        <section className="replay-controls" aria-label="Historical replay controls">
+        <section className="replay-controls" aria-label="Replay controls">
             <div className="replay-transport" role="group" aria-label="Replay transport">
                 <button
                     type="button"
                     onClick={() => onControl(running ? { op: 'pause' } : { op: 'play', speed })}
                     disabled={busy || !snapshot || complete}
                     className="replay-primary"
-                    title={running ? 'Pause historical replay' : 'Play historical replay'}
+                    title={running ? 'Pause replay' : 'Play replay'}
                 >
                     {running ? <PauseIcon /> : <PlayIcon />}
                     <span>{running ? 'Pause' : 'Play'}</span>

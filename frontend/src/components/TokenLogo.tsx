@@ -7,6 +7,7 @@ import { tokenCacheService } from '../services/tokenCache';
 interface TokenLogoProps {
     tokenAddress: string;
     tokenSymbol?: string;
+    logoUrl?: string;
     size?: 'sm' | 'md' | 'lg';
     className?: string;
 }
@@ -14,6 +15,7 @@ interface TokenLogoProps {
 const TokenLogo: React.FC<TokenLogoProps> = ({
     tokenAddress,
     tokenSymbol,
+    logoUrl,
     size = 'md',
     className = ''
 }) => {
@@ -39,6 +41,8 @@ const TokenLogo: React.FC<TokenLogoProps> = ({
     };
 
     useEffect(() => {
+        if (logoUrl) return;
+
         const fetchTokenMetadata = async () => {
             try {
                 // Check cache first
@@ -65,9 +69,11 @@ const TokenLogo: React.FC<TokenLogoProps> = ({
         if (tokenAddress) {
             fetchTokenMetadata();
         }
-    }, [tokenAddress]);
+    }, [logoUrl, tokenAddress]);
 
-    if (logoLoading) {
+    const logo = logoUrl || tokenMetadata?.logo;
+
+    if (logoLoading && !logo) {
         return (
             <div className={`${sizeClasses[size]} bg-slate-700 rounded-full flex items-center justify-center flex-shrink-0 ${className}`}>
                 <div className={`animate-spin rounded-full ${spinnerSizeClasses[size]} border-b-2 border-cyan-400`}></div>
@@ -75,14 +81,14 @@ const TokenLogo: React.FC<TokenLogoProps> = ({
         );
     }
 
-    if (tokenMetadata?.logo) {
+    if (logo) {
         return (
             <div className={`relative ${className}`}>
                 {/* Token metadata may reference arbitrary decentralized image gateways. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                    src={tokenMetadata.logo}
-                    alt={tokenSymbol || tokenMetadata.symbol || 'Token'}
+                    src={logo}
+                    alt={tokenSymbol || tokenMetadata?.symbol || 'Token'}
                     className={`${sizeClasses[size]} rounded-full object-cover bg-slate-700 border border-slate-600 flex-shrink-0`}
                     onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
@@ -92,7 +98,7 @@ const TokenLogo: React.FC<TokenLogoProps> = ({
                 />
                 <div className={`logo-fallback hidden ${sizeClasses[size]} bg-slate-700 rounded-full flex items-center justify-center flex-shrink-0 border border-slate-600 absolute top-0 left-0`}>
                     <span className={`text-white ${textSizeClasses[size]} font-normal`}>
-                        {(tokenSymbol || tokenMetadata.symbol || '?').charAt(0).toUpperCase()}
+                        {(tokenSymbol || tokenMetadata?.symbol || '?').charAt(0).toUpperCase()}
                     </span>
                 </div>
             </div>
