@@ -517,9 +517,18 @@ export default function LightweightTokenChart({
         });
         watermarkRef.current = watermark;
 
+        let disposed = false;
+        let emptyFitFrame: number | undefined;
         if (followRef.current) {
             if (initialCandles.length) focusLatest(chart, initialCandles.length, compact);
-            else chart.timeScale().fitContent();
+            else {
+                chart.timeScale().fitContent();
+                emptyFitFrame = window.requestAnimationFrame(() => {
+                    emptyFitFrame = window.requestAnimationFrame(() => {
+                        if (!disposed) chart.timeScale().fitContent();
+                    });
+                });
+            }
         }
         else if (timeRangeRef.current) chart.timeScale().setVisibleLogicalRange(timeRangeRef.current);
         if (!priceAutoRef.current) {
@@ -541,7 +550,6 @@ export default function LightweightTokenChart({
         setVisibleCount(initialCandles.length);
         setRenderMs(performance.now() - startedAt);
 
-        let disposed = false;
         let dragStart: { x: number; y: number } | undefined;
         const captureRange = () => {
             if (disposed) return;
@@ -589,6 +597,7 @@ export default function LightweightTokenChart({
         return () => {
             if (!followRef.current) captureRange();
             disposed = true;
+            if (emptyFitFrame !== undefined) window.cancelAnimationFrame(emptyFitFrame);
             chart.timeScale().unsubscribeVisibleLogicalRangeChange(trackRange);
             chartElement.removeEventListener('wheel', suspendFollow);
             chartElement.removeEventListener('pointerdown', beginDrag);
