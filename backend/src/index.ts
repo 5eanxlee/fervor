@@ -43,11 +43,15 @@ const replayFeed = new ReplayFeed(replayGateway, {
 });
 
 const isAllowedDevOrigin = (origin: string): boolean => {
-    if (isProduction) return false;
     try {
         const url = new URL(origin);
         const isLoopbackHost = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname);
-        return isLoopbackHost && DEV_FRONTEND_PORTS.has(url.port);
+        if (!isLoopbackHost) return false;
+
+        // Private replay stacks are reached through a loopback-only SSH/IAP tunnel. The
+        // local port is selected by the operator, so it cannot be enumerated ahead of time.
+        if (env.REPLAY_API_SOCKET) return true;
+        return !isProduction && DEV_FRONTEND_PORTS.has(url.port);
     } catch {
         return false;
     }

@@ -18,7 +18,7 @@ Then run:
 docker compose --env-file /secure/path/fervor-replay.env -f deploy/replay/compose.yml up -d --build
 ```
 
-The exact externally visible origin must match `FERVOR_FRONTEND_URL`; this includes a Cloud Shell Web Preview origin. For a local IAP tunnel, use `http://localhost:8080` and forward local port 8080 to VM port 8080.
+The exact non-loopback origin must match `FERVOR_FRONTEND_URL`; this includes a Cloud Shell Web Preview origin. Localhost and loopback origins are accepted only while the replay socket is enabled, so an operator can forward any available local port to VM port 8080 without changing the deployment environment.
 
 Replay frontend builds send the app JWT in `X-Fervor-Replay-Session` because Google's
 authenticated preview proxies reserve the standard `Authorization` header. The API accepts

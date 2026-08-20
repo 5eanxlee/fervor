@@ -605,14 +605,18 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                 state = await send(state, { op: 'seek', target: 0 });
                 applyReplay(state);
             }
-            applyReplay(await send(state, command));
+            const next = await send(state, command);
+            applyReplay(next);
+            if (next.snapshot.cursor > 0 && command.op !== 'play') {
+                await hydrateReplayHistory(next);
+            }
         } catch (error: any) {
             setReplayError(error?.error || error?.message || 'Replay control failed');
             setSessionKey((value) => value + 1);
         } finally {
             setControlBusy(false);
         }
-    }, [applyReplay, controlBusy, replay]);
+    }, [applyReplay, controlBusy, hydrateReplayHistory, replay]);
 
     useEffect(() => {
         if (!replayMode && !token && !metadata) return;
