@@ -66,6 +66,16 @@ type MarketView = {
 };
 
 const intervals = ['1s', '5s', '15s', '30s', '1m', '5m', '1h'] as const;
+type ChartInterval = typeof intervals[number];
+const intervalSecs: Record<ChartInterval, number> = {
+    '1s': 1,
+    '5s': 5,
+    '15s': 15,
+    '30s': 30,
+    '1m': 60,
+    '5m': 300,
+    '1h': 3_600,
+};
 const replayMode = process.env.NEXT_PUBLIC_DATA_MODE === 'replay';
 const replaySymbol = process.env.NEXT_PUBLIC_REPLAY_SYMBOL || 'REPLAY';
 const replayName = process.env.NEXT_PUBLIC_REPLAY_NAME || 'Token';
@@ -185,10 +195,8 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     const [market, setMarket] = useState<MarketView>({});
     const [candles, setCandles] = useState<TokenCandle[]>([]);
     const [trades, setTrades] = useState<ActivityTrade[]>([]);
-    const [interval, setIntervalName] = useState<typeof intervals[number]>(replayMode ? '1s' : '1m');
-    const intervalSeconds = useMemo(() => ({
-        '1s': 1, '5s': 5, '15s': 15, '30s': 30, '1m': 60, '5m': 300, '1h': 3600,
-    })[interval], [interval]);
+    const [interval, setIntervalName] = useState<ChartInterval>(replayMode ? '1s' : '1m');
+    const intervalSeconds = intervalSecs[interval];
     const [streamState, setStreamState] = useState<'connecting' | 'live' | 'offline'>('connecting');
     const [loading, setLoading] = useState(true);
     const [sessionKey, setSessionKey] = useState(0);
@@ -220,6 +228,19 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     useEffect(() => {
         intervalRef.current = intervalSeconds;
     }, [intervalSeconds]);
+
+    const changeInterval = (next: ChartInterval) => {
+        if (next === interval) return;
+        const seconds = intervalSecs[next];
+        intervalRef.current = seconds;
+        setIntervalName(next);
+        setSettings((current) => current.chartAutoScale
+            ? current
+            : { ...current, chartAutoScale: true });
+        setCandles(replayMode
+            ? mergeCandles([], replayTrades.current, seconds)
+            : []);
+    };
 
     const resizeChart = useCallback((clientY: number) => {
         const region = chartSplitRef.current;
@@ -589,8 +610,8 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
 
     useEffect(() => {
         if (!replayMode) return;
-        setCandles(mergeCandles([], replayTrades.current, intervalSeconds));
-    }, [chartKey, intervalSeconds]);
+        setCandles(mergeCandles([], replayTrades.current, intervalRef.current));
+    }, [chartKey]);
 
     useEffect(() => {
         const cut = replay?.snapshot;
@@ -776,7 +797,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                 >
                     <div className="chart-panel flex min-h-0 flex-col overflow-hidden bg-[var(--term-bg)]">
                         <div className="chart-tools flex shrink-0 items-center justify-start overflow-x-auto border-b border-[var(--term-border)] bg-[var(--term-bg)] text-[clamp(.58rem,.68vw,.66rem)] text-[var(--term-muted)]">
-                            {intervals.map((value) => <button key={value} onClick={() => setIntervalName(value)} className={`chart-tool ${interval === value ? 'bg-[var(--term-control)] text-white' : 'hover:text-white'}`}>{value}</button>)}
+                            {intervals.map((value) => <button key={value} onClick={() => changeInterval(value)} className={`chart-tool ${interval === value ? 'bg-[var(--term-control)] text-white' : 'hover:text-white'}`}>{value}</button>)}
                             <span className="h-4 border-l border-[var(--term-border)]" />
                             <button onClick={() => setSettings((value) => ({ ...value, chartAxis: 'price' }))} className={`chart-tool ${settings.chartAxis === 'price' ? 'text-[var(--term-accent)]' : 'hover:text-white'}`}>Price</button>
                             <button onClick={() => setSettings((value) => ({ ...value, chartAxis: 'market_cap' }))} className={`chart-tool ${settings.chartAxis === 'market_cap' ? 'text-[var(--term-accent)]' : 'hover:text-white'}`}>MCap</button>

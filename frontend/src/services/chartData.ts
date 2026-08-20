@@ -86,6 +86,13 @@ export function getTimeframeLabel(timeframe: ChartTimeframe): string {
     return CHART_TIMEFRAME_OPTIONS.find(option => option.id === timeframe)?.label ?? '1s';
 }
 
+export function latestLogicalRange(candleCount: number, compact: boolean): { from: number; to: number } {
+    const rightOffset = compact ? 8 : 12;
+    const visibleBars = compact ? 140 : 180;
+    const to = Math.max(0, candleCount - 1) + rightOffset;
+    return { from: to - visibleBars, to };
+}
+
 export function toDisplayValue(value: number, totalSupply: number, valueMode: ChartValueMode): number {
     return valueMode === 'market_cap' ? value * totalSupply : value;
 }
