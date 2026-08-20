@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import {
-    AreaSeries,
+    BaselineSeries,
     ColorType,
     CrosshairMode,
     LineStyle,
@@ -28,13 +28,15 @@ function rgba(color: string, alpha: number) {
 export default function PortfolioPnlChart({ values }: PortfolioPnlChartProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const chartRef = useRef<IChartApi | null>(null);
-    const seriesRef = useRef<ISeriesApi<'Area'> | null>(null);
+    const seriesRef = useRef<ISeriesApi<'Baseline'> | null>(null);
 
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
 
         const styles = getComputedStyle(container);
+        const buyColor = styles.getPropertyValue('--term-buy').trim() || '#2eddb2';
+        const sellColor = styles.getPropertyValue('--term-sell').trim() || '#f83279';
         const fontFamily =
             getComputedStyle(document.documentElement)
                 .getPropertyValue('--font-geist')
@@ -73,11 +75,18 @@ export default function PortfolioPnlChart({ values }: PortfolioPnlChartProps) {
             handleScroll: false,
             handleScale: false,
         });
-        const series = chart.addSeries(AreaSeries, {
+        const series = chart.addSeries(BaselineSeries, {
+            baseValue: { type: 'price', price: 0 },
             lastValueVisible: false,
             priceLineVisible: false,
             relativeGradient: true,
             lineWidth: 3,
+            topLineColor: buyColor,
+            topFillColor1: rgba(buyColor, 0.34),
+            topFillColor2: rgba(buyColor, 0.03),
+            bottomLineColor: sellColor,
+            bottomFillColor1: rgba(sellColor, 0.03),
+            bottomFillColor2: rgba(sellColor, 0.34),
             crosshairMarkerRadius: 3,
             priceFormat: {
                 type: 'custom',
@@ -105,17 +114,6 @@ export default function PortfolioPnlChart({ values }: PortfolioPnlChartProps) {
         const series = seriesRef.current;
         if (!container || !chart || !series) return;
 
-        const styles = getComputedStyle(container);
-        const positive = (values.at(-1) ?? 0) >= (values[0] ?? 0);
-        const color = styles.getPropertyValue(positive ? '--term-buy' : '--term-sell').trim()
-            || (positive ? '#2eddb2' : '#f83279');
-        series.applyOptions({
-            lineColor: color,
-            topColor: rgba(color, 0.34),
-            bottomColor: rgba(color, 0.03),
-            crosshairMarkerBackgroundColor: color,
-            crosshairMarkerBorderColor: color,
-        });
         series.setData(values.map((value, index) => ({
             time: (index + 1) as UTCTimestamp,
             value,
