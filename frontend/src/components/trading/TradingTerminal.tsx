@@ -6,7 +6,6 @@ import {
     ArrowPathIcon,
     ArrowsPointingInIcon,
     ArrowsPointingOutIcon,
-    BellIcon,
     ChartBarIcon,
     ClipboardDocumentIcon,
     Cog6ToothIcon,
@@ -711,6 +710,9 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         ? requestedTab
         : 'trades';
     const replayNotice = replayError || (realtime.state === 'offline' ? realtime.reason : undefined);
+    const solscanUrl = `https://solscan.io/token/${tokenMint}`;
+    const dexUrl = `https://dexscreener.com/solana/${tokenMint}`;
+    const xUrl = `https://x.com/search?q=${encodeURIComponent(`$${symbol}`)}&src=typed_query`;
     const toggleCurrentStar = () => setStarred(toggleStar({
         address: tokenMint,
         symbol,
@@ -732,11 +734,10 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                             <div className="min-w-0">
                                 <div className="flex min-w-0 items-center gap-1.5">
                                     <h1 className="truncate text-[clamp(.75rem,1vw,.88rem)] font-[500]">{symbol}/SOL</h1>
-                                    <LinkIcon className="h-3.5 w-3.5 shrink-0 text-[var(--term-muted)]" />
-                                    <GlobeAltIcon className="hidden h-3.5 w-3.5 shrink-0 text-[var(--term-muted)] sm:block" />
-                                    <MagnifyingGlassIcon className="hidden h-3.5 w-3.5 shrink-0 text-[var(--term-muted)] sm:block" />
+                                    <a href={solscanUrl} target="_blank" rel="noreferrer" aria-label={`Open ${symbol} on Solscan`} title="Open token on Solscan" className="shrink-0 text-[var(--term-muted)] hover:text-white"><LinkIcon className="h-3.5 w-3.5" /></a>
+                                    <a href={dexUrl} target="_blank" rel="noreferrer" aria-label={`Open ${symbol} on Dexscreener`} title="Open market on Dexscreener" className="hidden shrink-0 text-[var(--term-muted)] hover:text-white sm:block"><GlobeAltIcon className="h-3.5 w-3.5" /></a>
+                                    <a href={xUrl} target="_blank" rel="noreferrer" aria-label={`Search X for $${symbol}`} title={`Search X for $${symbol}`} className="hidden shrink-0 text-[var(--term-muted)] hover:text-white sm:block"><MagnifyingGlassIcon className="h-3.5 w-3.5" /></a>
                                     <button onClick={toggleCurrentStar} className={starred ? 'text-[var(--term-accent)]' : 'text-[var(--term-muted)] hover:text-white'} aria-label={starred ? 'Remove from starred tokens' : 'Star token'} aria-pressed={starred}><StarIcon className="h-3.5 w-3.5 shrink-0" fill={starred ? 'currentColor' : 'none'} /></button>
-                                    <BellIcon className="hidden h-3.5 w-3.5 shrink-0 text-[var(--term-muted)] md:block" />
                                 </div>
                                 <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[clamp(.58rem,.72vw,.7rem)] text-[var(--term-muted)]">
                                     {!replayMode && <span className="shrink-0">Live</span>}
@@ -760,6 +761,17 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                                     <div className="mt-0.5 truncate text-[clamp(.66rem,.78vw,.76rem)] tabular-nums text-[var(--term-text)]">{value}</div>
                                 </div>
                             ))}
+                            {replayMode && (
+                                <ReplayControls
+                                    replay={replay}
+                                    now={replayNow}
+                                    speed={replaySpeed}
+                                    busy={controlBusy}
+                                    notice={replayNotice}
+                                    onSpeed={setReplaySpeed}
+                                    onControl={(command) => void controlReplay(command)}
+                                />
+                            )}
                             <div className="ml-auto hidden items-center gap-1 md:flex">
                                 <button onClick={() => setSettingsOpen(true)} className="terminal-icon !h-8 !w-8" aria-label="Token layout settings"><Cog6ToothIcon /></button>
                                 <button className="terminal-icon !h-8 !w-8" aria-label="Market chart"><ChartBarIcon /></button>
@@ -788,7 +800,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                     style={{ '--chart-top': `${chartShare}fr`, '--chart-bottom': `${100 - chartShare}fr` } as CSSProperties}
                 >
                     <div className="chart-panel flex min-h-0 flex-col overflow-hidden bg-[var(--term-bg)]">
-                        <div className="chart-tools flex shrink-0 items-center justify-start overflow-x-auto border-b border-[var(--term-border)] bg-[var(--term-bg)] text-[clamp(.58rem,.68vw,.66rem)] text-[var(--term-muted)]">
+                        <div className="chart-tools flex shrink-0 items-center justify-start overflow-x-auto border-b border-[var(--term-border)] bg-[var(--term-bg)] text-[clamp(.68rem,.8vw,.78rem)] text-[var(--term-muted)]">
                             {intervals.map((value) => <button key={value} data-active={interval === value} onClick={() => changeInterval(value)} className={`chart-tool timeframe-tool ${interval === value ? 'text-white' : 'hover:text-white'}`}>{value}</button>)}
                             <span className="h-4 border-l border-[var(--term-border)]" />
                             <button onClick={() => setSettings((value) => ({ ...value, chartAxis: 'price' }))} className={`chart-tool ${settings.chartAxis === 'price' ? 'text-[var(--term-accent)]' : 'hover:text-white'}`}>Price</button>
@@ -797,17 +809,6 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                             <button onClick={() => setChartKey((value) => value + 1)} className="chart-tool" title="Refresh chart"><ArrowPathIcon className="h-3.5 w-3.5" /></button>
                             <button onClick={() => setChartFull((value) => !value)} className="chart-tool" title={chartFull ? 'Exit full chart' : 'Full chart'}>{chartFull ? <ArrowsPointingInIcon className="h-3.5 w-3.5" /> : <ArrowsPointingOutIcon className="h-3.5 w-3.5" />}</button>
                         </div>
-                        {replayMode && (
-                            <ReplayControls
-                                replay={replay}
-                                now={replayNow}
-                                speed={replaySpeed}
-                                busy={controlBusy}
-                                notice={replayNotice}
-                                onSpeed={setReplaySpeed}
-                                onControl={(command) => void controlReplay(command)}
-                            />
-                        )}
                         <div className="relative min-h-0 flex-1">
                             <LightweightTokenChart dataset={chartDataset} height="100%" live={false} replayMode={false} axis={settings.chartAxis} onAxisChange={(chartAxis) => setSettings((value) => ({ ...value, chartAxis }))} autoScale={settings.chartAutoScale} onAutoScaleChange={(chartAutoScale) => setSettings((value) => ({ ...value, chartAutoScale }))} logScale={settings.chartLogScale} onLogScaleChange={(chartLogScale) => setSettings((value) => ({ ...value, chartLogScale }))} showVolume={settings.chartVolume} targetMarketCap={limitTarget} compact drawTools />
                             {!candles.length && <div className="pointer-events-none absolute inset-0 grid place-items-center text-xs text-[var(--term-dim)]">{replayMode ? replay?.snapshot.cursor ? 'Loading replay history…' : 'Play the replay to populate the chart' : 'Waiting for market candles'}</div>}

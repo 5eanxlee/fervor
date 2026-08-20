@@ -93,9 +93,9 @@
 
 /* Shared terminal chrome */
 .terminal-topbar {
-    min-height: clamp(4rem, 7vh, 4.25rem);
+    min-height: clamp(3.4rem, 5.9vh, 3.65rem);
     height: auto;
-    padding-block: clamp(.7rem, 1.25vh, .8rem);
+    padding-block: clamp(.45rem, .8vh, .55rem);
     background: #000;
 }
 
@@ -623,7 +623,7 @@
 }
 
 .chart-tools {
-    height: clamp(1.9rem, 3.22vh, 2rem);
+    height: clamp(2.35rem, 4vh, 2.5rem);
     scrollbar-width: none;
 }
 
@@ -633,10 +633,10 @@
 
 .chart-tool {
     display: grid;
-    min-width: clamp(1.7rem, 2.35vw, 2.1rem);
-    height: clamp(1.65rem, 2.8vh, 1.85rem);
+    min-width: clamp(2.15rem, 2.8vw, 2.75rem);
+    height: 100%;
     place-items: center;
-    padding-inline: .3rem;
+    padding-inline: clamp(.4rem, .65vw, .7rem);
     transition: background-color 120ms ease, color 120ms ease;
 }
 
@@ -650,19 +650,22 @@
 
 .timeframe-tool[data-active="true"],
 .timeframe-tool[data-active="true"]:hover {
-    background: var(--term-control);
+    background: transparent;
+    color: var(--term-accent-strong);
 }
 
 .replay-controls {
     display: flex;
-    min-height: 2.85rem;
-    flex: 0 0 auto;
+    min-width: 0;
+    height: 2.35rem;
+    flex: 0 1 auto;
     align-items: center;
-    gap: .75rem;
-    overflow-x: auto;
-    border-bottom: 1px solid var(--term-border);
-    padding: .4rem .65rem;
-    background: color-mix(in srgb, var(--term-panel) 72%, var(--term-bg));
+    gap: .55rem;
+    overflow: hidden;
+    border-left: 1px solid var(--term-border);
+    padding-left: .55rem;
+    margin-left: .25rem;
+    background: transparent;
     scrollbar-width: none;
 }
 
@@ -675,10 +678,10 @@
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    overflow: hidden;
-    border: 1px solid var(--term-border-strong);
-    border-radius: .45rem;
-    background: var(--term-bg);
+    gap: .05rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
 }
 
 .replay-primary,
@@ -688,8 +691,9 @@
     align-items: center;
     justify-content: center;
     gap: .35rem;
-    border-right: 1px solid var(--term-border-strong);
-    padding-inline: .65rem;
+    border: 0;
+    border-radius: 0;
+    padding-inline: .45rem;
     color: var(--term-muted);
     font-size: .68rem;
     line-height: 1;
@@ -702,14 +706,14 @@
 }
 
 .replay-primary {
-    min-width: 4.25rem;
-    background: color-mix(in srgb, var(--term-accent) 14%, var(--term-bg));
+    min-width: 3.9rem;
+    background: transparent;
     color: var(--term-accent-strong);
 }
 
 .replay-primary:hover:not(:disabled),
 .replay-action:hover:not(:disabled) {
-    background: var(--term-control);
+    background: transparent;
     color: var(--term-text);
 }
 
@@ -730,7 +734,7 @@
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: .45rem;
+    gap: .3rem;
 }
 
 .replay-label {
@@ -741,10 +745,11 @@
 }
 
 .replay-speed-options button {
-    min-width: 2.35rem;
+    min-width: 2.05rem;
     height: 1.95rem;
-    border-right: 1px solid var(--term-border-strong);
-    padding-inline: .45rem;
+    border: 0;
+    border-radius: 0;
+    padding-inline: .3rem;
     color: var(--term-muted);
     font-size: .65rem;
     transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
@@ -755,25 +760,26 @@
 }
 
 .replay-speed-options button:hover:not(:disabled) {
+    background: transparent;
     color: var(--term-text);
 }
 
 .replay-speed-options button[aria-pressed="true"] {
-    background: var(--term-control);
+    background: transparent;
     color: var(--term-accent-strong);
 }
 
 .replay-progress {
-    min-width: 13rem;
-    max-width: 34rem;
-    flex: 1 1 24rem;
+    min-width: 9.5rem;
+    max-width: 14rem;
+    flex: 0 1 14rem;
 }
 
 .replay-progress-copy {
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: .55rem;
+    gap: .4rem;
     color: var(--term-muted);
     font-size: .62rem;
     line-height: 1;
@@ -833,6 +839,23 @@
     overflow: hidden;
     border-radius: 999px;
     background: var(--term-border-strong);
+}
+
+@media (max-width: 109.99rem) {
+    .replay-progress-copy time {
+        display: none;
+    }
+
+    .replay-progress {
+        min-width: 7.5rem;
+        max-width: 10rem;
+    }
+}
+
+@media (max-width: 94.99rem) {
+    .replay-label {
+        display: none;
+    }
 }
 
 .replay-track > span {

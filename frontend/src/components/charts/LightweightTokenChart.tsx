@@ -33,6 +33,7 @@ import {
     type ChartValueMode,
     formatAxisValue,
     formatCompact,
+    formatInterval,
     formatPrice,
     getTimeframeLabel,
     latestLogicalRange,
@@ -173,7 +174,7 @@ function watermarkLines(
 
     return [
         {
-            text: `  ${dataset.tokenSymbol}/SOL · ${timeframe ? getTimeframeLabel(timeframe) : `${dataset.intervalSeconds}s`}`,
+            text: `  ${dataset.tokenSymbol}/SOL · ${timeframe ? getTimeframeLabel(timeframe) : formatInterval(dataset.intervalSeconds)}`,
             color: '#e4e4e7',
             fontSize: 14,
             lineHeight: 22,
@@ -1021,7 +1022,7 @@ export default function LightweightTokenChart({
                 <div className="hidden min-w-0 flex-1 items-center gap-2 truncate px-3 md:flex">
                     <span className="truncate text-slate-300">{dataset.tokenSymbol}/SOL {feedLabel} feed</span>
                     <span className="text-slate-600">·</span>
-                    <span>{timeframe ? getTimeframeLabel(timeframe) : `${dataset.intervalSeconds}s`}</span>
+                    <span>{timeframe ? getTimeframeLabel(timeframe) : formatInterval(dataset.intervalSeconds)}</span>
                     <span className={priceChangeClass}>
                         O {formatAxisValue(openValue, valueMode)} H {formatAxisValue(highValue, valueMode)} L {formatAxisValue(lowValue, valueMode)} C {formatAxisValue(closeValue, valueMode)} {priceChangePercent.toFixed(2)}%
                     </span>

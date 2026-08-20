@@ -86,6 +86,14 @@ export function getTimeframeLabel(timeframe: ChartTimeframe): string {
     return CHART_TIMEFRAME_OPTIONS.find(option => option.id === timeframe)?.label ?? '1s';
 }
 
+export function formatInterval(seconds: number): string {
+    const value = Math.max(1, Math.floor(seconds));
+    if (value % 86_400 === 0) return `${value / 86_400}d`;
+    if (value % 3_600 === 0) return `${value / 3_600}h`;
+    if (value % 60 === 0) return `${value / 60}m`;
+    return `${value}s`;
+}
+
 export function latestLogicalRange(candleCount: number, compact: boolean): { from: number; to: number } {
     const rightOffset = compact ? 8 : 12;
     const visibleBars = compact ? 140 : 180;

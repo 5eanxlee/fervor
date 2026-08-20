@@ -22,14 +22,12 @@ interface ReplayControlsProps {
 
 const speedLabel = (speed: ReplaySpeed) => speed === 'max' ? 'Max' : `${speed}×`;
 
-const replayTime = (value: string | null | undefined) => {
+const replayTime = (value: string | null | undefined, full = false) => {
     if (!value) return 'Waiting for replay data';
     const date = new Date(value);
     if (!Number.isFinite(date.getTime())) return 'Replay time unavailable';
     return new Intl.DateTimeFormat('en-US', {
-        month: 'short',
-        day: '2-digit',
-        year: 'numeric',
+        ...(full ? { month: 'short', day: '2-digit', year: 'numeric' } : {}),
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
@@ -55,6 +53,7 @@ export default function ReplayControls({
     const canStep = Boolean(snapshot && (paused || complete));
     const canReset = Boolean(snapshot && snapshot.cursor > 0 && (paused || complete));
     const progress = snapshot?.total ? Math.min(100, snapshot.cursor / snapshot.total * 100) : 0;
+    const currentTime = now || snapshot?.now;
     let transportTitle = 'Play replay';
     if (running) transportTitle = 'Pause replay';
     else if (complete) transportTitle = 'Replay from the beginning';
@@ -117,7 +116,7 @@ export default function ReplayControls({
                         <i aria-hidden="true" />
                         {snapshot?.status || 'loading'}
                     </span>
-                    <time dateTime={now || snapshot?.now || undefined}>{replayTime(now || snapshot?.now)}</time>
+                    <time dateTime={currentTime || undefined} title={replayTime(currentTime, true)}>{replayTime(currentTime)}</time>
                     <span className="replay-count">
                         {snapshot ? `${snapshot.cursor.toLocaleString()} / ${snapshot.total.toLocaleString()}` : '—'}
                     </span>

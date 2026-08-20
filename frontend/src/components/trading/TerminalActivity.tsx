@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
     ArrowPathIcon,
@@ -7,7 +8,6 @@ import {
     ChevronDownIcon,
     ChevronUpDownIcon,
     ChevronUpIcon,
-    Cog6ToothIcon,
     FunnelIcon,
     MagnifyingGlassIcon,
     UserGroupIcon,
@@ -52,6 +52,13 @@ const money = (value?: number): string => value === undefined || !Number.isFinit
     : value >= 1 ? `$${compact(value)}` : `$${value.toPrecision(5)}`;
 
 const shortAddress = (value?: string): string => value ? `${value.slice(0, 5)}…${value.slice(-4)}` : '—';
+export const elapsedLabel = (seconds: number): string => {
+    const value = Math.max(0, Math.floor(seconds));
+    if (value < 60) return `${value}s`;
+    if (value < 3_600) return `${Math.floor(value / 60)}m`;
+    if (value < 86_400) return `${Math.floor(value / 3_600)}h`;
+    return `${Math.floor(value / 86_400)}d`;
+};
 const microUsd = (value?: string): number | undefined => value === undefined ? undefined : Number(value) / 1_000_000;
 const amount = (value: string, decimals: number): number => Number(value) / 10 ** decimals;
 const param = (order: OrderRecord, key: string): number | undefined => {
@@ -65,7 +72,7 @@ type SortState<Key extends string> = { key: Key; dir: SortDir };
 type HeadCell<Key extends string> = {
     label: string;
     key?: Key;
-    align?: 'left' | 'right';
+    align?: 'left' | 'center' | 'right';
     dir?: SortDir;
 };
 
@@ -260,7 +267,7 @@ export default function TerminalActivity({
 
 function TradeTable({ trades, now }: { trades: ActivityTrade[]; now?: string | null }) {
     const clock = now ? new Date(now).getTime() : Date.now();
-    type Key = 'time' | 'side' | 'mcap' | 'amount' | 'usd' | 'sol' | 'maker';
+    type Key = 'time' | 'side' | 'mcap' | 'amount' | 'usd' | 'maker';
     const [sort, setSort] = useState<SortState<Key>>({ key: 'time', dir: 'desc' });
     const rows = sorted(trades, sort, (row, key) => {
         if (key === 'time') return Date.parse(row.observedAt);
@@ -268,32 +275,34 @@ function TradeTable({ trades, now }: { trades: ActivityTrade[]; now?: string | n
         if (key === 'mcap') return row.marketCapUsd;
         if (key === 'amount') return row.tokenAmount;
         if (key === 'usd') return row.usdAmount;
-        if (key === 'sol') return row.solAmount;
         return row.maker;
     });
     return (
         <>
-            <TableHead columns="grid-cols-[70px_90px_70px_1fr_1fr_1fr_1fr_105px_28px]" cells={[
-                { label: 'Age', key: 'time' },
-                { label: 'Tip & Prio' },
-                { label: 'Side', key: 'side', dir: 'asc' },
-                { label: 'MCap', key: 'mcap' },
-                { label: 'Amount', key: 'amount' },
-                { label: 'Total USD', key: 'usd' },
-                { label: 'Total SOL', key: 'sol' },
-                { label: 'Maker', key: 'maker', align: 'right', dir: 'asc' },
-                { label: '', align: 'right' },
+            <TableHead columns="grid-cols-[80px_80px_1fr_1fr_1fr_150px]" cells={[
+                { label: 'Age', key: 'time', align: 'center' },
+                { label: 'Side', key: 'side', align: 'center', dir: 'asc' },
+                { label: 'MCap', key: 'mcap', align: 'center' },
+                { label: 'Amount', key: 'amount', align: 'center' },
+                { label: 'Total USD', key: 'usd', align: 'center' },
+                { label: 'Trader', key: 'maker', align: 'center', dir: 'asc' },
             ]} sort={sort} onSort={(key, dir) => chooseSort(setSort, key, dir)} />
             <div className="min-h-0 flex-1 overflow-y-auto">
                 {rows.map((trade) => (
-                    <div key={trade.id} className="activity-row trade-row grid grid-cols-[70px_90px_70px_1fr_1fr_1fr_1fr_105px_28px] items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums">
-                        <span className="text-[var(--term-dim)]">{Math.max(0, Math.floor((clock - new Date(trade.observedAt).getTime()) / 1000))}s</span>
-                        <span className="text-[var(--term-dim)]">—</span>
+                    <div key={trade.id} className="activity-row trade-row grid grid-cols-[80px_80px_1fr_1fr_1fr_150px] items-center border-b border-[var(--term-border)] px-3 text-center text-[11px] tabular-nums">
+                        <span className="text-[var(--term-dim)]">{elapsedLabel((clock - new Date(trade.observedAt).getTime()) / 1_000)}</span>
                         <span className={trade.side === 'buy' ? 'text-[var(--term-buy)]' : 'text-[var(--term-sell)]'}>{trade.side === 'buy' ? 'Buy' : 'Sell'}</span>
-                        <span>{money(trade.marketCapUsd)}</span><span>{compact(trade.tokenAmount)}</span>
-                        <span>{money(trade.usdAmount)}</span><span>{compact(trade.solAmount)}</span>
-                        <span className="text-right text-[var(--term-muted)]">{shortAddress(trade.maker)}</span>
-                        <Cog6ToothIcon className="ml-auto h-3.5 w-3.5 text-[var(--term-dim)]" />
+                        <span>{money(trade.marketCapUsd)}</span>
+                        <span>{compact(trade.tokenAmount)}</span>
+                        <span className={trade.side === 'buy' ? 'text-[var(--term-buy)]' : 'text-[var(--term-sell)]'}>{money(trade.usdAmount)}</span>
+                        <span className="flex min-w-0 items-center justify-center gap-1.5 text-[var(--term-muted)]">
+                            <span className="truncate">{shortAddress(trade.maker)}</span>
+                            {trade.maker && (
+                                <a href={`https://solscan.io/account/${trade.maker}`} target="_blank" rel="noreferrer" className="shrink-0 opacity-75 hover:opacity-100" aria-label={`Open ${shortAddress(trade.maker)} on Solscan`} title="Open wallet on Solscan">
+                                    <Image src="/solscan.svg" alt="" width={14} height={14} />
+                                </a>
+                            )}
+                        </span>
                     </div>
                 ))}
                 {!trades.length && <Empty text="Waiting for live trades" />}
@@ -529,12 +538,12 @@ function ReplayTopTable({ data, priceUsd }: {
                         <div key={row.wallet} className="activity-row top-trader-row grid grid-cols-[44px_1.15fr_.95fr_1.1fr_1.1fr_.85fr_1fr_82px] items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums">
                             <span className="text-[var(--term-dim)]">{ranks.get(row.wallet)}</span>
                             <span className="flex min-w-0 items-center gap-2"><MagnifyingGlassIcon className="h-4 w-4 shrink-0 text-[var(--term-muted)]" /><span className="truncate text-[var(--term-text)]">{shortAddress(row.wallet)}</span></span>
-                            <MetricCell value={`${compact(row.boughtSol + row.soldSol)} SOL`} detail={`${lastAgo}s ago`} />
+                            <MetricCell value={`${compact(row.boughtSol + row.soldSol)} SOL`} detail={`${elapsedLabel(lastAgo)} ago`} />
                             <MetricCell tone="buy" value={money(row.boughtUsd)} detail={`${money(avgBuy)} · ${row.buyCount} buys`} />
                             <MetricCell tone="sell" value={money(row.soldUsd)} detail={`${money(avgSell)} · ${row.sellCount} sells`} />
                             <MetricCell tone={net >= 0 ? 'buy' : 'sell'} value={money(net)} detail={`${row.tradeCount} trades`} />
                             <MetricCell value={compact(balance)} detail={money(priceUsd === undefined ? undefined : balance * priceUsd)} />
-                            <span className="text-right"><span className="block text-[var(--term-text)]">{balanceRaw > BigInt(0) ? `${held}s` : 'Exited'}</span><span className="mt-0.5 block text-[9px] text-[var(--term-dim)]">{balanceRaw > BigInt(0) ? 'held' : `${lastAgo}s ago`}</span></span>
+                            <span className="text-right"><span className="block text-[var(--term-text)]">{balanceRaw > BigInt(0) ? elapsedLabel(held) : 'Exited'}</span><span className="mt-0.5 block text-[9px] text-[var(--term-dim)]">{balanceRaw > BigInt(0) ? 'held' : `${elapsedLabel(lastAgo)} ago`}</span></span>
                         </div>
                     );
                 })}
@@ -676,9 +685,9 @@ function TableHead<Key extends string>({ columns, cells, sort, onSort }: {
                 const Icon = active
                     ? sort.dir === 'asc' ? ChevronUpIcon : ChevronDownIcon
                     : ChevronUpDownIcon;
-                const align = cell.align === 'right' || (cell.align === undefined && index === cells.length - 1)
-                    ? 'justify-end text-right'
-                    : 'justify-start text-left';
+                let align = 'justify-start text-left';
+                if (cell.align === 'center') align = 'justify-center text-center';
+                else if (cell.align === 'right' || (cell.align === undefined && index === cells.length - 1)) align = 'justify-end text-right';
                 if (!cell.key) return <span key={`${cell.label}:${index}`} className={`flex items-center ${align}`}>{cell.label}</span>;
                 return (
                     <button
