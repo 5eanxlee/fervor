@@ -1,5 +1,11 @@
 import axios, { AxiosResponse } from 'axios';
-import type { ReplayControl, ReplayControlResult, ReplayDeltaPage, ReplayState } from './replay';
+import type {
+    ReplayControl,
+    ReplayControlResult,
+    ReplayDeltaPage,
+    ReplayParticipants,
+    ReplayState,
+} from './replay';
 
 export const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3010/api';
 const replayMode = process.env.NEXT_PUBLIC_DATA_MODE === 'replay';
@@ -692,6 +698,10 @@ class ApiService {
 
     async getReplayDeltas(epoch: number, after: number, limit = 500): Promise<ApiResponse<{ page: ReplayDeltaPage }>> {
         return this.request('GET', `/replay/v1/deltas?epoch=${epoch}&after=${after}&limit=${limit}`);
+    }
+
+    async getReplayParticipants(epoch: number, cursor: number): Promise<ApiResponse<{ participants: ReplayParticipants }>> {
+        return this.request('GET', `/replay/v1/participants?epoch=${epoch}&cursor=${cursor}`);
     }
 
     async controlReplay(command: ReplayControl): Promise<ApiResponse<ReplayControlResult>> {

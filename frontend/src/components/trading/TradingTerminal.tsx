@@ -33,9 +33,11 @@ import { hasStar, onShelf, rememberToken, toggleStar } from '../../services/toke
 import { useRealtime } from '../../hooks/useRealtime';
 import type { RtFrame } from '../../services/realtime';
 import {
+    advanceReplayParticipants,
     amountOf,
     chartPriceOf,
     isReplayDeltaPage,
+    isReplayParticipants,
     isReplayProjection,
     isReplayState,
     isReplayTrade,
@@ -48,6 +50,7 @@ import {
     supplyOf,
     type ReplayControl,
     type ReplayOp,
+    type ReplayParticipants,
     type ReplaySpeed,
     type ReplayState,
     type ReplayTrade,
@@ -196,6 +199,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     const [chartShare, setChartShare] = useState(56);
     const [limitTarget, setLimitTarget] = useState<number>();
     const [replay, setReplay] = useState<ReplayState>();
+    const [participants, setParticipants] = useState<ReplayParticipants>();
     const [replaySpeed, setReplaySpeed] = useState<ReplaySpeed>(1);
     const [replaySupply, setReplaySupply] = useState<number | undefined>(configuredSupply);
     const [replayError, setReplayError] = useState<string>();
@@ -204,6 +208,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     const queue = useRef<Array<{ event: string; data: any }>>([]);
     const frame = useRef<number | undefined>(undefined);
     const replayTrades = useRef<ReplayTrade[]>([]);
+    const participantView = useRef<ReplayParticipants | undefined>(undefined);
     const replayCut = useRef<{ epoch: number; cursor: number } | undefined>(undefined);
     const replayResync = useRef(false);
     const supplyRef = useRef<number | undefined>(configuredSupply);
@@ -212,6 +217,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     const visualQueue = useRef<ReplayTrade[]>([]);
     const visualTimer = useRef<number | undefined>(undefined);
     const hydrateSeq = useRef(0);
+    const participantSeq = useRef(0);
 
     useEffect(() => {
         intervalRef.current = intervalSeconds;
@@ -274,12 +280,15 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
             || (state.snapshot.epoch === prior.epoch && state.snapshot.cursor < prior.cursor))) return;
         if (replayResync.current || (prior && prior.epoch !== state.snapshot.epoch)) {
             hydrateSeq.current += 1;
+            participantSeq.current += 1;
             visualQueue.current = [];
             if (visualTimer.current !== undefined) window.clearTimeout(visualTimer.current);
             visualTimer.current = undefined;
             replayTrades.current = [];
+            participantView.current = undefined;
             setTrades([]);
             setCandles([]);
+            setParticipants(undefined);
         }
         replayResync.current = false;
         replayCut.current = { epoch: state.snapshot.epoch, cursor: state.snapshot.cursor };
@@ -333,6 +342,31 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         }));
     }, []);
 
+    const hydrateParticipants = useCallback(async (state: ReplayState) => {
+        const sequence = ++participantSeq.current;
+        const response = await apiService.getReplayParticipants(
+            state.snapshot.epoch,
+            state.snapshot.cursor
+        );
+        const base = response.data?.participants;
+        if (!isReplayParticipants(base)
+            || base.tokenMint !== tokenMint
+            || base.epoch !== state.snapshot.epoch
+            || base.cutCursor !== state.snapshot.cursor) {
+            throw new Error('Replay participant data is invalid');
+        }
+        const cut = replayCut.current;
+        if (sequence !== participantSeq.current || !cut || cut.epoch !== base.epoch
+            || cut.cursor < base.cutCursor) return;
+        const tail = replayTrades.current.filter((trade) =>
+            trade.replayCursor !== undefined && trade.replayCursor >= base.cutCursor
+        );
+        const next = advanceReplayParticipants(base, tail);
+        if (!next || next.cutCursor !== cut.cursor) return;
+        participantView.current = next;
+        setParticipants(next);
+    }, [tokenMint]);
+
     useEffect(() => {
         if (!authLoading && !isAuthenticated) router.replace('/');
     }, [authLoading, isAuthenticated, router]);
@@ -348,6 +382,9 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                     applyReplay(state);
                     void hydrateReplayHistory(state).catch((error) => {
                         if (active) setReplayError(error?.error || 'Replay history is unavailable');
+                    });
+                    void hydrateParticipants(state).catch((error) => {
+                        if (active) setReplayError(error?.error || 'Replay participant data is unavailable');
                     });
                 }
                 else if (active) setReplayError('Replay snapshot is invalid');
@@ -374,7 +411,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
             }
         }).catch(() => undefined).finally(() => active && setLoading(false));
         return () => { active = false; };
-    }, [applyReplay, hydrateReplayHistory, isAuthenticated, sessionKey, tokenMint]);
+    }, [applyReplay, hydrateParticipants, hydrateReplayHistory, isAuthenticated, sessionKey, tokenMint]);
 
     useEffect(() => {
         if (!isAuthenticated || replayMode) return;
@@ -463,6 +500,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
     const totalSupply = replayMode
         ? replaySupply ?? 1
         : Number(metadata?.totalSupplyFormatted || 1_000_000_000);
+    const tokenDecimals = participants?.tokenDecimals ?? metadata?.decimals ?? 9;
     const symbol = replayMode ? replaySymbol : token?.symbol || metadata?.symbol || 'TOKEN';
     const displayName = replayMode ? replayName : token?.name || metadata?.name || shortAddress(tokenMint);
     const displayLogo = replayMode ? replayLogo : metadata?.logo;
@@ -491,6 +529,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
 
     useEffect(() => () => {
         hydrateSeq.current += 1;
+        participantSeq.current += 1;
         if (visualTimer.current !== undefined) window.clearTimeout(visualTimer.current);
     }, []);
 
@@ -506,6 +545,9 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                             setReplayError(error?.error || 'Replay history is unavailable');
                         });
                     }
+                    void hydrateParticipants(state).catch((error) => {
+                        setReplayError(error?.error || 'Replay participant data is unavailable');
+                    });
                 }
                 continue;
             }
@@ -552,13 +594,18 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         }
         const stableFresh = stabilizeReplayPrices(fresh, latestReplayPrice(replayTrades.current));
         replayTrades.current = mergeReplayTape(replayTrades.current, stableFresh);
+        if (participantView.current) {
+            const next = advanceReplayParticipants(participantView.current, stableFresh);
+            participantView.current = next;
+            setParticipants(next);
+        }
         setTrades((current) => [
             ...stableFresh.map((item) => activityTrade(item, supplyRef.current)).reverse(),
             ...current,
         ].slice(0, 500));
         visualQueue.current.push(...stableFresh);
         if (visualTimer.current === undefined) drainReplayVisuals();
-    }, [applyProjection, applyReplay, drainReplayVisuals, hydrateReplayHistory]);
+    }, [applyProjection, applyReplay, drainReplayVisuals, hydrateParticipants, hydrateReplayHistory]);
 
     const realtime = useRealtime({
         enabled: replayMode && isAuthenticated,
@@ -608,7 +655,12 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
             const next = await send(state, command);
             applyReplay(next);
             if (next.snapshot.cursor > 0 && command.op !== 'play') {
-                await hydrateReplayHistory(next);
+                await Promise.all([
+                    hydrateReplayHistory(next),
+                    hydrateParticipants(next),
+                ]);
+            } else if (command.op !== 'play') {
+                await hydrateParticipants(next);
             }
         } catch (error: any) {
             setReplayError(error?.error || error?.message || 'Replay control failed');
@@ -616,7 +668,7 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
         } finally {
             setControlBusy(false);
         }
-    }, [applyReplay, controlBusy, hydrateReplayHistory, replay]);
+    }, [applyReplay, controlBusy, hydrateParticipants, hydrateReplayHistory, replay]);
 
     useEffect(() => {
         if (!replayMode && !token && !metadata) return;
@@ -768,11 +820,11 @@ export default function TradingTerminal({ tokenMint }: { tokenMint: string }) {
                             <span className="pointer-events-none absolute left-1/2 top-1/2 h-[2px] w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30 transition group-hover:bg-white/65 group-focus:bg-[var(--term-accent)]" />
                         </div>
                     )}
-                    {!chartFull && <div className="activity-panel min-h-0 overflow-hidden"><TerminalActivity key={tokenMint} tokenMint={tokenMint} tokenDecimals={metadata?.decimals || 9} trades={trades} initialTab={activityTab} onInstantTrade={() => setInstantOpen(true)} now={replayMode ? replay?.snapshot.now : undefined} /></div>}
+                    {!chartFull && <div className="activity-panel min-h-0 overflow-hidden"><TerminalActivity key={tokenMint} tokenMint={tokenMint} tokenDecimals={tokenDecimals} trades={trades} replayParticipants={participants} replayMode={replayMode} priceUsd={market.price} initialTab={activityTab} onInstantTrade={() => setInstantOpen(true)} now={replayMode ? replay?.snapshot.now : undefined} /></div>}
                 </section>
-                {!chartFull && <aside className="ticket-panel hidden min-h-0 overflow-hidden border-l border-[var(--term-border)] lg:block"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={metadata?.decimals || 9} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} onLimitChange={syncLimitTarget} /></aside>}
+                {!chartFull && <aside className="ticket-panel hidden min-h-0 overflow-hidden border-l border-[var(--term-border)] lg:block"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={tokenDecimals} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} onLimitChange={syncLimitTarget} /></aside>}
             </div>
-            <div className="border-t border-[var(--term-border)] lg:hidden"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={metadata?.decimals || 9} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} /></div>
+            <div className="border-t border-[var(--term-border)] lg:hidden"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={tokenDecimals} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} /></div>
             {settings.showDock && <TerminalDock live={replayMode ? realtime.state : streamState} onSettings={() => openSettings()} />}
             <InstantTradePanel open={instantOpen} onClose={() => setInstantOpen(false)} tokenSymbol={symbol} />
             <TerminalSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} setSettings={setSettings} initialSection={settingsSection} />

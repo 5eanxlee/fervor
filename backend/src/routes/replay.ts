@@ -76,6 +76,8 @@ export const createReplayRouter = (gateway: ReplayGateway): Router => {
     router.get('/notifications', (req: AuthRequest, res) =>
         void call(req, res, 'notifications', 'GET'));
     router.get('/deltas', (req: AuthRequest, res) => void call(req, res, 'deltas', 'GET'));
+    router.get('/participants', (req: AuthRequest, res) =>
+        void call(req, res, 'participants', 'GET'));
     router.get('/paper', (req: AuthRequest, res) => void call(req, res, 'paper', 'GET'));
     router.get('/wallets/:wallet', (req: AuthRequest, res) =>
         void call(req, res, `wallets/${req.params.wallet}`, 'GET'));

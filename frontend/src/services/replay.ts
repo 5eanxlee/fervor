@@ -80,6 +80,49 @@ export interface ReplayDeltaPage {
     }>;
 }
 
+export interface ReplayParticipant {
+    wallet: string;
+    boughtRaw: string;
+    soldRaw: string;
+    balanceRaw: string;
+    pricedBuyRaw: string;
+    boughtUsd: number;
+    soldUsd: number;
+    boughtSol: number;
+    soldSol: number;
+    tradeCount: number;
+    buyCount: number;
+    sellCount: number;
+    pricedTradeCount: number;
+    firstTradeAt: string;
+    lastTradeAt: string;
+}
+
+export interface ReplayParticipants {
+    contract: 'fervor-replay-participants-v1';
+    sourceReplaySha256: string;
+    runId: string;
+    epoch: number;
+    cutCursor: number;
+    cutAt: string | null;
+    tokenMint: string;
+    tokenDecimals: number;
+    supplyRaw: string;
+    traderCount: number;
+    holderCount: number;
+    top10Percent: number;
+    coverage: {
+        source: 'verified_trade_tape';
+        scope: 'observed_trade_balance';
+        openingBalanceKnown: false;
+        transfersIncluded: false;
+        tradeCount: number;
+        pricedTradeCount: number;
+        priceCoverageBps: number;
+    };
+    items: ReplayParticipant[];
+}
+
 export type ReplayOp =
     | { op: 'play'; speed: ReplaySpeed }
     | { op: 'pause' }
@@ -187,6 +230,139 @@ export const isReplayDeltaPage = (value: unknown): value is ReplayDeltaPage => o
         && Number.isSafeInteger(item.cursor) && Number(item.cursor) >= 0
         && Number.isSafeInteger(item.epoch) && Number(item.epoch) === Number(value.epoch)
         && isReplayTrade(item.trade));
+
+const unsigned = (value: unknown): value is string =>
+    typeof value === 'string' && /^\d+$/.test(value);
+const signed = (value: unknown): value is string =>
+    typeof value === 'string' && /^-?\d+$/.test(value);
+const count = (value: unknown): value is number =>
+    Number.isSafeInteger(value) && Number(value) >= 0;
+
+const isReplayParticipant = (value: unknown): value is ReplayParticipant => object(value)
+    && typeof value.wallet === 'string' && address.test(value.wallet)
+    && unsigned(value.boughtRaw) && unsigned(value.soldRaw)
+    && signed(value.balanceRaw) && unsigned(value.pricedBuyRaw)
+    && finite(value.boughtUsd) && value.boughtUsd >= 0
+    && finite(value.soldUsd) && value.soldUsd >= 0
+    && finite(value.boughtSol) && value.boughtSol >= 0
+    && finite(value.soldSol) && value.soldSol >= 0
+    && count(value.tradeCount) && count(value.buyCount) && count(value.sellCount)
+    && count(value.pricedTradeCount)
+    && typeof value.firstTradeAt === 'string' && Number.isFinite(Date.parse(value.firstTradeAt))
+    && typeof value.lastTradeAt === 'string' && Number.isFinite(Date.parse(value.lastTradeAt));
+
+export const isReplayParticipants = (value: unknown): value is ReplayParticipants => {
+    if (!object(value) || !object(value.coverage) || !Array.isArray(value.items)) return false;
+    return value.contract === 'fervor-replay-participants-v1'
+        && typeof value.sourceReplaySha256 === 'string'
+        && typeof value.runId === 'string'
+        && count(value.epoch) && value.epoch >= 1
+        && count(value.cutCursor)
+        && (value.cutAt === null || (typeof value.cutAt === 'string'
+            && Number.isFinite(Date.parse(value.cutAt))))
+        && typeof value.tokenMint === 'string' && address.test(value.tokenMint)
+        && count(value.tokenDecimals) && value.tokenDecimals <= 18
+        && unsigned(value.supplyRaw)
+        && count(value.traderCount) && count(value.holderCount)
+        && finite(value.top10Percent) && value.top10Percent >= 0 && value.top10Percent <= 100
+        && value.coverage.source === 'verified_trade_tape'
+        && value.coverage.scope === 'observed_trade_balance'
+        && value.coverage.openingBalanceKnown === false
+        && value.coverage.transfersIncluded === false
+        && count(value.coverage.tradeCount)
+        && count(value.coverage.pricedTradeCount)
+        && count(value.coverage.priceCoverageBps) && value.coverage.priceCoverageBps <= 10_000
+        && value.items.length === value.traderCount
+        && value.items.every(isReplayParticipant);
+};
+
+const top10Percent = (items: ReplayParticipant[], supplyRaw: string): number => {
+    const top = items.map((item) => BigInt(item.balanceRaw))
+        .filter((balance) => balance > BigInt(0))
+        .sort((left, right) => left === right ? 0 : left > right ? -1 : 1)
+        .slice(0, 10)
+        .reduce((sum, balance) => sum + balance, BigInt(0));
+    const supply = BigInt(supplyRaw);
+    return supply === BigInt(0)
+        ? 0
+        : Number(top * BigInt(1_000_000) / supply) / 10_000;
+};
+
+export const advanceReplayParticipants = (
+    current: ReplayParticipants,
+    trades: ReplayTrade[]
+): ReplayParticipants | undefined => {
+    const rows = new Map(current.items.map((item) => [item.wallet, { ...item }]));
+    let cursor = current.cutCursor;
+    let cutAt = current.cutAt;
+    let priced = current.coverage.pricedTradeCount;
+    for (const trade of [...trades].sort((left, right) =>
+        Number(left.replayCursor ?? 0) - Number(right.replayCursor ?? 0))) {
+        if (!Number.isSafeInteger(trade.replayCursor) || trade.replayCursor! < cursor) continue;
+        if (trade.replayCursor !== cursor || !trade.maker || !address.test(trade.maker)
+            || !trade.tokenAmountRaw || !unsigned(trade.tokenAmountRaw)) return undefined;
+        const amount = BigInt(trade.tokenAmountRaw);
+        const prior = rows.get(trade.maker);
+        const row: ReplayParticipant = prior ?? {
+            wallet: trade.maker,
+            boughtRaw: '0',
+            soldRaw: '0',
+            balanceRaw: '0',
+            pricedBuyRaw: '0',
+            boughtUsd: 0,
+            soldUsd: 0,
+            boughtSol: 0,
+            soldSol: 0,
+            tradeCount: 0,
+            buyCount: 0,
+            sellCount: 0,
+            pricedTradeCount: 0,
+            firstTradeAt: trade.observedAt,
+            lastTradeAt: trade.observedAt,
+        };
+        const hasUsd = finite(trade.usdAmount) && trade.usdAmount! > 0;
+        row.tradeCount += 1;
+        row.lastTradeAt = trade.observedAt;
+        if (hasUsd) {
+            row.pricedTradeCount += 1;
+            priced += 1;
+        }
+        if (trade.side === 'buy') {
+            row.buyCount += 1;
+            row.boughtRaw = (BigInt(row.boughtRaw) + amount).toString();
+            row.boughtUsd += hasUsd ? trade.usdAmount! : 0;
+            row.boughtSol += finite(trade.solAmount) && trade.solAmount! > 0 ? trade.solAmount! : 0;
+            if (hasUsd) row.pricedBuyRaw = (BigInt(row.pricedBuyRaw) + amount).toString();
+        } else {
+            row.sellCount += 1;
+            row.soldRaw = (BigInt(row.soldRaw) + amount).toString();
+            row.soldUsd += hasUsd ? trade.usdAmount! : 0;
+            row.soldSol += finite(trade.solAmount) && trade.solAmount! > 0 ? trade.solAmount! : 0;
+        }
+        row.balanceRaw = (BigInt(row.boughtRaw) - BigInt(row.soldRaw)).toString();
+        rows.set(row.wallet, row);
+        cursor += 1;
+        cutAt = trade.observedAt;
+    }
+    const items = Array.from(rows.values())
+        .sort((left, right) => left.wallet.localeCompare(right.wallet));
+    const holderCount = items.filter((item) => BigInt(item.balanceRaw) > BigInt(0)).length;
+    return {
+        ...current,
+        cutCursor: cursor,
+        cutAt,
+        traderCount: items.length,
+        holderCount,
+        top10Percent: top10Percent(items, current.supplyRaw),
+        coverage: {
+            ...current.coverage,
+            tradeCount: cursor,
+            pricedTradeCount: priced,
+            priceCoverageBps: cursor === 0 ? 0 : Math.floor(priced * 10_000 / cursor),
+        },
+        items,
+    };
+};
 
 export const chartPriceOf = (trade: ReplayTrade): number | undefined => {
     const value = finite(trade.displayPriceUsd)

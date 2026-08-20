@@ -92,6 +92,23 @@ describe('replay host route', () => {
         expect(JSON.stringify(call.mock.calls[0][0])).not.toContain(userToken);
     });
 
+    it('forwards replay participant cuts without exposing credentials', async () => {
+        mockedQuery.mockResolvedValueOnce({ rows: [user()] } as any);
+        const call = vi.fn().mockResolvedValue({ status: 200, body: { success: true } });
+        const app = appWith({ enabled: true, ownerId, call });
+
+        await request(app)
+            .get('/api/replay/v1/participants?epoch=4&cursor=120')
+            .set('Authorization', `Bearer ${token()}`)
+            .expect(200);
+
+        expect(call).toHaveBeenCalledWith({
+            method: 'GET',
+            resource: 'participants',
+            query: '?epoch=4&cursor=120',
+        });
+    });
+
     it('hides the configured run from other authenticated users', async () => {
         mockedQuery.mockResolvedValueOnce({ rows: [user(otherId)] } as any);
         const call = vi.fn();

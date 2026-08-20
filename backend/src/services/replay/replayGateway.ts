@@ -41,6 +41,7 @@ export type ReplayResource =
     | 'snapshot'
     | 'notifications'
     | 'deltas'
+    | 'participants'
     | 'paper'
     | 'paper/actions'
     | 'controls'
@@ -97,7 +98,9 @@ interface Credentials extends z.infer<typeof authSchema> {
 
 const tokenPattern = /^[A-Za-z0-9._~-]{32,256}$/;
 const walletRoute = /^wallets\/[1-9A-HJ-NP-Za-km-z]{32,44}$/;
-const reads = new Set<ReplayResource>(['snapshot', 'notifications', 'deltas', 'paper']);
+const reads = new Set<ReplayResource>([
+    'snapshot', 'notifications', 'deltas', 'participants', 'paper',
+]);
 const writes = new Set<ReplayResource>(['paper/actions', 'controls']);
 
 const validRoute = (method: ReplayCall['method'], resource: ReplayResource): boolean => {

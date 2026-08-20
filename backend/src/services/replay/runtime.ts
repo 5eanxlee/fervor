@@ -19,6 +19,10 @@ import {
     projectPaperPortfolio,
     type PaperPortfolio,
 } from './paperPortfolio';
+import {
+    projectReplayParticipants,
+    type ReplayParticipants,
+} from './participants';
 import { normalizeModel, type PaperModel } from './paperTypes';
 import { ReplayProjection, type ProjectionView } from './projection';
 import {
@@ -304,6 +308,10 @@ export class ReplayRuntime {
             runId: snapshot.runId,
             modelSha256: this.paper.modelSha256(),
         }, this.paper.orders(), this.paper.facts());
+    }
+
+    participants(cursor = this.coordinator.snapshot().cursor): ReplayParticipants {
+        return projectReplayParticipants(this.coordinator.snapshot(), this.trades, cursor);
     }
 
     walletTrades(wallet: unknown, afterCursor = 0, limit = 100): ReplayWalletPage {

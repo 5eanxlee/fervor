@@ -16,6 +16,7 @@ import {
     type PaperOrder,
     type PaperRequest,
 } from './paperBroker';
+import type { ReplayParticipants } from './participants';
 import { priceOf } from './paperTypes';
 import type { ReplayRuntime, ReplayState } from './runtime';
 
@@ -151,6 +152,14 @@ const deltaIdentity = (page: ReplayDeltaPage): CutIdentity => ({
     epoch: page.epoch,
     cursor: page.cutCursor,
     now: page.cutAt,
+});
+
+const participantIdentity = (view: ReplayParticipants): CutIdentity => ({
+    sourceReplaySha256: view.sourceReplaySha256,
+    runId: view.runId,
+    epoch: view.epoch,
+    cursor: view.cutCursor,
+    now: view.cutAt,
 });
 
 const resyncIdentity = (resync: ReplayResync): CutIdentity => ({
@@ -330,6 +339,18 @@ const deltaQuery = (
         || after === undefined
         || limit === undefined || limit < 1) return undefined;
     return { epoch, after, limit };
+};
+
+const participantQuery = (
+    url: URL
+): { epoch: number; cursor: number } | undefined => {
+    if (!hasOnly(url, ['epoch', 'cursor'])
+        || !url.searchParams.has('epoch')
+        || !url.searchParams.has('cursor')) return undefined;
+    const epoch = intParam(url.searchParams.get('epoch'), 0, Number.MAX_SAFE_INTEGER);
+    const cursor = intParam(url.searchParams.get('cursor'), 0, Number.MAX_SAFE_INTEGER);
+    if (epoch === undefined || epoch < 1 || cursor === undefined) return undefined;
+    return { epoch, cursor };
 };
 
 interface PaperQuery {
@@ -711,6 +732,21 @@ const handler = (
                 return sendJson(res, 200, {
                     success: true,
                     ...responseBody(auth, deltaIdentity(result.page), { page: result.page }),
+                });
+            }
+            if (url.pathname === `${base}/participants`) {
+                const query = participantQuery(url);
+                if (!query) return reject(res, 400, 'Participant query is invalid');
+                const state = runtime.state();
+                if (query.epoch !== state.snapshot.epoch
+                    || query.cursor > state.snapshot.cursor) {
+                    const resync = exactResync(state, query);
+                    if (resync) return sendResync(res, auth, resync);
+                }
+                const view = runtime.participants(query.cursor);
+                return sendJson(res, 200, {
+                    success: true,
+                    ...responseBody(auth, participantIdentity(view), { participants: view }),
                 });
             }
             if (url.pathname === `${base}/paper`) {

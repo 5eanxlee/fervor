@@ -13,6 +13,7 @@ import {
     paperModelContract,
     type PaperModelInput,
 } from '../src/services/replay/paperBroker';
+import { replayParticipantsContract } from '../src/services/replay/participants';
 import {
     normalizeReplayApiAuth,
     replayApiAuthContract,
@@ -62,6 +63,11 @@ const source = (): MetricReplay => {
         protocol: 'pump_fun',
         signature: String(index + 5).repeat(88),
         commitment: 'finalized' as const,
+        supply: {
+            fixed: true,
+            rawAmount: '1000000000',
+            decimals: 6,
+        },
     });
     return {
         ...replay,
@@ -203,6 +209,27 @@ describe('replay API', () => {
             },
         });
         expect(snapshot.headers.date).toBeUndefined();
+
+        const participants = await call(
+            socketPath,
+            '/api/replay/v1/runs/api-run/participants?epoch=1&cursor=2',
+            headers
+        );
+        expect(participants).toMatchObject({
+            status: 200,
+            body: {
+                session: { epoch: 1, cursor: 2 },
+                data: {
+                    participants: {
+                        contract: replayParticipantsContract,
+                        cutCursor: 2,
+                        traderCount: 1,
+                        holderCount: 0,
+                        items: [{ wallet: replayMint, tradeCount: 2 }],
+                    },
+                },
+            },
+        });
 
         const inbox = await call(
             socketPath,

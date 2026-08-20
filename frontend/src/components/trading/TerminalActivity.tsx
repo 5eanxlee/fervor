@@ -9,6 +9,7 @@ import {
     TrackedWallet,
     WalletPosition,
 } from '../../services/api';
+import type { ReplayParticipant, ReplayParticipants } from '../../services/replay';
 
 export type ActivityTab = 'trades' | 'positions' | 'orders' | 'holders' | 'top' | 'dev';
 
@@ -61,6 +62,9 @@ export default function TerminalActivity({
     initialTab = 'trades',
     onInstantTrade,
     now,
+    replayParticipants,
+    replayMode = false,
+    priceUsd,
 }: {
     tokenMint: string;
     tokenDecimals: number;
@@ -68,6 +72,9 @@ export default function TerminalActivity({
     initialTab?: ActivityTab;
     onInstantTrade?: () => void;
     now?: string | null;
+    replayParticipants?: ReplayParticipants;
+    replayMode?: boolean;
+    priceUsd?: number;
 }) {
     const [tab, setTab] = useState<ActivityTab>(initialTab);
     const [positions, setPositions] = useState<PositionRow[]>([]);
@@ -126,12 +133,15 @@ export default function TerminalActivity({
     useEffect(() => {
         if (tab === 'positions' && positionState === 'idle') void loadPositions();
         if (tab === 'orders' && orderState === 'idle') void loadOrders();
-        if (tab === 'holders' && holderState === 'idle') void loadHolders();
-    }, [holderState, loadHolders, loadOrders, loadPositions, orderState, positionState, tab]);
+        if (!replayMode && tab === 'holders' && holderState === 'idle') void loadHolders();
+    }, [holderState, loadHolders, loadOrders, loadPositions, orderState, positionState, replayMode, tab]);
 
     const visibleOrders = useMemo(() => orders.filter((order) =>
         orderView === 'open' ? openStates.has(order.state) : !openStates.has(order.state)
     ), [orderView, orders]);
+    const holderTotal = replayMode ? replayParticipants?.holderCount : holders?.total;
+    const canRefresh = tab !== 'trades'
+        && (!replayMode || (tab !== 'holders' && tab !== 'top'));
 
     const chooseTab = (next: ActivityTab) => {
         setTab(next);
@@ -144,14 +154,14 @@ export default function TerminalActivity({
     const refresh = () => {
         if (tab === 'positions') void loadPositions();
         if (tab === 'orders') void loadOrders();
-        if (tab === 'holders') void loadHolders();
+        if (tab === 'holders' && !replayMode) void loadHolders();
     };
 
     const tabs: Array<{ id: ActivityTab; label: string }> = [
         { id: 'trades', label: 'Trades' },
         { id: 'positions', label: 'Positions' },
         { id: 'orders', label: 'Orders' },
-        { id: 'holders', label: `Holders${holders?.total ? ` (${compact(holders.total)})` : ''}` },
+        { id: 'holders', label: `Holders${holderTotal === undefined ? '' : ` (${compact(holderTotal)})`}` },
         { id: 'top', label: 'Top Traders' },
         { id: 'dev', label: 'Dev Tokens' },
     ];
@@ -174,7 +184,7 @@ export default function TerminalActivity({
                     {['All', 'Mine', 'Dev', 'KOL'].map((label) => <button key={label} className={`h-6 rounded-full px-2.5 text-[10px] ${label === 'All' ? 'bg-[color-mix(in_srgb,var(--term-accent)_18%,transparent)] text-[var(--term-accent)]' : 'text-[var(--term-muted)] hover:text-white'}`}>{label}</button>)}
                     <button onClick={onInstantTrade} className="ml-1 flex h-6 items-center gap-1 rounded-full border border-[var(--term-accent)]/50 px-2.5 text-[10px] text-[var(--term-accent)]"><BoltIcon className="h-3 w-3" />Instant trade</button>
                     <button className="grid h-7 w-7 place-items-center text-[var(--term-muted)] hover:text-white" aria-label="Activity filters"><FunnelIcon className="h-3.5 w-3.5" /></button>
-                    {tab !== 'trades' && <button onClick={refresh} className="grid h-7 w-7 place-items-center text-[var(--term-muted)] hover:text-white" aria-label={`Refresh ${tab}`}><ArrowPathIcon className="h-3.5 w-3.5" /></button>}
+                    {canRefresh && <button onClick={refresh} className="grid h-7 w-7 place-items-center text-[var(--term-muted)] hover:text-white" aria-label={`Refresh ${tab}`}><ArrowPathIcon className="h-3.5 w-3.5" /></button>}
                 </div>
             </div>
 
@@ -191,8 +201,12 @@ export default function TerminalActivity({
                     openCount={orders.filter((order) => openStates.has(order.state)).length}
                 />
             )}
-            {tab === 'holders' && <HolderTable data={holders} state={holderState} />}
-            {tab === 'top' && <TopTable trades={trades} />}
+            {tab === 'holders' && (replayMode
+                ? <ReplayHolderTable data={replayParticipants} priceUsd={priceUsd} />
+                : <HolderTable data={holders} state={holderState} />)}
+            {tab === 'top' && (replayMode
+                ? <ReplayTopTable data={replayParticipants} priceUsd={priceUsd} />
+                : <TopTable trades={trades} />)}
             {tab === 'dev' && <DevTable tokenMint={tokenMint} />}
         </div>
     );
@@ -281,6 +295,105 @@ function OrderTable({ rows, state, tokenMint, tokenDecimals, view, setView, open
                     );
                 })}
                 {!rows.length && <StateEmpty state={state} empty={`No ${view} orders for this token`} error="Order history unavailable" />}
+            </div>
+        </>
+    );
+}
+
+const rawAmount = (value: string, decimals: number): number =>
+    Number(value) / 10 ** decimals;
+
+const rawSort = (
+    left: ReplayParticipant,
+    right: ReplayParticipant,
+    value: (row: ReplayParticipant) => bigint
+): number => {
+    const a = value(left);
+    const b = value(right);
+    return a === b ? left.wallet.localeCompare(right.wallet) : a > b ? -1 : 1;
+};
+
+function ReplayHolderTable({ data, priceUsd }: {
+    data?: ReplayParticipants;
+    priceUsd?: number;
+}) {
+    if (!data) return <Empty text="Building the replay holder ledger…" />;
+    const supply = BigInt(data.supplyRaw);
+    const rows = data.items
+        .filter((row) => BigInt(row.balanceRaw) > BigInt(0))
+        .sort((left, right) => rawSort(left, right, (row) => BigInt(row.balanceRaw)))
+        .slice(0, 100);
+    return (
+        <>
+            <div className="flex h-8 items-center border-b border-[var(--term-border)] px-3 text-[10px] text-[var(--term-muted)]">
+                <span>Verified replay trade ledger · transfers excluded</span>
+                <span className="ml-auto">Top 10: <span className="text-white">{data.top10Percent.toFixed(2)}%</span></span>
+            </div>
+            <TableHead columns="grid-cols-[52px_1.2fr_1fr_.8fr_1fr_1fr_1fr_70px_95px]" labels={['Rank', 'Address', 'Balance', 'Supply', 'Value', 'Bought', 'Sold', 'Trades', 'Last trade']} />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+                {rows.map((row, index) => {
+                    const balanceRaw = BigInt(row.balanceRaw);
+                    const balance = rawAmount(row.balanceRaw, data.tokenDecimals);
+                    const percent = supply === BigInt(0)
+                        ? 0
+                        : Number(balanceRaw * BigInt(1_000_000) / supply) / 10_000;
+                    return (
+                        <div key={row.wallet} className="activity-row grid grid-cols-[52px_1.2fr_1fr_.8fr_1fr_1fr_1fr_70px_95px] items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums">
+                            <span className="text-[var(--term-dim)]">{index + 1}</span>
+                            <span>{shortAddress(row.wallet)}</span>
+                            <span>{compact(balance)}</span>
+                            <span>{percent.toFixed(3)}%</span>
+                            <span>{money(priceUsd === undefined ? undefined : balance * priceUsd)}</span>
+                            <span className="text-[var(--term-buy)]">{compact(rawAmount(row.boughtRaw, data.tokenDecimals))}</span>
+                            <span className="text-[var(--term-sell)]">{compact(rawAmount(row.soldRaw, data.tokenDecimals))}</span>
+                            <span>{row.tradeCount}</span>
+                            <span className="text-right text-[var(--term-dim)]">{new Date(row.lastTradeAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                    );
+                })}
+                {!rows.length && <Empty text="No positive replay balances at this point" />}
+            </div>
+        </>
+    );
+}
+
+function ReplayTopTable({ data, priceUsd }: {
+    data?: ReplayParticipants;
+    priceUsd?: number;
+}) {
+    if (!data) return <Empty text="Building the replay trader rankings…" />;
+    const rows = [...data.items]
+        .sort((left, right) => rawSort(left, right, (row) =>
+            BigInt(row.boughtRaw) + BigInt(row.soldRaw)))
+        .slice(0, 50);
+    return (
+        <>
+            <div className="flex h-8 items-center border-b border-[var(--term-border)] px-3 text-[10px] text-[var(--term-muted)]">
+                <span>Ranked by exact token flow through cursor {data.cutCursor.toLocaleString()}</span>
+                <span className="ml-auto">{data.traderCount.toLocaleString()} traders</span>
+            </div>
+            <TableHead columns="grid-cols-[52px_1.2fr_1fr_1fr_1fr_1fr_1fr_90px_70px]" labels={['Rank', 'Trader', 'Token vol', 'Bought', 'Sold', 'Holding', 'Value', 'Buys / Sells', 'Trades']} />
+            <div className="min-h-0 flex-1 overflow-y-auto">
+                {rows.map((row, index) => {
+                    const bought = BigInt(row.boughtRaw);
+                    const sold = BigInt(row.soldRaw);
+                    const balanceRaw = bought > sold ? bought - sold : BigInt(0);
+                    const balance = rawAmount(balanceRaw.toString(), data.tokenDecimals);
+                    return (
+                        <div key={row.wallet} className="activity-row grid grid-cols-[52px_1.2fr_1fr_1fr_1fr_1fr_1fr_90px_70px] items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums">
+                            <span className="text-[var(--term-dim)]">{index + 1}</span>
+                            <span className="flex items-center gap-1.5"><UserGroupIcon className="h-3.5 w-3.5 text-[var(--term-muted)]" />{shortAddress(row.wallet)}</span>
+                            <span>{compact(rawAmount((bought + sold).toString(), data.tokenDecimals))}</span>
+                            <span className="text-[var(--term-buy)]">{compact(rawAmount(row.boughtRaw, data.tokenDecimals))}</span>
+                            <span className="text-[var(--term-sell)]">{compact(rawAmount(row.soldRaw, data.tokenDecimals))}</span>
+                            <span>{compact(balance)}</span>
+                            <span>{money(priceUsd === undefined ? undefined : balance * priceUsd)}</span>
+                            <span>{row.buyCount} / {row.sellCount}</span>
+                            <span>{row.tradeCount}</span>
+                        </div>
+                    );
+                })}
+                {!rows.length && <Empty text="Top traders will appear with replay activity" />}
             </div>
         </>
     );

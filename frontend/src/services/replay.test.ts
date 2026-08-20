@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+    advanceReplayParticipants,
     amountOf,
     chartPriceOf,
     mergeCandles,
+    isReplayParticipants,
     replayTickDelay,
     stabilizeReplayPrices,
     supplyOf,
     volumePrice,
     type ReplayTrade,
+    type ReplayParticipants,
 } from './replay';
 
 const trade = (overrides: Partial<ReplayTrade> = {}): ReplayTrade => ({
@@ -74,5 +77,58 @@ describe('historical replay projection', () => {
         expect(chartPriceOf(stabilized[1])).toBeLessThan(2.2);
         expect(chartPriceOf(stabilized[2])).toBe(4);
         expect(stabilized[1].priceUsd).toBe(20);
+    });
+
+    it('advances holder balances and trader rankings at exact replay cursors', () => {
+        const maker = '7Zb1d7t2S9Bkv8G6gPKZQdgs7Qk1HSA1xY5g7uEczwzE';
+        const base: ReplayParticipants = {
+            contract: 'fervor-replay-participants-v1',
+            sourceReplaySha256: 'a'.repeat(64),
+            runId: 'run',
+            epoch: 1,
+            cutCursor: 0,
+            cutAt: null,
+            tokenMint: trade().tokenMint,
+            tokenDecimals: 0,
+            supplyRaw: '1000',
+            traderCount: 0,
+            holderCount: 0,
+            top10Percent: 0,
+            coverage: {
+                source: 'verified_trade_tape',
+                scope: 'observed_trade_balance',
+                openingBalanceKnown: false,
+                transfersIncluded: false,
+                tradeCount: 0,
+                pricedTradeCount: 0,
+                priceCoverageBps: 0,
+            },
+            items: [],
+        };
+        expect(isReplayParticipants(base)).toBe(true);
+        const next = advanceReplayParticipants(base, [
+            trade({ maker, tokenAmountRaw: '100', tokenDecimals: 0, replayCursor: 0, usdAmount: 20 }),
+            trade({ maker, side: 'sell', tokenAmountRaw: '40', tokenDecimals: 0, replayCursor: 1, usdAmount: 12 }),
+        ]);
+        expect(next).toMatchObject({
+            cutCursor: 2,
+            traderCount: 1,
+            holderCount: 1,
+            top10Percent: 6,
+            coverage: { tradeCount: 2, pricedTradeCount: 2, priceCoverageBps: 10_000 },
+            items: [{
+                wallet: maker,
+                boughtRaw: '100',
+                soldRaw: '40',
+                balanceRaw: '60',
+                tradeCount: 2,
+            }],
+        });
+        expect(advanceReplayParticipants(base, [trade({
+            maker,
+            tokenAmountRaw: '1',
+            tokenDecimals: 0,
+            replayCursor: 2,
+        })])).toBeUndefined();
     });
 });
