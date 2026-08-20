@@ -173,13 +173,9 @@ function getPaddedDisplayRange(
 
 function focusLatest(chart: IChartApi, candleCount: number, compact: boolean) {
     const rightOffset = compact ? 8 : 12;
-    if (compact && candleCount > 180) {
-        const to = candleCount - 1 + rightOffset;
-        chart.timeScale().setVisibleLogicalRange({ from: to - 180, to });
-        return;
-    }
-    chart.timeScale().fitContent();
-    chart.timeScale().applyOptions({ rightOffset });
+    const visibleBars = compact ? 140 : 180;
+    const to = Math.max(0, candleCount - 1) + rightOffset;
+    chart.timeScale().setVisibleLogicalRange({ from: to - visibleBars, to });
 }
 
 export default function LightweightTokenChart({
