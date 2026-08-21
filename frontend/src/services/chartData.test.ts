@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { formatAxisValue, formatInterval, latestLogicalRange } from './chartData';
+import { formatAxisValue, formatCompact, formatInterval, latestLogicalRange } from './chartData';
 
 describe('chart axis labels', () => {
-    it('keeps market-cap ticks compact without redundant decimals', () => {
+    it('keeps market-cap ticks at three significant digits', () => {
         expect(formatAxisValue(200_000, 'market_cap')).toBe('200K');
-        expect(formatAxisValue(1_600_000, 'market_cap')).toBe('1.6M');
-        expect(formatAxisValue(1_000_000, 'market_cap')).toBe('1M');
+        expect(formatAxisValue(3_650, 'market_cap')).toBe('3.65K');
+        expect(formatAxisValue(45_000, 'market_cap')).toBe('45.0K');
+        expect(formatAxisValue(1_670_000, 'market_cap')).toBe('1.67M');
+        expect(formatAxisValue(1_000_000, 'market_cap')).toBe('1.00M');
+        expect(formatAxisValue(999_500, 'market_cap')).toBe('1.00M');
+    });
+
+    it('formats compact currency values with three significant digits', () => {
+        expect(formatCompact(3_650)).toBe('$3.65K');
+        expect(formatCompact(45_000)).toBe('$45.0K');
+        expect(formatCompact(1_670_000)).toBe('$1.67M');
+        expect(formatCompact(-1_670_000)).toBe('-$1.67M');
     });
 });
 

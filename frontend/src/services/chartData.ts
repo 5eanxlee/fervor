@@ -105,29 +105,49 @@ export function toDisplayValue(value: number, totalSupply: number, valueMode: Ch
     return valueMode === 'market_cap' ? value * totalSupply : value;
 }
 
+const compactUnits = [
+    { value: 1_000_000_000_000, suffix: 'T' },
+    { value: 1_000_000_000, suffix: 'B' },
+    { value: 1_000_000, suffix: 'M' },
+    { value: 1_000, suffix: 'K' },
+] as const;
+
+function threeDigits(value: number): string {
+    if (value === 0) return '0.00';
+    const rounded = Number(value.toPrecision(3));
+    const decimals = Math.max(0, 2 - Math.floor(Math.log10(Math.abs(rounded))));
+    return rounded.toFixed(decimals);
+}
+
+function compactValue(value: number): string {
+    const abs = Math.abs(value);
+    const sign = value < 0 ? '-' : '';
+    let unitIndex = compactUnits.findIndex(unit => abs >= unit.value);
+
+    if (unitIndex < 0) return `${sign}${threeDigits(abs)}`;
+
+    let unit = compactUnits[unitIndex];
+    let formatted = threeDigits(abs / unit.value);
+
+    if (Number(formatted) >= 1_000 && unitIndex > 0) {
+        unitIndex -= 1;
+        unit = compactUnits[unitIndex];
+        formatted = threeDigits(abs / unit.value);
+    }
+
+    return `${sign}${formatted}${unit.suffix}`;
+}
+
 export function formatAxisValue(value: number, valueMode: ChartValueMode): string {
     if (valueMode === 'market_cap') {
-        const abs = Math.abs(value);
-        const sign = value < 0 ? '-' : '';
-        const compact = (scaled: number, suffix: string) => {
-            const digits = scaled < 10 && Math.abs(scaled - Math.round(scaled)) >= 0.05 ? 1 : 0;
-            return `${sign}${scaled.toFixed(digits)}${suffix}`;
-        };
-        if (abs >= 1_000_000_000) return compact(abs / 1_000_000_000, 'B');
-        if (abs >= 1_000_000) return compact(abs / 1_000_000, 'M');
-        if (abs >= 1_000) return compact(abs / 1_000, 'K');
-        return `${sign}${Math.round(abs)}`;
+        return compactValue(value);
     }
     return value < 0 ? `-$${formatPrice(Math.abs(value))}` : `$${formatPrice(value)}`;
 }
 
 export function formatCompact(value: number): string {
-    const abs = Math.abs(value);
-    const sign = value < 0 ? '-' : '';
-    if (abs >= 1_000_000_000) return `${sign}$${(abs / 1_000_000_000).toFixed(2)}B`;
-    if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
-    if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-    return `${sign}$${abs.toFixed(2)}`;
+    const compact = compactValue(value);
+    return compact.startsWith('-') ? `-$${compact.slice(1)}` : `$${compact}`;
 }
 
 export function formatPrice(value: number): string {
