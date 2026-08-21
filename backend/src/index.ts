@@ -15,6 +15,7 @@ import notificationDeliveryRoutes from './routes/notificationDeliveries';
 import executionRoutes from './routes/execution';
 import orderRoutes from './routes/orders';
 import walletRoutes from './routes/wallets';
+import marketRoutes from './routes/market';
 import { createReplayRouter } from './routes/replay';
 import { env, isProduction } from './config/env';
 import { standardLimiter } from './middleware/rateLimits';
@@ -131,6 +132,7 @@ app.use('/api/stream', streamRoutes);
 app.use('/api/execution', executionRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/wallets', walletRoutes);
+app.use('/api/market', marketRoutes);
 app.use('/api/replay/v1', createReplayRouter(replayGateway));
 
 // Global error handler
