@@ -106,6 +106,20 @@ describe('historical replay projection', () => {
         expect(mergeCandles(base, [], 1)).toBe(base);
     });
 
+    it('incrementally appends an ordered tail without changing candle semantics', () => {
+        const items = [
+            trade(),
+            trade({ idempotencyKey: 'trade-2', observedAt: '2024-11-19T00:00:01.400Z', side: 'sell', priceUsd: 1.5 }),
+            trade({ idempotencyKey: 'trade-3', observedAt: '2024-11-19T00:00:04.000Z', priceUsd: 3 }),
+        ];
+        const incremental = items.reduce<ReturnType<typeof mergeCandles>>(
+            (candles, item) => mergeCandles(candles, [item], 1),
+            []
+        );
+        expect(incremental).toEqual(mergeCandles([], items, 1));
+        expect(incremental.at(-1)).toMatchObject({ open: 1.5, high: 3, low: 1.5, close: 3 });
+    });
+
     it('removes legacy zero-trade candles from an existing series', () => {
         const base = mergeCandles([], [trade()], 1);
         const empty = { ...base[0], timestamp: base[0].timestamp + 1_000, txCount: 0, volumeUsd: 0 };

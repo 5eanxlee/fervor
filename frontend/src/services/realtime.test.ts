@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { frameDelay, isRtFrame, renderFps, rtContract, rtUrl } from './realtime';
+import {
+    detailDelay,
+    frameDelay,
+    initialPace,
+    isRtFrame,
+    renderFps,
+    rtContract,
+    rtUrl,
+    tunePace,
+    visualDelay,
+} from './realtime';
 
 describe('realtime client contract', () => {
     it('maps absolute and same-origin API URLs to the websocket endpoint', () => {
@@ -36,5 +46,27 @@ describe('realtime render pacing', () => {
         expect(frameDelay(100, 108)).toBeCloseTo(frameMs - 8);
         expect(frameDelay(100, 100 + frameMs)).toBeCloseTo(0);
         expect(frameDelay(100, 150)).toBe(0);
+    });
+
+    it('backs off under sustained pressure and recovers after a calm window', () => {
+        let pace = initialPace();
+        for (let index = 0; index < 3; index += 1) {
+            pace = tunePace(pace, { frameMs: 29, workMs: 5, batchSize: 40 });
+        }
+        expect(pace.rate).toBe(45);
+
+        for (let index = 0; index < 90; index += 1) {
+            pace = tunePace(pace, { frameMs: 16.7, workMs: 1, batchSize: 4 });
+        }
+        expect(pace.rate).toBe(60);
+    });
+
+    it('drops faster for severe backlogs and slows detail work before visuals', () => {
+        let pace = initialPace();
+        pace = tunePace(pace, { frameMs: 50, workMs: 20, batchSize: 1_000 });
+        pace = tunePace(pace, { frameMs: 50, workMs: 20, batchSize: 1_000 });
+        expect(pace.rate).toBe(45);
+        expect(visualDelay(pace.rate)).toBeCloseTo(1_000 / 45);
+        expect(detailDelay(pace.rate)).toBeGreaterThan(visualDelay(pace.rate));
     });
 });

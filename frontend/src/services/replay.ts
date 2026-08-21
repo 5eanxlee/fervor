@@ -537,35 +537,85 @@ export const mergeCandles = (
     const active = current.filter((candle) => candle.txCount > 0);
     if (!trades.length) return active.length === current.length ? current : connectCandles(active).slice(-limit);
 
-    const next = new Map(active
-        .map((candle) => [candle.timestamp, { ...candle }]));
+    const points: Array<{
+        timestamp: number;
+        price: number;
+        volume: number;
+        side: ReplayTrade['side'];
+    }> = [];
     for (const trade of trades) {
         const price = chartPriceOf(trade);
-        if (price === undefined) continue;
         const observed = Date.parse(trade.replayAt ?? trade.observedAt);
-        if (!Number.isFinite(observed)) continue;
-        const timestamp = Math.floor(observed / intervalMs) * intervalMs;
-        const found = next.get(timestamp);
+        if (price === undefined || !Number.isFinite(observed)) continue;
         const displayAmount = finite(trade.usdAmount) ? trade.usdAmount : trade.chartUsdAmount;
-        const volume = finite(displayAmount) && displayAmount >= 0 ? displayAmount : 0;
+        points.push({
+            timestamp: Math.floor(observed / intervalMs) * intervalMs,
+            price,
+            volume: finite(displayAmount) && displayAmount >= 0 ? displayAmount : 0,
+            side: trade.side,
+        });
+    }
+    if (!points.length) return active.length === current.length ? current : connectCandles(active).slice(-limit);
+
+    const lastAt = active.at(-1)?.timestamp ?? Number.NEGATIVE_INFINITY;
+    const orderedTail = active.length === current.length
+        && points[0].timestamp >= lastAt
+        && points.every((point, index) => index === 0 || point.timestamp >= points[index - 1].timestamp);
+    if (orderedTail) {
+        const next = active.slice();
+        for (const point of points) {
+            const prior = next.at(-1);
+            if (prior?.timestamp === point.timestamp) {
+                next[next.length - 1] = {
+                    ...prior,
+                    high: Math.max(prior.high, point.price),
+                    low: Math.min(prior.low, point.price),
+                    close: point.price,
+                    volumeUsd: prior.volumeUsd + point.volume,
+                    buyCount: prior.buyCount + (point.side === 'buy' ? 1 : 0),
+                    sellCount: prior.sellCount + (point.side === 'sell' ? 1 : 0),
+                    txCount: prior.txCount + 1,
+                };
+                continue;
+            }
+            const open = prior?.close ?? point.price;
+            next.push({
+                timestamp: point.timestamp,
+                open,
+                high: Math.max(open, point.price),
+                low: Math.min(open, point.price),
+                close: point.price,
+                volumeUsd: point.volume,
+                buyCount: point.side === 'buy' ? 1 : 0,
+                sellCount: point.side === 'sell' ? 1 : 0,
+                txCount: 1,
+            });
+        }
+        return next.slice(-limit);
+    }
+
+    const next = new Map(active
+        .map((candle) => [candle.timestamp, { ...candle }]));
+    for (const point of points) {
+        const found = next.get(point.timestamp);
         if (found && found.txCount > 0) {
-            found.high = Math.max(found.high, price);
-            found.low = Math.min(found.low, price);
-            found.close = price;
-            found.volumeUsd += volume;
-            found.buyCount += trade.side === 'buy' ? 1 : 0;
-            found.sellCount += trade.side === 'sell' ? 1 : 0;
+            found.high = Math.max(found.high, point.price);
+            found.low = Math.min(found.low, point.price);
+            found.close = point.price;
+            found.volumeUsd += point.volume;
+            found.buyCount += point.side === 'buy' ? 1 : 0;
+            found.sellCount += point.side === 'sell' ? 1 : 0;
             found.txCount += 1;
         } else {
-            next.set(timestamp, {
-                timestamp,
-                open: price,
-                high: price,
-                low: price,
-                close: price,
-                volumeUsd: volume,
-                buyCount: trade.side === 'buy' ? 1 : 0,
-                sellCount: trade.side === 'sell' ? 1 : 0,
+            next.set(point.timestamp, {
+                timestamp: point.timestamp,
+                open: point.price,
+                high: point.price,
+                low: point.price,
+                close: point.price,
+                volumeUsd: point.volume,
+                buyCount: point.side === 'buy' ? 1 : 0,
+                sellCount: point.side === 'sell' ? 1 : 0,
                 txCount: 1,
             });
         }

@@ -1,5 +1,51 @@
 export const rtContract = 'fervor-realtime-v1' as const;
 export const renderFps = 60;
+export const renderRates = [60, 45, 30, 24] as const;
+
+export type RenderRate = typeof renderRates[number];
+
+export interface RenderPace {
+    rate: RenderRate;
+    stress: number;
+    calm: number;
+}
+
+export interface RenderSample {
+    frameMs: number;
+    workMs: number;
+    batchSize: number;
+}
+
+export const initialPace = (): RenderPace => ({ rate: renderFps, stress: 0, calm: 0 });
+
+export function tunePace(pace: RenderPace, sample: RenderSample): RenderPace {
+    const overloaded = sample.frameMs > 24 || sample.workMs > 8 || sample.batchSize > 192;
+    const severe = sample.frameMs > 42 || sample.workMs > 16 || sample.batchSize > 768;
+    const comfortable = sample.frameMs > 0 && sample.frameMs < 20
+        && sample.workMs < 4 && sample.batchSize < 96;
+
+    if (overloaded) {
+        const stress = pace.stress + (severe ? 2 : 1);
+        if (stress < 3) return { ...pace, stress, calm: 0 };
+        const index = Math.min(renderRates.length - 1, renderRates.indexOf(pace.rate) + 1);
+        return { rate: renderRates[index], stress: 0, calm: 0 };
+    }
+    if (comfortable) {
+        const calm = pace.calm + 1;
+        if (calm < 90) return { ...pace, stress: 0, calm };
+        const index = Math.max(0, renderRates.indexOf(pace.rate) - 1);
+        return { rate: renderRates[index], stress: 0, calm: 0 };
+    }
+    return { ...pace, stress: Math.max(0, pace.stress - 1), calm: 0 };
+}
+
+export const visualDelay = (rate: RenderRate): number => 1_000 / rate;
+
+export const detailDelay = (rate: RenderRate): number => {
+    if (rate >= 45) return 100;
+    if (rate === 30) return 140;
+    return 200;
+};
 
 export function frameDelay(lastAt: number, now: number): number {
     if (!Number.isFinite(lastAt) || lastAt <= 0) return 0;

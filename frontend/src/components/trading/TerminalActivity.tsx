@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
     ArrowUpIcon,
     ArrowPathIcon,
@@ -134,7 +134,7 @@ export const matchesToken = (order: OrderRecord, tokenMint: string): boolean =>
 export const orderSide = (order: OrderRecord, tokenMint: string): 'buy' | 'sell' =>
     order.outputMint === tokenMint ? 'buy' : 'sell';
 
-export default function TerminalActivity({
+function TerminalActivity({
     tokenMint,
     tokenDecimals,
     trades,
@@ -714,3 +714,5 @@ function StateEmpty({ state, empty, error }: { state: LoadState; empty: string; 
 function Empty({ text }: { text: string }) {
     return <div className="grid h-full min-h-20 place-items-center text-xs text-[var(--term-muted)]">{text}</div>;
 }
+
+export default memo(TerminalActivity);

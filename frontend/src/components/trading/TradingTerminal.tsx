@@ -1,7 +1,16 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CSSProperties, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+    CSSProperties,
+    PointerEvent as ReactPointerEvent,
+    startTransition,
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from 'react';
 import {
     ArrowsPointingInIcon,
     ArrowsPointingOutIcon,
@@ -35,7 +44,16 @@ import ReplayControls from './ReplayControls';
 import { terminalSkin, useTerminalSettings } from '../../services/terminalSettings';
 import { hasStar, onShelf, rememberToken, toggleStar } from '../../services/tokenShelf';
 import { useRealtime } from '../../hooks/useRealtime';
-import { frameDelay, type RtFrame } from '../../services/realtime';
+import {
+    detailDelay,
+    frameDelay,
+    initialPace,
+    renderFps,
+    tunePace,
+    visualDelay,
+    type RenderPace,
+    type RtFrame,
+} from '../../services/realtime';
 import {
     advanceReplayParticipants,
     amountOf,
@@ -55,6 +73,7 @@ import {
     type ReplayControl,
     type ReplayOp,
     type ReplayParticipants,
+    type ReplayProjection,
     type ReplaySpeed,
     type ReplayState,
     type ReplayTrade,
@@ -79,6 +98,7 @@ const configuredSupply = Number(process.env.NEXT_PUBLIC_REPLAY_SUPPLY) > 0
     : undefined;
 const replayStreams = ['trade', 'market', 'replay'] as const;
 const replayHistoryLimit = 2_000;
+const replayTapeLimit = 20_000;
 
 const compact = (value?: number): string => {
     if (value === undefined || !Number.isFinite(value)) return '—';
@@ -125,7 +145,19 @@ const mergeReplayTape = (history: ReplayTrade[], current: ReplayTrade[]): Replay
         }
         const time = Date.parse(left.observedAt) - Date.parse(right.observedAt);
         return time || left.idempotencyKey.localeCompare(right.idempotencyKey);
-    }).slice(-20_000);
+    }).slice(-replayTapeLimit);
+};
+
+const appendReplayTape = (history: ReplayTrade[], fresh: ReplayTrade[]): ReplayTrade[] => {
+    if (!fresh.length) return history;
+    const lastCursor = history.at(-1)?.replayCursor;
+    const ordered = lastCursor !== undefined && fresh.every((item, index) => {
+        const prior = index === 0 ? lastCursor : fresh[index - 1].replayCursor;
+        return item.replayCursor !== undefined && prior !== undefined && item.replayCursor > prior;
+    });
+    return ordered
+        ? [...history, ...fresh].slice(-replayTapeLimit)
+        : mergeReplayTape(history, fresh);
 };
 
 const datasetFrom = (
@@ -137,7 +169,8 @@ const datasetFrom = (
     candles: TokenCandle[],
     historical = false
 ): ChartDataset => {
-    const chartCandles = connectCandles(candles).map((candle) => ({
+    const sourceCandles = historical ? candles : connectCandles(candles);
+    const chartCandles = sourceCandles.map((candle) => ({
         ...candle,
         volumeTokens: 0,
         tradeCount: candle.txCount,
@@ -195,6 +228,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     const [market, setMarket] = useState<MarketView>({});
     const [candles, setCandles] = useState<TokenCandle[]>([]);
     const [trades, setTrades] = useState<ActivityTrade[]>([]);
+    const [activityPrice, setActivityPrice] = useState<number>();
     const [interval, setIntervalName] = useState<ChartInterval>(replayMode ? '1s' : '1m');
     const intervalSeconds = getTimeframeSeconds(interval);
     const [solUsd, setSolUsd] = useState<number>();
@@ -214,11 +248,24 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     const [replaySupply, setReplaySupply] = useState<number | undefined>(configuredSupply);
     const [replayError, setReplayError] = useState<string>();
     const [controlBusy, setControlBusy] = useState(false);
+    const [renderRate, setRenderRate] = useState(renderFps);
     const chartSplitRef = useRef<HTMLElement>(null);
     const queue = useRef<Array<{ event: string; data: any }>>([]);
     const renderTimer = useRef<number | undefined>(undefined);
     const lastRenderAt = useRef(0);
     const replayTrades = useRef<ReplayTrade[]>([]);
+    const replayKeys = useRef(new Set<string>());
+    const visualTrades = useRef<ReplayTrade[]>([]);
+    const detailTrades = useRef<ReplayTrade[]>([]);
+    const pendingProjection = useRef<ReplayProjection | undefined>(undefined);
+    const replayRef = useRef<ReplayState | undefined>(undefined);
+    const replayFrame = useRef<number | undefined>(undefined);
+    const replayRunner = useRef<(now: number) => void>(() => undefined);
+    const replayDetail = useRef<number | undefined>(undefined);
+    const replayPace = useRef<RenderPace>(initialPace());
+    const visualQueuedAt = useRef(0);
+    const lastPaintAt = useRef(0);
+    const detailCost = useRef(0);
     const participantView = useRef<ReplayParticipants | undefined>(undefined);
     const replayCut = useRef<{ epoch: number; cursor: number } | undefined>(undefined);
     const replayResync = useRef(false);
@@ -264,6 +311,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
         setSettings((current) => current.chartAutoScale
             ? current
             : { ...current, chartAutoScale: true });
+        visualTrades.current = [];
         setCandles(replayMode
             ? mergeCandles([], replayTrades.current, seconds)
             : []);
@@ -302,6 +350,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     const applyProjection = useCallback((projection: ReplayState['projection'], includePrice = true) => {
         const price = projection.latestUsd?.value;
         const supply = supplyRef.current;
+        if (includePrice && price !== undefined) setActivityPrice(price);
         setMarket((current) => ({
             ...current,
             ...(includePrice ? {
@@ -327,13 +376,22 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
             hydrateSeq.current += 1;
             participantSeq.current += 1;
             replayTrades.current = [];
+            replayKeys.current.clear();
+            visualTrades.current = [];
+            detailTrades.current = [];
+            pendingProjection.current = undefined;
+            replayPace.current = initialPace();
+            visualQueuedAt.current = 0;
+            lastPaintAt.current = 0;
             participantView.current = undefined;
+            setRenderRate(renderFps);
             setTrades([]);
             setCandles([]);
             setParticipants(undefined);
         }
         replayResync.current = false;
         replayCut.current = { epoch: state.snapshot.epoch, cursor: state.snapshot.cursor };
+        replayRef.current = state;
         setReplay(state);
         applyProjection(state.projection);
         setReplayError(state.failure || undefined);
@@ -365,6 +423,9 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
         if (sequence !== hydrateSeq.current || !cut || cut.epoch !== epoch || cut.cursor < target) return;
         const combined = stabilizeReplayPrices(mergeReplayTape(history, replayTrades.current));
         replayTrades.current = combined;
+        replayKeys.current = new Set(combined.map((item) => item.idempotencyKey));
+        visualTrades.current = [];
+        detailTrades.current = [];
 
         for (const item of combined) {
             const supply = supplyOf(item);
@@ -374,11 +435,14 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
         setCandles(mergeCandles([], combined, intervalRef.current));
         setTrades(combined.slice(-500).reverse().map((item) => activityTrade(item, supplyRef.current)));
         const price = latestReplayPrice(combined);
-        if (price !== undefined) setMarket((current) => ({
-            ...current,
-            price,
-            marketCap: supplyRef.current === undefined ? undefined : price * supplyRef.current,
-        }));
+        if (price !== undefined) {
+            setActivityPrice(price);
+            setMarket((current) => ({
+                ...current,
+                price,
+                marketCap: supplyRef.current === undefined ? undefined : price * supplyRef.current,
+            }));
+        }
     }, []);
 
     const hydrateParticipants = useCallback(async (state: ReplayState) => {
@@ -552,10 +616,101 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     useEffect(() => () => {
         hydrateSeq.current += 1;
         participantSeq.current += 1;
+        if (replayFrame.current !== undefined) window.cancelAnimationFrame(replayFrame.current);
+        if (replayDetail.current !== undefined) window.clearTimeout(replayDetail.current);
     }, []);
+
+    const scheduleVisual = useCallback(() => {
+        if (replayFrame.current !== undefined) return;
+        visualQueuedAt.current = performance.now();
+        replayFrame.current = window.requestAnimationFrame((now) => replayRunner.current(now));
+    }, []);
+
+    const flushDetail = useCallback(() => {
+        replayDetail.current = undefined;
+        const pending = detailTrades.current.splice(0);
+        const started = performance.now();
+        const activity = pending.map((item) => activityTrade(item, supplyRef.current)).reverse();
+        let nextParticipants: ReplayParticipants | undefined;
+        if (participantView.current && pending.length) {
+            nextParticipants = advanceReplayParticipants(participantView.current, pending);
+            if (nextParticipants) participantView.current = nextParticipants;
+        }
+        const state = replayRef.current;
+        const price = latestReplayPrice(pending);
+        detailCost.current = performance.now() - started;
+
+        startTransition(() => {
+            if (activity.length) {
+                setTrades((current) => [...activity, ...current].slice(0, 500));
+            }
+            if (nextParticipants) setParticipants(nextParticipants);
+            if (state) {
+                setReplay(state);
+                setReplayError(state.failure || undefined);
+            }
+            if (price !== undefined) setActivityPrice(price);
+        });
+    }, []);
+
+    const scheduleDetail = useCallback(() => {
+        if (replayDetail.current !== undefined) return;
+        replayDetail.current = window.setTimeout(flushDetail, detailDelay(replayPace.current.rate));
+    }, [flushDetail]);
+
+    const flushVisual = useCallback((now: number) => {
+        replayFrame.current = undefined;
+        const frameMs = visualQueuedAt.current > 0
+            ? Math.max(0, now - visualQueuedAt.current)
+            : 1_000 / renderFps;
+        const wait = visualDelay(replayPace.current.rate) - (now - lastPaintAt.current);
+        if (lastPaintAt.current > 0 && wait > 1) {
+            scheduleVisual();
+            return;
+        }
+
+        const pending = visualTrades.current.splice(0);
+        const projection = pendingProjection.current;
+        pendingProjection.current = undefined;
+        if (!pending.length && !projection) return;
+
+        lastPaintAt.current = now;
+        const started = performance.now();
+        if (pending.length) {
+            setCandles((current) => mergeCandles(current, pending, intervalRef.current));
+        }
+        const price = latestReplayPrice(pending);
+        setMarket((current) => ({
+            ...current,
+            ...(price !== undefined ? {
+                price,
+                marketCap: supplyRef.current === undefined ? undefined : price * supplyRef.current,
+            } : {}),
+            ...(projection ? {
+                volume5m: projection.rolling.volumeUsd['5m'],
+                buys5m: projection.rolling.buyCount['5m'],
+                sells5m: projection.rolling.sellCount['5m'],
+            } : {}),
+        }));
+        const nextPace = tunePace(replayPace.current, {
+            frameMs,
+            workMs: performance.now() - started + detailCost.current,
+            batchSize: pending.length,
+        });
+        if (nextPace.rate !== replayPace.current.rate) setRenderRate(nextPace.rate);
+        replayPace.current = nextPace;
+        detailCost.current = 0;
+        if (visualTrades.current.length || pendingProjection.current) scheduleVisual();
+    }, [scheduleVisual]);
+
+    useEffect(() => {
+        replayRunner.current = flushVisual;
+    }, [flushVisual]);
 
     const onReplayFrames = useCallback((frames: RtFrame[]) => {
         const batch: ReplayTrade[] = [];
+        let visualDirty = false;
+        let detailDirty = false;
         for (const current of frames) {
             if (current.type === 'snapshot') {
                 const state = replayFromRt(current.data);
@@ -588,50 +743,48 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
             }
             if (current.stream === 'market' && isReplayProjection(current.data)) {
                 const projection = current.data;
-                applyProjection(projection, false);
-                setReplay((prior) => prior ? { ...prior, projection } : prior);
+                pendingProjection.current = projection;
+                if (replayRef.current) replayRef.current = { ...replayRef.current, projection };
+                visualDirty = true;
+                detailDirty = true;
             }
             if (current.stream === 'replay') {
-                setReplay((prior) => {
-                    if (!prior) return prior;
+                const prior = replayRef.current;
+                if (prior) {
                     const next = replaySlice(prior, current.data);
-                    if (!next) return prior;
+                    if (!next) continue;
+                    replayRef.current = next;
                     replayCut.current = { epoch: next.snapshot.epoch, cursor: next.snapshot.cursor };
-                    setReplayError(next.failure || undefined);
-                    return next;
-                });
+                    detailDirty = true;
+                }
             }
         }
-        if (!batch.length) return;
-        const known = new Set(replayTrades.current.map((item) => item.idempotencyKey));
-        const fresh = batch.filter((item) => !known.has(item.idempotencyKey));
-        if (!fresh.length) return;
-        for (const item of fresh) {
-            const supply = supplyOf(item);
-            if (supply !== undefined && supplyRef.current !== supply) {
-                supplyRef.current = supply;
-                setReplaySupply(supply);
+        if (batch.length) {
+            const fresh: ReplayTrade[] = [];
+            for (const item of batch) {
+                if (replayKeys.current.has(item.idempotencyKey)) continue;
+                replayKeys.current.add(item.idempotencyKey);
+                fresh.push(item);
+            }
+            if (fresh.length) {
+                for (const item of fresh) {
+                    const supply = supplyOf(item);
+                    if (supply !== undefined && supplyRef.current !== supply) {
+                        supplyRef.current = supply;
+                        setReplaySupply(supply);
+                    }
+                }
+                const stableFresh = stabilizeReplayPrices(fresh, latestReplayPrice(replayTrades.current));
+                replayTrades.current = appendReplayTape(replayTrades.current, stableFresh);
+                visualTrades.current.push(...stableFresh);
+                detailTrades.current.push(...stableFresh);
+                visualDirty = true;
+                detailDirty = true;
             }
         }
-        const stableFresh = stabilizeReplayPrices(fresh, latestReplayPrice(replayTrades.current));
-        replayTrades.current = mergeReplayTape(replayTrades.current, stableFresh);
-        if (participantView.current) {
-            const next = advanceReplayParticipants(participantView.current, stableFresh);
-            participantView.current = next;
-            setParticipants(next);
-        }
-        setTrades((current) => [
-            ...stableFresh.map((item) => activityTrade(item, supplyRef.current)).reverse(),
-            ...current,
-        ].slice(0, 500));
-        setCandles((current) => mergeCandles(current, stableFresh, intervalRef.current));
-        const price = latestReplayPrice(stableFresh);
-        if (price !== undefined) setMarket((current) => ({
-            ...current,
-            price,
-            marketCap: supplyRef.current === undefined ? undefined : price * supplyRef.current,
-        }));
-    }, [applyProjection, applyReplay, hydrateParticipants, hydrateReplayHistory]);
+        if (visualDirty) scheduleVisual();
+        if (detailDirty) scheduleDetail();
+    }, [applyReplay, hydrateParticipants, hydrateReplayHistory, scheduleDetail, scheduleVisual]);
 
     const realtime = useRealtime({
         enabled: replayMode && isAuthenticated,
@@ -643,6 +796,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
 
     useEffect(() => {
         if (!replayMode) return;
+        visualTrades.current = [];
         setCandles(mergeCandles([], replayTrades.current, intervalRef.current));
     }, [chartKey, replayMode]);
 
@@ -672,9 +826,11 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
         buys: market.buys5m,
         sells: market.sells5m,
     }), [market.buys5m, market.sells5m, market.volume5m]);
+    const openInstant = useCallback(() => setInstantOpen(true), []);
 
     const controlReplay = useCallback(async (command: ReplayOp) => {
-        if (!replay || controlBusy) return;
+        const currentReplay = replayRef.current ?? replay;
+        if (!currentReplay || controlBusy) return;
         setControlBusy(true);
         setReplayError(undefined);
         try {
@@ -692,7 +848,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
                 return response.data.state;
             };
 
-            let state = replay;
+            let state = currentReplay;
             if (command.op === 'play' && state.snapshot.status === 'complete') {
                 state = await send(state, { op: 'seek', target: 0 });
                 applyReplay(state);
@@ -757,7 +913,11 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     }));
 
     return (
-        <main data-terminal-theme={settings.theme} className={`flex h-screen min-h-[680px] flex-col overflow-hidden bg-[var(--term-bg)] text-[var(--term-text)] ${terminalSkin(settings)}`}>
+        <main
+            data-terminal-theme={settings.theme}
+            data-replay-rate={replayMode ? renderRate : undefined}
+            className={`flex h-screen min-h-[680px] flex-col overflow-hidden bg-[var(--term-bg)] text-[var(--term-text)] ${terminalSkin(settings)}`}
+        >
             <TerminalHeader settings={settings} onSettings={openSettings} />
 
             {settings.showStats && (
@@ -877,7 +1037,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
                             <span className="pointer-events-none absolute left-1/2 top-1/2 h-[2px] w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30 transition group-hover:bg-white/65 group-focus:bg-[var(--term-accent)]" />
                         </div>
                     )}
-                    {!chartFull && <div className="activity-panel min-h-0 overflow-hidden"><TerminalActivity key={tokenMint} tokenMint={tokenMint} tokenDecimals={tokenDecimals} trades={trades} replayParticipants={participants} replayMode={replayMode} priceUsd={market.price} initialTab={activityTab} onInstantTrade={() => setInstantOpen(true)} now={replayMode ? replayNow : undefined} /></div>}
+                    {!chartFull && <div className="activity-panel min-h-0 overflow-hidden"><TerminalActivity key={tokenMint} tokenMint={tokenMint} tokenDecimals={tokenDecimals} trades={trades} replayParticipants={participants} replayMode={replayMode} priceUsd={replayMode ? activityPrice : market.price} initialTab={activityTab} onInstantTrade={openInstant} now={replayMode ? replayNow : undefined} /></div>}
                 </section>
                 {!chartFull && <aside className="ticket-panel hidden min-h-0 overflow-hidden border-l border-[var(--term-border)] lg:block"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={tokenDecimals} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} flow={ticketFlow} participants={participants} replayMode={replayMode} onLimitChange={syncLimitTarget} /></aside>}
             </div>
