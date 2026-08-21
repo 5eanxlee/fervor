@@ -243,7 +243,6 @@ export default function TradingTerminal({
     const intervalSeconds = getTimeframeSeconds(interval);
     const [solUsd, setSolUsd] = useState<number>();
     const [streamState, setStreamState] = useState<'connecting' | 'live' | 'offline'>('connecting');
-    const [loading, setLoading] = useState(true);
     const [sessionKey, setSessionKey] = useState(0);
     const [chartKey, setChartKey] = useState(0);
     const [chartFull, setChartFull] = useState(false);
@@ -382,7 +381,6 @@ export default function TradingTerminal({
     const applyReplay = useCallback((state: ReplayState) => {
         if (state.tokenMint !== tokenMint) {
             setReplayError('Replay tape does not match this token');
-            setLoading(false);
             return;
         }
         const prior = replayCut.current;
@@ -411,7 +409,6 @@ export default function TradingTerminal({
         setReplay(state);
         applyProjection(state.projection);
         setReplayError(state.failure || undefined);
-        setLoading(false);
     }, [applyProjection, tokenMint]);
 
     const hydrateReplayHistory = useCallback(async (state: ReplayState) => {
@@ -493,7 +490,6 @@ export default function TradingTerminal({
     useEffect(() => {
         if (!isAuthenticated) return;
         let active = true;
-        setLoading(true);
         if (replayMode) {
             apiService.getReplaySnapshot().then((response) => {
                 const state = response.data?.state;
@@ -509,7 +505,7 @@ export default function TradingTerminal({
                 else if (active) setReplayError('Replay snapshot is invalid');
             }).catch((error) => {
                 if (active) setReplayError(error?.error || 'Replay snapshot is unavailable');
-            }).finally(() => active && setLoading(false));
+            });
             return () => { active = false; };
         }
         Promise.all([
@@ -528,7 +524,7 @@ export default function TradingTerminal({
                     buys5m: Number(raw.buys?.['5m']), sells5m: Number(raw.sells?.['5m']),
                 });
             }
-        }).catch(() => undefined).finally(() => active && setLoading(false));
+        }).catch(() => undefined);
         return () => { active = false; };
     }, [applyReplay, hydrateParticipants, hydrateReplayHistory, isAuthenticated, replayMode, sessionKey, tokenMint]);
 
@@ -931,7 +927,7 @@ export default function TradingTerminal({
         return onShelf(sync);
     }, [tokenMint]);
 
-    if (authLoading || loading || !isAuthenticated) {
+    if (authLoading || !isAuthenticated) {
         return <TerminalPageLoading token />;
     }
 

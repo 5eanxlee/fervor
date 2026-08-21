@@ -13,7 +13,7 @@ export default async function TradePage({
     searchParams: Promise<RouteQuery>;
 }) {
     const [{ mint }, routeQuery] = await Promise.all([params, searchParams]);
-    return <TradingTerminal tokenMint={mint} query={{
+    return <TradingTerminal key={mint} tokenMint={mint} query={{
         amount: first(routeQuery.amount),
         slippage: first(routeQuery.slippage),
         tab: first(routeQuery.tab),
