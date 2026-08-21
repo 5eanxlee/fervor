@@ -943,8 +943,43 @@
 }
 
 @media (max-width: 94.99rem) {
+    .replay-controls {
+        gap: .25rem;
+        margin-left: .1rem;
+        padding-left: .35rem;
+    }
+
     .replay-label {
         display: none;
+    }
+
+    .replay-primary,
+    .replay-action {
+        width: 1.8rem;
+        min-width: 1.8rem;
+        padding-inline: 0;
+    }
+
+    .replay-primary span,
+    .replay-action span,
+    .replay-range-trigger svg:first-child {
+        display: none;
+    }
+
+    .replay-range-trigger {
+        min-width: 3.8rem;
+    }
+
+    .replay-progress {
+        min-width: 5.75rem;
+        max-width: 6.5rem;
+    }
+
+    .replay-state {
+        width: .6rem;
+        gap: 0;
+        overflow: hidden;
+        font-size: 0;
     }
 }
 
