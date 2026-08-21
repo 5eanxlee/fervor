@@ -1,6 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import {
+    createContext,
+    createElement,
+    type Dispatch,
+    type ReactNode,
+    type SetStateAction,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+} from 'react';
 import {
     CHART_STYLE_OPTIONS,
     CHART_TIMEFRAME_OPTIONS,
@@ -88,6 +98,13 @@ export const defaultTerminalSettings: TerminalSettings = {
 
 const storageKey = 'fervor_terminal_settings_v2';
 
+type TerminalSettingsState = readonly [
+    TerminalSettings,
+    Dispatch<SetStateAction<TerminalSettings>>,
+];
+
+const TerminalSettingsContext = createContext<TerminalSettingsState | null>(null);
+
 export const coerceTerminalSettings = (value: unknown): TerminalSettings => {
     if (!value || typeof value !== 'object') return defaultTerminalSettings;
     const raw = value as Partial<TerminalSettings>;
@@ -148,7 +165,7 @@ export const terminalSkin = (settings: Pick<TerminalSettings, 'theme' | 'font' |
     `terminal-accent-${settings.accent}`,
 ].filter(Boolean).join(' ');
 
-export function useTerminalSettings() {
+export function TerminalSettingsProvider({ children }: { children: ReactNode }) {
     const [settings, setSettings] = useState<TerminalSettings>(defaultTerminalSettings);
     const [loaded, setLoaded] = useState(false);
 
@@ -167,5 +184,13 @@ export function useTerminalSettings() {
         localStorage.setItem(storageKey, JSON.stringify(settings));
     }, [loaded, settings]);
 
-    return [settings, setSettings] as const;
+    const value = useMemo<TerminalSettingsState>(() => [settings, setSettings], [settings]);
+
+    return createElement(TerminalSettingsContext.Provider, { value }, children);
+}
+
+export function useTerminalSettings(): TerminalSettingsState {
+    const value = useContext(TerminalSettingsContext);
+    if (!value) throw new Error('useTerminalSettings must be used within TerminalSettingsProvider');
+    return value;
 }

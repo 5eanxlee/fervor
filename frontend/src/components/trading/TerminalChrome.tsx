@@ -226,6 +226,11 @@ export function TerminalHeader({ onSettings, settings }: { onSettings: (section?
         if (token) router.push(`/trade/${encodeURIComponent(token)}`);
     };
     const links = nav.filter((item) => !item.key || settings?.nav[item.key] !== false);
+
+    useEffect(() => {
+        for (const item of nav) router.prefetch(item.href);
+    }, [router]);
+
     const copyAddress = async () => {
         if (!address) return;
         try {
@@ -275,6 +280,7 @@ export function TerminalHeader({ onSettings, settings }: { onSettings: (section?
                                 <Link
                                     key={`${href}:${label}`}
                                     href={href}
+                                    prefetch
                                     className="terminal-nav-link"
                                     data-active={active}
                                     aria-current={active ? 'page' : undefined}
@@ -357,7 +363,7 @@ export function TerminalHeader({ onSettings, settings }: { onSettings: (section?
                     </div>
                     <div className="flex min-w-0 items-center gap-[clamp(.8rem,1.8vw,1.5rem)] overflow-hidden">
                         {tape.tokens.map((item) => (
-                            <button key={item.address} onClick={() => openToken(item.address)} className="flex shrink-0 items-center gap-1.5 hover:text-white"><span className="grid h-3.5 w-3.5 place-items-center rounded-[3px] bg-[var(--term-control)] text-[8px] font-semibold text-[var(--term-accent)]">{item.symbol.slice(0, 1)}</span><span>{item.symbol}</span><span className="font-[500] text-[var(--term-text)]">{item.marketCap ? usd(item.marketCap) : item.price ? usd(item.price) : ''}</span></button>
+                            <button key={item.address} onPointerEnter={() => router.prefetch(`/trade/${encodeURIComponent(item.address)}`)} onFocus={() => router.prefetch(`/trade/${encodeURIComponent(item.address)}`)} onClick={() => openToken(item.address)} className="flex shrink-0 items-center gap-1.5 hover:text-white"><span className="grid h-3.5 w-3.5 place-items-center rounded-[3px] bg-[var(--term-control)] text-[8px] font-semibold text-[var(--term-accent)]">{item.symbol.slice(0, 1)}</span><span>{item.symbol}</span><span className="font-[500] text-[var(--term-text)]">{item.marketCap ? usd(item.marketCap) : item.price ? usd(item.price) : ''}</span></button>
                         ))}
                         {!tape.tokens.length && <span className="text-[var(--term-dim)]">No {tape.mode} tokens</span>}
                     </div>

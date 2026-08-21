@@ -148,7 +148,7 @@ export default function SearchPage() {
         return sorted;
     }, [board, query, results, tokens]);
 
-    if (authLoading || !isAuthenticated) return <main data-terminal-theme="terminal" className="grid h-screen place-items-center bg-[var(--term-bg)]"><div className="spinner" /></main>;
+    if (authLoading || !isAuthenticated) return <main data-terminal-theme="terminal" className="grid h-full place-items-center bg-[var(--term-bg)]"><div className="spinner" /></main>;
 
     return (
         <DashboardLayout live={!loading}>

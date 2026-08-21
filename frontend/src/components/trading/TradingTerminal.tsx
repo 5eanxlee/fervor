@@ -1,6 +1,6 @@
 'use client';
 
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
     CSSProperties,
     PointerEvent as ReactPointerEvent,
@@ -37,11 +37,12 @@ import TokenLogo from '../TokenLogo';
 import TradeTicket from './TradeTicket';
 import InstantTradePanel from './InstantTradePanel';
 import TerminalActivity, { ActivityTab, ActivityTrade } from './TerminalActivity';
-import { TerminalDock, TerminalHeader } from './TerminalChrome';
+import { TerminalDock } from './TerminalChrome';
 import TerminalSettingsModal from './TerminalSettingsModal';
 import type { SettingsSection } from './TerminalSettingsModal';
 import ReplayControls, { replayPreviewTrades, type ReplayRange } from './ReplayControls';
-import { terminalSkin, useTerminalSettings } from '../../services/terminalSettings';
+import TerminalPageLoading from './TerminalPageLoading';
+import { useTerminalSettings } from '../../services/terminalSettings';
 import { hasStar, onShelf, rememberToken, toggleStar } from '../../services/tokenShelf';
 import { useRealtime } from '../../hooks/useRealtime';
 import {
@@ -211,11 +212,20 @@ const datasetFrom = (
     };
 };
 
-export default function TradingTerminal({ tokenMint, replayView = false }: { tokenMint: string; replayView?: boolean }) {
+type TradeQuery = Partial<Record<'amount' | 'slippage' | 'tab', string>>;
+
+export default function TradingTerminal({
+    tokenMint,
+    replayView = false,
+    query = {},
+}: {
+    tokenMint: string;
+    replayView?: boolean;
+    query?: TradeQuery;
+}) {
     const replayMode = replayBuild && replayView;
     const { isAuthenticated, isLoading: authLoading, token: authToken } = useAuth();
     const router = useRouter();
-    const searchParams = useSearchParams();
     const [settings, setSettings] = useTerminalSettings();
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsSection, setSettingsSection] = useState<SettingsSection>('appearance');
@@ -922,12 +932,12 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     }, [tokenMint]);
 
     if (authLoading || loading || !isAuthenticated) {
-        return <main className="grid h-screen place-items-center bg-[#0f0f12] text-[#a1a1aa]"><div className="spinner" /></main>;
+        return <TerminalPageLoading token />;
     }
 
-    const ticketAmount = searchParams.get('amount') || String(settings.quickBuySol);
-    const ticketSlippage = Number(searchParams.get('slippage')) || settings.slippageBps;
-    const requestedTab = searchParams.get('tab');
+    const ticketAmount = query.amount || String(settings.quickBuySol);
+    const ticketSlippage = Number(query.slippage) || settings.slippageBps;
+    const requestedTab = query.tab;
     const activityTab: ActivityTab = requestedTab === 'positions' || requestedTab === 'orders' || requestedTab === 'holders' || requestedTab === 'top' || requestedTab === 'dev'
         ? requestedTab
         : 'trades';
@@ -946,12 +956,9 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
 
     return (
         <main
-            data-terminal-theme={settings.theme}
             data-replay-rate={replayMode ? renderRate : undefined}
-            className={`flex h-screen min-h-[680px] flex-col overflow-hidden bg-[var(--term-bg)] text-[var(--term-text)] ${terminalSkin(settings)}`}
+            className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--term-bg)] text-[var(--term-text)]"
         >
-            <TerminalHeader settings={settings} onSettings={openSettings} />
-
             {settings.showStats && (
                 <section className="token-strip grid shrink-0 border-b border-[var(--term-border)] bg-[var(--term-bg)]" data-full={chartFull}>
                     <div className="flex min-w-0 items-center overflow-hidden px-[clamp(.75rem,1.2vw,1rem)]">

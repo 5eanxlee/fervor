@@ -31,7 +31,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { pumpSnapshot } from '../../data/pumpSnapshot';
 import { apiService, DiscoveryCategory, DiscoveryToken } from '../../services/api';
-import { terminalSkin, TerminalSettings, useTerminalSettings } from '../../services/terminalSettings';
+import { TerminalSettings, useTerminalSettings } from '../../services/terminalSettings';
 import { SolanaMark } from './BrandMarks';
 import DiscoveryFilters, {
     discoveryCols,
@@ -42,7 +42,7 @@ import DiscoveryFilters, {
     saveFilters,
     type FilterMap,
 } from './DiscoveryFilters';
-import { TerminalDock, TerminalHeader } from './TerminalChrome';
+import { TerminalDock } from './TerminalChrome';
 import TerminalSettingsModal from './TerminalSettingsModal';
 import type { SettingsSection } from './TerminalSettingsModal';
 
@@ -137,12 +137,10 @@ export default function DiscoveryTerminal() {
             && matchesFilters(token, filters[column.key]))];
     })) as Record<DiscoveryCategory, DiscoveryToken[]>, [filters, query, tokens]);
 
-    if (isLoading || !isAuthenticated) return <main className="grid h-screen place-items-center bg-[#0f0f12]"><div className="spinner" /></main>;
+    if (isLoading || !isAuthenticated) return <main className="grid h-full place-items-center bg-[#0f0f12]"><div className="spinner" /></main>;
 
     return (
-        <main data-terminal-theme={settings.theme} className={`flex h-screen min-h-[40rem] flex-col overflow-hidden bg-[var(--term-bg)] text-[var(--term-text)] ${terminalSkin(settings)}`}>
-            <TerminalHeader settings={settings} onSettings={(section) => openSettings(section)} />
-
+        <main className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--term-bg)] text-[var(--term-text)]">
             <section className="trenches-bar flex shrink-0 items-center px-[clamp(.9rem,1.8vw,1.5rem)]">
                 <h1 className="text-[clamp(1.1rem,1.55vw,1.3rem)] font-[500] tracking-[-0.02em] text-white">Vision</h1>
                 <SolanaMark className="ml-3 h-[1.05rem] w-[1.05rem]" />
@@ -256,6 +254,8 @@ function TokenCard({ token, settings }: {
             aria-label={`Open ${token.symbol} chart`}
             onClick={openCard}
             onKeyDown={openCardKey}
+            onPointerEnter={() => router.prefetch(href)}
+            onFocus={() => router.prefetch(href)}
             className={`token-card group relative cursor-pointer !h-[7.375rem] !min-h-[7.375rem] border-b border-[var(--term-border)] !pb-[.4375rem] !pl-[clamp(.75rem,.85vw,.9375rem)] !pr-[clamp(.75rem,.8vw,.875rem)] !pt-[.625rem] ${settings.visionTables === 'spaced' ? 'token-card-spaced !h-[7.75rem] !min-h-[7.75rem]' : ''}`}
         >
             <div className="flex h-full min-w-0 items-start gap-[.5rem]">
@@ -263,6 +263,7 @@ function TokenCard({ token, settings }: {
                     <div className="relative h-[clamp(4.9rem,9.2vh,5.25rem)] w-full">
                         <Link
                             href={href}
+                            prefetch
                             className={`token-avatar relative block !h-full !w-full overflow-hidden border-2 ${settings.visionImage === 'circle' ? 'rounded-full' : 'rounded-md'}`}
                             style={{ borderColor: edge }}
                         >
@@ -279,7 +280,7 @@ function TokenCard({ token, settings }: {
 
                 <div className="flex h-full min-w-0 flex-1 flex-col">
                     <div className="flex min-w-0 items-start gap-1.5 pr-[10.5rem]">
-                        <Link href={href} className="min-w-0 truncate pt-[.1875rem] text-[clamp(.95rem,1.25vw,1rem)] font-[550] leading-[1.05] text-white hover:text-[var(--term-accent)]">{token.symbol}</Link>
+                        <Link href={href} prefetch className="min-w-0 truncate pt-[.1875rem] text-[clamp(.95rem,1.25vw,1rem)] font-[550] leading-[1.05] text-white hover:text-[var(--term-accent)]">{token.symbol}</Link>
                         <span className="min-w-0 flex-1 truncate pt-[.1875rem] text-[clamp(.8rem,1.1vw,.875rem)] leading-[1.05] text-[var(--term-dim)]">{token.name}</span>
                         <div className="absolute right-[clamp(.75rem,.8vw,.875rem)] top-[.5625rem] shrink-0 text-right text-[.75rem] leading-none tabular-nums">
                             <div className="flex items-center justify-end gap-2.5">
@@ -295,7 +296,7 @@ function TokenCard({ token, settings }: {
                             <span className={`text-[.875rem] font-[600] ${token.category === 'final' ? 'text-[var(--trench-age-bad)]' : 'text-[var(--trench-age-good)]'}`}>{age(token.createdAt, token.observedAt)}</span>
                             {token.socials?.twitter && <a href={token.socials.twitter} target="_blank" rel="noreferrer" className="hover:text-white" aria-label={`${token.symbol} on X`}><LinkIcon className="h-4 w-4" /></a>}
                             {token.socials?.website && <a href={token.socials.website} target="_blank" rel="noreferrer" className="hidden text-[var(--term-muted)] hover:text-white 2xl:inline" aria-label={`${token.symbol} website`}><GlobeAltIcon className="h-4 w-4" /></a>}
-                            <Link href={href} className="text-[var(--term-muted)] hover:text-white" aria-label="Open token chart"><MagnifyingGlassIcon className="h-4 w-4" /></Link>
+                            <Link href={href} prefetch className="text-[var(--term-muted)] hover:text-white" aria-label="Open token chart"><MagnifyingGlassIcon className="h-4 w-4" /></Link>
                         </div>
                         {settings.showStats && <div className="token-meta-stats flex min-w-0 items-center gap-[.5rem]">
                             <span className="flex items-center gap-1"><UserGroupIcon className="h-4 w-4" />{compact(token.holderCount, 0)}</span>

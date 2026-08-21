@@ -6,6 +6,8 @@ import { WalletContextProvider } from '../contexts/WalletContext';
 import { AuthProvider } from '../contexts/AuthContext';
 import { ChartProvider } from '../contexts/ChartContext';
 import { Toaster } from 'react-hot-toast';
+import { TerminalSettingsProvider } from '../services/terminalSettings';
+import TerminalShell from '../components/trading/TerminalShell';
 
 const geist = Geist({
     subsets: ['latin'],
@@ -45,36 +47,36 @@ export default function RootLayout({
             <body>
                 <WalletContextProvider>
                     <AuthProvider>
-                        <ChartProvider>
-                            <div className="min-h-screen bg-ash">
-                                {children}
-                            </div>
-                            <Toaster
-                                position="top-center"
-                                toastOptions={{
-                                    duration: 4000,
-                                    style: {
-                                        background: '#1c1c22',
-                                        color: '#ffffff',
-                                        border: '1px solid rgba(255,255,255,0.08)',
-                                    },
-                                    success: {
-                                        duration: 3000,
-                                        iconTheme: {
-                                        primary: '#5ddf6c',
-                                            secondary: '#ffffff',
+                        <TerminalSettingsProvider>
+                            <ChartProvider>
+                                <TerminalShell>{children}</TerminalShell>
+                                <Toaster
+                                    position="top-center"
+                                    toastOptions={{
+                                        duration: 4000,
+                                        style: {
+                                            background: '#1c1c22',
+                                            color: '#ffffff',
+                                            border: '1px solid rgba(255,255,255,0.08)',
                                         },
-                                    },
-                                    error: {
-                                        duration: 5000,
-                                        iconTheme: {
-                                            primary: '#dc2626',
-                                            secondary: '#ffffff',
+                                        success: {
+                                            duration: 3000,
+                                            iconTheme: {
+                                                primary: '#5ddf6c',
+                                                secondary: '#ffffff',
+                                            },
                                         },
-                                    },
-                                }}
-                            />
-                        </ChartProvider>
+                                        error: {
+                                            duration: 5000,
+                                            iconTheme: {
+                                                primary: '#dc2626',
+                                                secondary: '#ffffff',
+                                            },
+                                        },
+                                    }}
+                                />
+                            </ChartProvider>
+                        </TerminalSettingsProvider>
                     </AuthProvider>
                 </WalletContextProvider>
             </body>

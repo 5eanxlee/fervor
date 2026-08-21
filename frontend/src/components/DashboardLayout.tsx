@@ -2,8 +2,8 @@
 
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { terminalSkin, useTerminalSettings } from '../services/terminalSettings';
-import { TerminalDock, TerminalHeader } from './trading/TerminalChrome';
+import { useTerminalSettings } from '../services/terminalSettings';
+import { TerminalDock } from './trading/TerminalChrome';
 import TerminalSettingsModal from './trading/TerminalSettingsModal';
 import type { SettingsSection } from './trading/TerminalSettingsModal';
 
@@ -24,9 +24,8 @@ export default function DashboardLayout({ children, live = true }: DashboardLayo
     return (
         <main
             data-terminal-theme={settings.theme}
-            className={`flex h-screen min-h-[40rem] flex-col overflow-hidden bg-[var(--term-bg)] text-[var(--term-text)] ${terminalSkin(settings)}`}
+            className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--term-bg)] text-[var(--term-text)]"
         >
-            <TerminalHeader settings={settings} onSettings={openSettings} />
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[var(--term-bg)]">
                 {children}
             </div>

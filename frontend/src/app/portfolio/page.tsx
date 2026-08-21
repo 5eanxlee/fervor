@@ -195,7 +195,7 @@ export default function PortfolioPage() {
     })();
 
     if (authLoading || !isAuthenticated) {
-        return <main data-terminal-theme="terminal" className="grid h-screen place-items-center bg-[var(--term-bg)]"><div className="spinner" /></main>;
+        return <main data-terminal-theme="terminal" className="grid h-full place-items-center bg-[var(--term-bg)]"><div className="spinner" /></main>;
     }
 
     return (

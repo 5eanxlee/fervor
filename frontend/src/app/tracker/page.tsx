@@ -186,7 +186,7 @@ function TrackerContent() {
     };
 
     if (authLoading || !isAuthenticated) {
-        return <main data-terminal-theme="terminal" className="grid h-screen place-items-center bg-[var(--term-bg)]"><div className="spinner" /></main>;
+        return <main data-terminal-theme="terminal" className="grid h-full place-items-center bg-[var(--term-bg)]"><div className="spinner" /></main>;
     }
 
     const current = wallets.find((wallet) => wallet.id === selected);
@@ -393,5 +393,5 @@ function Metric({ label, value, note, valueClass = 'text-white' }: { label: stri
 }
 
 export default function TrackerPage() {
-    return <Suspense fallback={<main data-terminal-theme="terminal" className="grid h-screen place-items-center bg-[var(--term-bg)]"><div className="spinner" /></main>}><TrackerContent /></Suspense>;
+    return <Suspense fallback={<main data-terminal-theme="terminal" className="grid h-full place-items-center bg-[var(--term-bg)]"><div className="spinner" /></main>}><TrackerContent /></Suspense>;
 }
