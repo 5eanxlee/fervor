@@ -34,11 +34,11 @@ describe('historical replay projection', () => {
         ], 5);
         expect(candles).toEqual([
             expect.objectContaining({ open: 2, high: 3, low: 2, close: 3, volumeUsd: 30, buyCount: 1, sellCount: 1, txCount: 2 }),
-            expect.objectContaining({ open: 4, close: 4, volumeUsd: 30, txCount: 1 }),
+            expect.objectContaining({ open: 3, high: 4, low: 3, close: 4, volumeUsd: 30, txCount: 1 }),
         ]);
     });
 
-    it('uses verified spot prices and fills inactive intervals', () => {
+    it('uses verified spot prices without synthesizing inactive intervals', () => {
         const candles = mergeCandles([], [
             trade({ chartPriceUsd: 2.1, priceUsd: 8 }),
             trade({ idempotencyKey: 'trade-2', observedAt: '2024-11-19T00:00:04.000Z', chartPriceUsd: 3.1, priceUsd: 12 }),
@@ -47,10 +47,9 @@ describe('historical replay projection', () => {
         expect(chartPriceOf(trade({ chartPriceUsd: 2.1, priceUsd: 8 }))).toBe(2.1);
         expect(candles.map((candle) => [candle.timestamp, candle.close, candle.txCount])).toEqual([
             [Date.parse('2024-11-19T00:00:01.000Z'), 2.1, 1],
-            [Date.parse('2024-11-19T00:00:02.000Z'), 2.1, 0],
-            [Date.parse('2024-11-19T00:00:03.000Z'), 2.1, 0],
             [Date.parse('2024-11-19T00:00:04.000Z'), 3.1, 1],
         ]);
+        expect(candles[1]).toMatchObject({ open: 2.1, high: 3.1, low: 2.1 });
     });
 
     it('charts verified FX display fields from the first trade on the replay timeline', () => {
@@ -84,31 +83,48 @@ describe('historical replay projection', () => {
         expect(supplyOf(trade({ supply: { rawAmount: '100', decimals: 0, fixed: false } }))).toBeUndefined();
     });
 
-    it('fills long one-second gaps without exceeding the bounded chart window', () => {
+    it('keeps long one-second pauses sparse', () => {
         const candles = mergeCandles([], [
             trade(),
             trade({ idempotencyKey: 'trade-2', observedAt: '2024-11-19T00:50:01.000Z', priceUsd: 3 }),
         ], 1, 2_000);
 
-        expect(candles).toHaveLength(2_000);
-        expect(candles[0].timestamp).toBe(Date.parse('2024-11-19T00:16:42.000Z'));
+        expect(candles).toHaveLength(2);
+        expect(candles[0].timestamp).toBe(Date.parse('2024-11-19T00:00:01.000Z'));
         expect(candles.at(-1)).toMatchObject({
             timestamp: Date.parse('2024-11-19T00:50:01.000Z'),
+            open: 2,
+            high: 3,
+            low: 2,
             close: 3,
             txCount: 1,
         });
-        expect(candles.slice(0, -1).every((candle) => candle.close === 2 && candle.txCount === 0)).toBe(true);
     });
 
-    it('advances flat candles with the running replay clock', () => {
+    it('does not advance candles without a trade', () => {
         const base = mergeCandles([], [trade()], 1);
-        const extended = mergeCandles(base, [], 1, 2_000, Date.parse('2024-11-19T00:00:04.000Z'));
-        expect(extended.map((candle) => [candle.timestamp, candle.close, candle.txCount])).toEqual([
-            [Date.parse('2024-11-19T00:00:01.000Z'), 2, 1],
-            [Date.parse('2024-11-19T00:00:02.000Z'), 2, 0],
-            [Date.parse('2024-11-19T00:00:03.000Z'), 2, 0],
-            [Date.parse('2024-11-19T00:00:04.000Z'), 2, 0],
-        ]);
+        expect(mergeCandles(base, [], 1)).toBe(base);
+    });
+
+    it('removes legacy zero-trade candles from an existing series', () => {
+        const base = mergeCandles([], [trade()], 1);
+        const empty = { ...base[0], timestamp: base[0].timestamp + 1_000, txCount: 0, volumeUsd: 0 };
+        expect(mergeCandles([...base, empty], [], 1)).toEqual(base);
+    });
+
+    it.each([1, 5, 15, 30, 60, 300, 3_600])('keeps %s-second candles sparse and vertically continuous', (interval) => {
+        const start = Date.parse('2024-11-19T00:00:00.000Z');
+        const candles = mergeCandles([], [
+            trade({ observedAt: new Date(start + 1_000).toISOString(), priceUsd: 2 }),
+            trade({
+                idempotencyKey: 'trade-2',
+                observedAt: new Date(start + interval * 3_000 + 1_000).toISOString(),
+                priceUsd: 4,
+            }),
+        ], interval);
+
+        expect(candles).toHaveLength(2);
+        expect(candles[1]).toMatchObject({ open: 2, high: 4, low: 2, close: 4 });
     });
 
     it('projects a bounded replay clock between canonical trades', () => {

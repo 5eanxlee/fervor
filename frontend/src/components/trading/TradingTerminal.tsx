@@ -17,7 +17,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiService, TokenCandle, TokenData, TokenMetadata } from '../../services/api';
-import { ChartDataset } from '../../services/chartData';
+import { ChartDataset, connectCandles } from '../../services/chartData';
 import LightweightTokenChart from '../charts/LightweightTokenChart';
 import TokenLogo from '../TokenLogo';
 import TradeTicket from './TradeTicket';
@@ -142,7 +142,7 @@ const datasetFrom = (
     candles: TokenCandle[],
     historical = false
 ): ChartDataset => {
-    const chartCandles = candles.map((candle) => ({
+    const chartCandles = connectCandles(candles).map((candle) => ({
         ...candle,
         volumeTokens: 0,
         tradeCount: candle.txCount,
@@ -151,6 +151,11 @@ const datasetFrom = (
         marketCapUsd: candle.close * totalSupply,
         liquidityUsd: liquidity,
     }));
+    const firstAt = chartCandles[0]?.timestamp;
+    const lastAt = chartCandles.at(-1)?.timestamp;
+    const durationSeconds = firstAt === undefined || lastAt === undefined
+        ? 0
+        : Math.max(intervalSeconds, (lastAt - firstAt) / 1_000 + intervalSeconds);
     return {
         tokenAddress: tokenMint,
         tokenSymbol,
@@ -173,7 +178,7 @@ const datasetFrom = (
             finalLiquidityUsd: liquidity,
             uniqueBuyers: 0,
             uniqueSellers: 0,
-            durationSeconds: chartCandles.length * intervalSeconds,
+            durationSeconds,
         },
     };
 };

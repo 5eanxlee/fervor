@@ -1,4 +1,5 @@
 import type { TokenCandle } from './api';
+import { connectCandles } from './chartData';
 
 export const replayControlContract = 'fervor-replay-control-command-v1' as const;
 
@@ -528,18 +529,14 @@ export const mergeCandles = (
     current: TokenCandle[],
     trades: ReplayTrade[],
     intervalSeconds: number,
-    limit = 2_000,
-    throughMs?: number
+    limit = 2_000
 ): TokenCandle[] => {
     const intervalMs = intervalSeconds * 1_000;
-    const through = finite(throughMs)
-        ? Math.floor(throughMs / intervalMs) * intervalMs
-        : undefined;
-    const currentEnd = current.at(-1)?.timestamp;
-    if (!trades.length && (through === undefined || currentEnd === undefined || through <= currentEnd)) {
-        return current;
-    }
-    const next = new Map(current.map((candle) => [candle.timestamp, { ...candle }]));
+    const active = current.filter((candle) => candle.txCount > 0);
+    if (!trades.length) return active.length === current.length ? current : connectCandles(active).slice(-limit);
+
+    const next = new Map(active
+        .map((candle) => [candle.timestamp, { ...candle }]));
     for (const trade of trades) {
         const price = chartPriceOf(trade);
         if (price === undefined) continue;
@@ -572,35 +569,5 @@ export const mergeCandles = (
         }
     }
     const ordered = Array.from(next.values()).sort((left, right) => left.timestamp - right.timestamp);
-    const last = ordered.at(-1);
-    if (!last) return [];
-    const end = Math.max(last.timestamp, through ?? last.timestamp);
-    const start = Math.max(ordered[0].timestamp, end - (limit - 1) * intervalMs);
-    let seed = ordered[0];
-    for (const candle of ordered) {
-        if (candle.timestamp > start) break;
-        seed = candle;
-    }
-    const filled: TokenCandle[] = [];
-    let close = seed.close;
-    for (let timestamp = start; timestamp <= end; timestamp += intervalMs) {
-        const candle = next.get(timestamp);
-        if (candle) {
-            close = candle.close;
-            filled.push(candle);
-        } else {
-            filled.push({
-                timestamp,
-                open: close,
-                high: close,
-                low: close,
-                close,
-                volumeUsd: 0,
-                buyCount: 0,
-                sellCount: 0,
-                txCount: 0,
-            });
-        }
-    }
-    return filled;
+    return connectCandles(ordered).slice(-limit);
 };

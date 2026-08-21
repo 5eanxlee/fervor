@@ -37,6 +37,21 @@ export interface ChartCandle {
     liquidityUsd: number;
 }
 
+type Ohlc = Pick<ChartCandle, 'open' | 'high' | 'low' | 'close'>;
+
+export function connectCandles<T extends Ohlc>(candles: readonly T[]): T[] {
+    return candles.map((candle, index) => {
+        if (index === 0) return { ...candle };
+        const previousClose = candles[index - 1].close;
+        return {
+            ...candle,
+            open: previousClose,
+            high: Math.max(candle.high, previousClose),
+            low: Math.min(candle.low, previousClose),
+        };
+    });
+}
+
 export interface ChartTradeMarker {
     timestamp: number;
     price: number;

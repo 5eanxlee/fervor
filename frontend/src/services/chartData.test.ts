@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
-import { formatAxisValue, formatCompact, formatInterval, latestLogicalRange } from './chartData';
+import { connectCandles, formatAxisValue, formatCompact, formatInterval, latestLogicalRange } from './chartData';
+
+describe('chart candle continuity', () => {
+    it('joins each candle to the prior close without mutating source data', () => {
+        const source = [
+            { open: 1, high: 2, low: 1, close: 2 },
+            { open: 4, high: 5, low: 4, close: 5 },
+            { open: 3, high: 3, low: 2, close: 2 },
+        ];
+
+        expect(connectCandles(source)).toEqual([
+            source[0],
+            { open: 2, high: 5, low: 2, close: 5 },
+            { open: 5, high: 5, low: 2, close: 2 },
+        ]);
+        expect(source[1].open).toBe(4);
+    });
+});
 
 describe('chart axis labels', () => {
     it('keeps market-cap ticks at three significant digits', () => {
