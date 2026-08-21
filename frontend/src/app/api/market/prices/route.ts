@@ -23,6 +23,7 @@ const validPrice = (value: unknown): number | undefined => {
 async function coinbasePrice(product: string): Promise<number | undefined> {
     const response = await fetch(`https://api.exchange.coinbase.com/products/${product}/ticker`, {
         headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(4_000),
         next: { revalidate: 20 },
     });
     if (!response.ok) return undefined;
@@ -33,6 +34,7 @@ async function coinbasePrice(product: string): Promise<number | undefined> {
 async function bnbPrice(): Promise<number | undefined> {
     const response = await fetch('https://data-api.binance.vision/api/v3/ticker/price?symbol=BNBUSDT', {
         headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(4_000),
         next: { revalidate: 20 },
     });
     if (!response.ok) return undefined;
@@ -44,6 +46,7 @@ async function fallbackPrices(): Promise<Partial<Record<Asset, number>>> {
     const ids = Object.values(gecko).join(',');
     const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`, {
         headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(4_000),
         next: { revalidate: 30 },
     });
     if (!response.ok) return {};

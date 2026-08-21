@@ -219,7 +219,7 @@ services:
       api:
         condition: service_healthy
     restart: unless-stopped
-    networks: [private]
+    networks: [private, ingress]
 
   edge:
     image: nginx:1.27-alpine

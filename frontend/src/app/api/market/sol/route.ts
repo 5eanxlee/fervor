@@ -12,6 +12,7 @@ const validPrice = (value: unknown): number | undefined => {
 async function fromJupiter(): Promise<number | undefined> {
     const response = await fetch(JUP_URL, {
         headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(4_000),
         next: { revalidate: 30 },
     });
     if (!response.ok) return undefined;
@@ -22,6 +23,7 @@ async function fromJupiter(): Promise<number | undefined> {
 async function fromCoinbase(): Promise<number | undefined> {
     const response = await fetch(CB_URL, {
         headers: { accept: 'application/json' },
+        signal: AbortSignal.timeout(4_000),
         next: { revalidate: 30 },
     });
     if (!response.ok) return undefined;
