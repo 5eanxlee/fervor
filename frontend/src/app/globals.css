@@ -59,6 +59,35 @@
     box-shadow: none;
 }
 
+.terminal-overlay,
+dialog::backdrop {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+}
+
+.settings-section {
+    animation: settings-section-in 180ms ease-out;
+}
+
+@keyframes settings-section-in {
+    from {
+        opacity: .45;
+        transform: translateY(.2rem);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .settings-section {
+        animation: none;
+    }
+}
+
 @layer base {
     html {
         font-family: var(--font-geist), system-ui, sans-serif;
@@ -416,7 +445,7 @@
 
 .trench-search {
     width: 100%;
-    max-width: 8rem;
+    max-width: 9.5rem;
 }
 
 .trench-search:focus-within {

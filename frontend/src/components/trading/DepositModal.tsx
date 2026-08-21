@@ -45,7 +45,7 @@ export default function DepositModal({
     };
 
     return (
-        <div className="fixed inset-0 z-[100] grid place-items-center bg-black/80 p-3 backdrop-blur-[2px]" onMouseDown={onClose}>
+        <div className="terminal-overlay fixed inset-0 z-[100] grid place-items-center p-3" onMouseDown={onClose}>
             <section role="dialog" aria-modal="true" aria-label="Exchange" className="w-full max-w-[25rem] overflow-hidden rounded-2xl border border-[var(--term-border-strong)] bg-[#18181b] shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
                 <header className="flex h-12 items-center border-b border-[var(--term-border)] px-4">
                     <h2 className="text-sm font-[550] text-white">Exchange</h2>

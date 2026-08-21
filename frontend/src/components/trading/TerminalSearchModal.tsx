@@ -136,7 +136,7 @@ export default function TerminalSearchModal({ open, onClose }: { open: boolean; 
     };
 
     return (
-        <div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-transparent p-[clamp(.65rem,3vw,2rem)]" onMouseDown={onClose}>
+        <div className="terminal-overlay fixed inset-0 z-[100] grid place-items-center overflow-y-auto p-[clamp(.65rem,3vw,2rem)]" onMouseDown={onClose}>
             <section
                 role="dialog"
                 aria-modal="true"

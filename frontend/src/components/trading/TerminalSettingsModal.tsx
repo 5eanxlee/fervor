@@ -1,6 +1,6 @@
 'use client';
 
-import { Dispatch, SetStateAction, useEffect, useMemo, useState } from 'react';
+import { Dispatch, SetStateAction, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { TerminalNav, TerminalSettings } from '../../services/terminalSettings';
 import VisionSettingsPanel from './VisionSettingsPanel';
@@ -38,15 +38,26 @@ export default function TerminalSettingsModal({
 }) {
     const [section, setSection] = useState<SettingsSection>(initialSection);
     const [search, setSearch] = useState(initialSearch);
+    const [bodyHeight, setBodyHeight] = useState<number>();
+    const contentRef = useRef<HTMLDivElement>(null);
+    const closeRef = useRef(onClose);
+
+    useEffect(() => {
+        closeRef.current = onClose;
+    }, [onClose]);
 
     useEffect(() => {
         if (!open) return;
         setSection(initialSection);
         setSearch(initialSearch);
-        const close = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    }, [initialSearch, initialSection, open]);
+
+    useEffect(() => {
+        if (!open) return;
+        const close = (event: KeyboardEvent) => { if (event.key === 'Escape') closeRef.current(); };
         window.addEventListener('keydown', close);
         return () => window.removeEventListener('keydown', close);
-    }, [initialSearch, initialSection, onClose, open]);
+    }, [open]);
 
     const matches = useMemo(() => {
         const query = search.trim().toLowerCase();
@@ -59,20 +70,48 @@ export default function TerminalSettingsModal({
         setSection(matches[0].key);
     }, [matches, open, section]);
 
+    const measureBody = useCallback(() => {
+        if (!contentRef.current) return;
+        const chromeHeight = 237;
+        const maxHeight = Math.max(216, window.innerHeight * 0.9 - chromeHeight);
+        const nextHeight = Math.min(maxHeight, Math.max(216, contentRef.current.scrollHeight + 40));
+        setBodyHeight((current) => current === nextHeight ? current : nextHeight);
+    }, []);
+
+    useLayoutEffect(() => {
+        if (!open) {
+            setBodyHeight(undefined);
+            return;
+        }
+        const frame = window.requestAnimationFrame(measureBody);
+        return () => window.cancelAnimationFrame(frame);
+    }, [matches, measureBody, open, section]);
+
+    useEffect(() => {
+        if (!open || !contentRef.current) return;
+        const observer = new ResizeObserver(measureBody);
+        observer.observe(contentRef.current);
+        window.addEventListener('resize', measureBody);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', measureBody);
+        };
+    }, [measureBody, open]);
+
     if (!open) return null;
 
     const patch = (next: Partial<TerminalSettings>) => setSettings((value) => ({ ...value, ...next }));
     const toggleNav = (key: TerminalNav) => patch({ nav: { ...settings.nav, [key]: !settings.nav[key] } });
 
     return (
-        <div className="fixed inset-0 z-[90] grid place-items-center bg-black/75 p-3 backdrop-blur-[2px]" onMouseDown={onClose}>
-            <section data-settings-dialog className="flex max-h-[86vh] w-full max-w-[40rem] flex-col overflow-hidden rounded-3xl border border-[var(--term-border-strong)] bg-[#18181b] shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
-                <header className="flex h-13 shrink-0 items-center px-5">
+        <div className="terminal-overlay fixed inset-0 z-[90] grid place-items-center p-3" onMouseDown={onClose}>
+            <section data-settings-dialog role="dialog" aria-modal="true" aria-label="Settings" className="flex max-h-[90vh] w-full max-w-[40rem] flex-col overflow-hidden rounded-3xl border border-[var(--term-border-strong)] bg-[#18181b] shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+                <header className="flex min-h-16 shrink-0 items-center px-6 py-3">
                     <h2 className="text-sm font-[550] tracking-[-.01em] text-white">Settings</h2>
                     <button onClick={onClose} className="ml-auto grid h-8 w-8 place-items-center rounded-full text-[var(--term-muted)] hover:bg-[var(--term-raised)] hover:text-white" aria-label="Close settings"><XMarkIcon className="h-4 w-4" /></button>
                 </header>
 
-                <div className="px-5 pb-3">
+                <div className="px-6 pb-4">
                     <label className="flex h-9 items-center rounded-full border border-[var(--term-border)] bg-[var(--term-raised)] px-3 focus-within:border-[var(--term-border-strong)]">
                         <MagnifyingGlassIcon className="h-4 w-4 shrink-0 text-[var(--term-dim)]" />
                         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search settings" aria-label="Search settings" className="min-w-0 flex-1 border-0 bg-transparent px-2 text-xs text-white outline-none ring-0 placeholder:text-[var(--term-dim)] focus:border-0 focus:outline-none focus:ring-0" />
@@ -80,14 +119,19 @@ export default function TerminalSettingsModal({
                     </label>
                 </div>
 
-                <nav role="tablist" aria-label="Settings sections" className="flex shrink-0 gap-1 overflow-x-auto border-y border-[var(--term-border)] px-4 py-2">
+                <nav role="tablist" aria-label="Settings sections" className="flex shrink-0 gap-1 overflow-x-auto border-y border-[var(--term-border)] px-5 py-2">
                     {matches.map(({ key, label }) => (
                         <button key={key} role="tab" aria-selected={section === key} onClick={() => setSection(key)} className={`h-8 shrink-0 rounded-full px-3 text-[11px] ${section === key ? 'bg-[var(--term-control)] text-[var(--term-accent)]' : 'text-[var(--term-dim)] hover:bg-[var(--term-raised)] hover:text-white'}`}>{label}</button>
                     ))}
                     {!matches.length && <span className="flex h-8 items-center px-2 text-[11px] text-[var(--term-dim)]">No matching settings</span>}
                 </nav>
 
-                <div className="min-h-0 max-h-[calc(86vh-11.25rem)] overflow-y-auto px-5 py-4 text-xs text-[#abb2ad]">
+                <div
+                    className="min-h-0 overflow-y-auto px-6 py-5 text-xs text-[#abb2ad] transition-[height] duration-300 ease-[cubic-bezier(.22,1,.36,1)] motion-reduce:transition-none"
+                    style={bodyHeight === undefined ? undefined : { height: bodyHeight }}
+                >
+                    <div ref={contentRef}>
+                    <div key={section} className="settings-section">
                     {section === 'appearance' && <div className="space-y-5">
                         <Setting label="Font"><Choice value={settings.font} options={[["padre", 'Padre'], ['geist', 'Geist'], ['mono', 'Mono']]} onChange={(font) => patch({ font })} /></Setting>
                         <Setting label="Color theme"><Choice value={settings.theme} options={[["terminal", 'Terminal'], ['dark', 'Dark'], ['noir', 'Noir']]} onChange={(theme) => patch({ theme })} /></Setting>
@@ -129,9 +173,11 @@ export default function TerminalSettingsModal({
                         <div className="mb-3 text-[10px] uppercase tracking-[0.12em] text-[var(--term-dim)]">Top navigation</div>
                         {([['portfolio', 'Portfolio'], ['watchlist', 'Track']] as const).map(([key, label]) => <Check key={key} label={label} checked={settings.nav[key]} onChange={() => toggleNav(key)} />)}
                     </div>}
+                    </div>
+                    </div>
                 </div>
 
-                <footer className="flex h-12 shrink-0 items-center justify-end px-5"><button onClick={onClose} className="h-8 rounded-full bg-[var(--term-accent)] px-5 text-xs font-[600] text-[#0f0f12]">Done</button></footer>
+                <footer className="flex min-h-[4.5rem] shrink-0 items-start justify-end px-6 pb-4 pt-3"><button onClick={onClose} className="h-9 rounded-full bg-[var(--term-accent)] px-6 text-xs font-[600] text-[#0f0f12]">Done</button></footer>
             </section>
         </div>
     );

@@ -301,7 +301,7 @@ export default function DiscoveryFilters({ openFor, value, onClose, onApply }: {
     const reset = () => setDraft((filters) => ({ ...filters, [category]: emptyColumn() }));
 
     return (
-        <div className="fixed inset-0 z-[110] grid place-items-center overflow-hidden bg-transparent p-4" onMouseDown={onClose}>
+        <div className="terminal-overlay fixed inset-0 z-[110] grid place-items-center overflow-hidden p-4" onMouseDown={onClose}>
             <section
                 role="dialog"
                 aria-modal="true"

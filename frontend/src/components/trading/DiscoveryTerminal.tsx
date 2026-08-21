@@ -159,7 +159,7 @@ export default function DiscoveryTerminal() {
             <section className="trenches-grid grid min-h-0 flex-1 overflow-x-auto" style={{ gridTemplateColumns: `repeat(${Math.max(1, visible.length)}, minmax(min(19rem, 86vw), 1fr))` }}>
                 {visible.map((column) => (
                     <section key={column.key} className="trench-col flex min-w-0 flex-col overflow-hidden" onMouseEnter={() => { hover.current = column.key; }} onMouseLeave={() => { hover.current = undefined; }}>
-                        <header className="trench-head grid shrink-0 grid-cols-[minmax(4rem,1fr)_minmax(6.75rem,8rem)_minmax(7rem,1fr)] items-center gap-1 px-[clamp(.6rem,.9vw,.75rem)]">
+                        <header className="trench-head grid shrink-0 grid-cols-[minmax(4rem,1fr)_minmax(7rem,9.5rem)_minmax(7rem,1fr)] items-center gap-1 px-[clamp(.6rem,.9vw,.75rem)]">
                             <div className="flex min-w-0 items-center gap-1">
                                 <h2 className="text-[clamp(.95rem,1.2vw,1rem)] font-[500] leading-[1.1] text-white">{column.label}</h2>
                                 {column.key === 'final' && <ChevronDownIcon className="h-3 w-3 text-[var(--term-muted)]" />}
