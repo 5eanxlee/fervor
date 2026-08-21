@@ -833,7 +833,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
                     className="token-left grid min-h-0 min-w-0"
                     style={{ '--chart-top': `${chartShare}fr`, '--chart-bottom': `${100 - chartShare}fr` } as CSSProperties}
                 >
-                    <div className="chart-panel flex min-h-0 flex-col overflow-hidden bg-[var(--term-bg)]">
+                    <div className="chart-panel flex min-h-0 flex-col overflow-visible bg-[var(--term-bg)]">
                         <ChartToolbar
                             timeframe={interval}
                             pins={settings.chartPins}

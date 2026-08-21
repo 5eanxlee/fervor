@@ -654,7 +654,7 @@
 .timeframe-tool[data-active="true"],
 .timeframe-tool[data-active="true"]:hover {
     background: transparent;
-    color: var(--term-accent-strong);
+    color: #5874ff;
 }
 
 .replay-controls {
