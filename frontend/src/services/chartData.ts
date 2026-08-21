@@ -1,4 +1,20 @@
 export type ChartValueMode = 'price' | 'market_cap';
+export type ChartQuote = 'usd' | 'sol';
+
+export const CHART_STYLE_OPTIONS = [
+    { id: 'bars', label: 'Bars' },
+    { id: 'candles', label: 'Candles' },
+    { id: 'hollow', label: 'Hollow candles' },
+    { id: 'line', label: 'Line' },
+    { id: 'markers', label: 'Line with markers' },
+    { id: 'step', label: 'Step line' },
+    { id: 'area', label: 'Area' },
+    { id: 'hlc-area', label: 'HLC area' },
+    { id: 'baseline', label: 'Baseline' },
+    { id: 'columns', label: 'Columns' },
+] as const;
+
+export type ChartStyle = typeof CHART_STYLE_OPTIONS[number]['id'];
 
 export const CHART_TIMEFRAME_OPTIONS = [
     { id: '1s', label: '1s', menuLabel: '1 second', group: 'Seconds', seconds: 1 },
@@ -116,8 +132,14 @@ export function latestLogicalRange(candleCount: number, compact: boolean): { fro
     return { from: to - visibleBars, to };
 }
 
-export function toDisplayValue(value: number, totalSupply: number, valueMode: ChartValueMode): number {
-    return valueMode === 'market_cap' ? value * totalSupply : value;
+export function toDisplayValue(
+    value: number,
+    totalSupply: number,
+    valueMode: ChartValueMode,
+    quoteRate = 1
+): number {
+    const usdValue = valueMode === 'market_cap' ? value * totalSupply : value;
+    return usdValue * quoteRate;
 }
 
 const compactUnits = [
@@ -153,16 +175,25 @@ function compactValue(value: number): string {
     return `${sign}${formatted}${unit.suffix}`;
 }
 
-export function formatAxisValue(value: number, valueMode: ChartValueMode): string {
+export function formatAxisValue(
+    value: number,
+    valueMode: ChartValueMode,
+    quote: ChartQuote = 'usd'
+): string {
     if (valueMode === 'market_cap') {
         return compactValue(value);
     }
+    if (quote === 'sol') return formatPrice(value);
     return value < 0 ? `-$${formatPrice(Math.abs(value))}` : `$${formatPrice(value)}`;
 }
 
 export function formatCompact(value: number): string {
     const compact = compactValue(value);
     return compact.startsWith('-') ? `-$${compact.slice(1)}` : `$${compact}`;
+}
+
+export function formatQuoteValue(value: number, quote: ChartQuote): string {
+    return quote === 'sol' ? `${compactValue(value)} SOL` : formatCompact(value);
 }
 
 export function formatPrice(value: number): string {

@@ -109,7 +109,7 @@ router.get('/discovery', publicTokenLimiter, async (req, res) => {
 router.get('/:address/candles', publicTokenLimiter, async (req, res) => {
     try {
         const address = addressSchema.parse(req.params.address);
-        const interval = z.enum(['1s', '5s', '15s', '30s', '1m', '3m', '5m', '15m', '1h', '4h', '1d'])
+        const interval = z.enum(['1s', '5s', '15s', '30s', '1m', '3m', '5m', '15m', '30m', '1h', '4h', '6h', '12h', '24h', '1d'])
             .default('1m').parse(req.query.interval);
         const limit = z.coerce.number().int().min(1).max(2000).default(500).parse(req.query.limit);
         const result = await query(

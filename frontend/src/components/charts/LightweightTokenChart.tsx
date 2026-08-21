@@ -2,11 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+    AreaSeries,
+    BarSeries,
+    BaselineSeries,
     CandlestickSeries,
     ColorType,
     CrosshairMode,
     HistogramSeries,
     LineStyle,
+    LineSeries,
+    LineType,
     PriceScaleMode,
     createChart,
     createSeriesMarkers,
@@ -16,6 +21,7 @@ import {
     type ISeriesApi,
     type ITextWatermarkPluginApi,
     type SeriesMarker,
+    type SeriesType,
     type Time,
     type UTCTimestamp,
 } from 'lightweight-charts';
@@ -29,32 +35,25 @@ import {
 } from 'lightweight-charts-drawing';
 import {
     type ChartDataset,
+    type ChartQuote,
+    type ChartStyle,
     type ChartTimeframe,
     type ChartValueMode,
     formatAxisValue,
     formatCompact,
     formatInterval,
     formatPrice,
+    formatQuoteValue,
     getTimeframeLabel,
     latestLogicalRange,
     toDisplayValue,
 } from '../../services/chartData';
 import {
     ArrowPathIcon,
-    ArrowTrendingUpIcon,
     ArrowUturnLeftIcon,
-    ArrowsRightLeftIcon,
-    ArrowsUpDownIcon,
-    ChartBarSquareIcon,
-    CursorArrowRaysIcon,
-    MinusIcon,
     PauseIcon,
-    PencilSquareIcon,
     PlayIcon,
-    Squares2X2Icon,
-    SwatchIcon,
     TrashIcon,
-    VariableIcon,
 } from '@heroicons/react/24/outline';
 import ChartTimeframeDropdown from './ChartTimeframeDropdown';
 
@@ -80,7 +79,12 @@ interface LightweightTokenChartProps {
     targetMarketCap?: number;
     compact?: boolean;
     drawTools?: boolean;
+    chartStyle?: ChartStyle;
+    quote?: ChartQuote;
+    solUsd?: number;
 }
+
+type MainSeries = ISeriesApi<SeriesType>;
 
 type LibraryTool =
     | 'trend-line'
@@ -97,17 +101,38 @@ type TextDraft = { point: Anchor; x: number; y: number; value: string };
 type BrushDraft = { anchors: Anchor[]; lastX: number; lastY: number };
 
 const drawingTools = [
-    ['cursor', 'Cursor', CursorArrowRaysIcon],
-    ['trend-line', 'Trend line', ArrowTrendingUpIcon],
-    ['horizontal-line', 'Horizontal line', MinusIcon],
-    ['vertical-line', 'Vertical line', ArrowsUpDownIcon],
-    ['parallel-channel', 'Parallel channel', ChartBarSquareIcon],
-    ['fib-retracement', 'Fibonacci retracement', VariableIcon],
-    ['date-price-range', 'Date and price range', ArrowsRightLeftIcon],
-    ['brush', 'Brush', SwatchIcon],
-    ['text-annotation', 'Text', PencilSquareIcon],
-    ['rectangle', 'Rectangle', Squares2X2Icon],
+    ['cursor', 'Cursor'],
+    ['trend-line', 'Trend line'],
+    ['horizontal-line', 'Horizontal line'],
+    ['vertical-line', 'Vertical line'],
+    ['parallel-channel', 'Parallel channel'],
+    ['fib-retracement', 'Fibonacci retracement'],
+    ['date-price-range', 'Date and price range'],
+    ['brush', 'Brush'],
+    ['text-annotation', 'Text'],
+    ['rectangle', 'Rectangle'],
 ] as const;
+
+function DrawGlyph({ tool }: { tool: DrawTool }) {
+    const common = {
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeLinecap: 'round' as const,
+        strokeLinejoin: 'round' as const,
+        'aria-hidden': true,
+    };
+    if (tool === 'cursor') return <svg {...common}><path d="M12 2v20M2 12h20" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" strokeWidth="1.8" /></svg>;
+    if (tool === 'trend-line') return <svg {...common}><path d="M4 18L19 5" /><circle cx="4" cy="18" r="2" /><circle cx="19" cy="5" r="2" /></svg>;
+    if (tool === 'horizontal-line') return <svg {...common}><path d="M3 12h18" /><circle cx="17" cy="12" r="2" fill="currentColor" /></svg>;
+    if (tool === 'vertical-line') return <svg {...common}><path d="M12 3v18" /><path d="M9 6l3-3 3 3M9 18l3 3 3-3" /></svg>;
+    if (tool === 'parallel-channel') return <svg {...common}><path d="M3 8h15M6 16h15" /><circle cx="18" cy="8" r="2" /><circle cx="6" cy="16" r="2" /></svg>;
+    if (tool === 'fib-retracement') return <svg {...common}><path d="M3 5h18M3 9h18M3 14h18M3 19h18" /><circle cx="5" cy="5" r="1.5" /><circle cx="19" cy="19" r="1.5" /></svg>;
+    if (tool === 'date-price-range') return <svg {...common}><path d="M5 5v14M19 5v14M2 12h20M8 9l-3 3 3 3M16 9l3 3-3 3" /></svg>;
+    if (tool === 'brush') return <svg {...common}><path d="M4 18c4-8 6-11 10-11 3 0 2 4 5 4" /><path d="M3 20c5 1 10 0 15-4" /></svg>;
+    if (tool === 'text-annotation') return <svg {...common}><path d="M5 4h14M12 4v16M8 20h8" /></svg>;
+    return <svg {...common}><rect x="4" y="4" width="16" height="16" /><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4" /></svg>;
+}
 
 function toTime(timestamp: number): UTCTimestamp {
     return Math.floor(timestamp / 1000) as UTCTimestamp;
@@ -126,22 +151,153 @@ function withAlpha(color: string, alpha: number) {
     return `rgba(245, 158, 11, ${alpha})`;
 }
 
-function toCandleData(candles: ChartDataset['candles'], totalSupply: number, valueMode: ChartValueMode) {
+function toOhlcData(
+    candles: ChartDataset['candles'],
+    totalSupply: number,
+    valueMode: ChartValueMode,
+    quoteRate: number
+) {
     return candles.map(candle => ({
         time: toTime(candle.timestamp),
-        open: toDisplayValue(candle.open, totalSupply, valueMode),
-        high: toDisplayValue(candle.high, totalSupply, valueMode),
-        low: toDisplayValue(candle.low, totalSupply, valueMode),
-        close: toDisplayValue(candle.close, totalSupply, valueMode),
+        open: toDisplayValue(candle.open, totalSupply, valueMode, quoteRate),
+        high: toDisplayValue(candle.high, totalSupply, valueMode, quoteRate),
+        low: toDisplayValue(candle.low, totalSupply, valueMode, quoteRate),
+        close: toDisplayValue(candle.close, totalSupply, valueMode, quoteRate),
     }));
 }
 
-function toVolumeData(candles: ChartDataset['candles']) {
+function toMainData(
+    candles: ChartDataset['candles'],
+    totalSupply: number,
+    valueMode: ChartValueMode,
+    quoteRate: number,
+    style: ChartStyle,
+    buyColor: string,
+    sellColor: string
+) {
+    const ohlc = toOhlcData(candles, totalSupply, valueMode, quoteRate);
+    if (style === 'bars' || style === 'candles' || style === 'hollow') return ohlc;
+    return ohlc.map((candle, index) => ({
+        time: candle.time,
+        value: style === 'hlc-area'
+            ? (candle.high + candle.low + candle.close) / 3
+            : candle.close,
+        color: candles[index].close >= candles[index].open ? buyColor : sellColor,
+    }));
+}
+
+function toVolumeData(candles: ChartDataset['candles'], quoteRate: number) {
     return candles.map(candle => ({
         time: toTime(candle.timestamp),
-        value: candle.volumeUsd,
+        value: candle.volumeUsd * quoteRate,
         color: candle.close >= candle.open ? 'rgba(93, 223, 108, 0.3)' : 'rgba(248, 113, 113, 0.32)',
     }));
+}
+
+function priceFormat(valueMode: ChartValueMode, quote: ChartQuote) {
+    return {
+        type: 'custom' as const,
+        minMove: valueMode === 'market_cap' ? 0.01 : 0.000000001,
+        formatter: (value: number) => formatAxisValue(Number(value), valueMode, quote),
+    };
+}
+
+function addMainSeries(
+    chart: IChartApi,
+    style: ChartStyle,
+    buyColor: string,
+    sellColor: string,
+    valueMode: ChartValueMode,
+    quote: ChartQuote,
+    baseValue: number,
+    empty: boolean
+): MainSeries {
+    const clear = empty ? '#0f0f12' : undefined;
+    const common = {
+        priceFormat: priceFormat(valueMode, quote),
+        lastValueVisible: !empty,
+        priceLineVisible: !empty,
+    };
+
+    if (style === 'bars') return chart.addSeries(BarSeries, {
+        ...common,
+        upColor: clear ?? buyColor,
+        downColor: clear ?? sellColor,
+        openVisible: true,
+        thinBars: true,
+    });
+    if (style === 'candles' || style === 'hollow') return chart.addSeries(CandlestickSeries, {
+        ...common,
+        upColor: style === 'hollow' && !empty ? 'transparent' : clear ?? buyColor,
+        downColor: clear ?? sellColor,
+        borderUpColor: clear ?? buyColor,
+        borderDownColor: clear ?? sellColor,
+        wickUpColor: clear ?? buyColor,
+        wickDownColor: clear ?? sellColor,
+    });
+    if (style === 'line' || style === 'markers' || style === 'step') return chart.addSeries(LineSeries, {
+        ...common,
+        color: clear ?? buyColor,
+        lineWidth: 2,
+        lineType: style === 'step' ? LineType.WithSteps : LineType.Simple,
+        pointMarkersVisible: style === 'markers' && !empty,
+        pointMarkersRadius: 2.5,
+    });
+    if (style === 'baseline') return chart.addSeries(BaselineSeries, {
+        ...common,
+        baseValue: { type: 'price', price: baseValue },
+        topLineColor: clear ?? buyColor,
+        topFillColor1: empty ? 'transparent' : withAlpha(buyColor, 0.28),
+        topFillColor2: 'transparent',
+        bottomLineColor: clear ?? sellColor,
+        bottomFillColor1: 'transparent',
+        bottomFillColor2: empty ? 'transparent' : withAlpha(sellColor, 0.28),
+    });
+    if (style === 'columns') return chart.addSeries(HistogramSeries, {
+        ...common,
+        color: clear ?? buyColor,
+        base: 0,
+    });
+    return chart.addSeries(AreaSeries, {
+        ...common,
+        lineColor: clear ?? (style === 'hlc-area' ? '#7c8dff' : buyColor),
+        lineWidth: 2,
+        topColor: empty ? 'transparent' : withAlpha(style === 'hlc-area' ? '#7c8dff' : buyColor, 0.3),
+        bottomColor: 'transparent',
+    });
+}
+
+function applyMainColors(
+    series: MainSeries,
+    style: ChartStyle,
+    buyColor: string,
+    sellColor: string,
+    empty: boolean
+) {
+    const clear = empty ? '#0f0f12' : undefined;
+    const visibility = { lastValueVisible: !empty, priceLineVisible: !empty };
+    if (style === 'bars') {
+        (series as ISeriesApi<'Bar'>).applyOptions({ ...visibility, upColor: clear ?? buyColor, downColor: clear ?? sellColor });
+    } else if (style === 'candles' || style === 'hollow') {
+        (series as ISeriesApi<'Candlestick'>).applyOptions({
+            ...visibility,
+            upColor: style === 'hollow' && !empty ? 'transparent' : clear ?? buyColor,
+            downColor: clear ?? sellColor,
+            borderUpColor: clear ?? buyColor,
+            borderDownColor: clear ?? sellColor,
+            wickUpColor: clear ?? buyColor,
+            wickDownColor: clear ?? sellColor,
+        });
+    } else if (style === 'line' || style === 'markers' || style === 'step') {
+        (series as ISeriesApi<'Line'>).applyOptions({ ...visibility, color: clear ?? buyColor, pointMarkersVisible: style === 'markers' && !empty });
+    } else if (style === 'area' || style === 'hlc-area') {
+        const color = style === 'hlc-area' ? '#7c8dff' : buyColor;
+        (series as ISeriesApi<'Area'>).applyOptions({ ...visibility, lineColor: clear ?? color, topColor: empty ? 'transparent' : withAlpha(color, 0.3) });
+    } else if (style === 'baseline') {
+        (series as ISeriesApi<'Baseline'>).applyOptions({ ...visibility, topLineColor: clear ?? buyColor, bottomLineColor: clear ?? sellColor });
+    } else {
+        (series as ISeriesApi<'Histogram'>).applyOptions({ ...visibility, color: clear ?? buyColor });
+    }
 }
 
 function axisModeButtonClass(isActive: boolean) {
@@ -175,19 +331,10 @@ function emptyCandles(intervalSeconds: number, valueMode: ChartValueMode) {
     });
 }
 
-function candleColors(buy: string, sell: string, empty: boolean) {
-    const up = empty ? '#0f0f12' : buy;
-    const down = empty ? '#0f0f12' : sell;
-    return {
-        upColor: up,
-        downColor: down,
-        borderUpColor: up,
-        borderDownColor: down,
-        wickUpColor: up,
-        wickDownColor: down,
-        lastValueVisible: !empty,
-        priceLineVisible: !empty,
-    };
+function emptyMainData(intervalSeconds: number, valueMode: ChartValueMode, style: ChartStyle) {
+    const data = emptyCandles(intervalSeconds, valueMode);
+    if (style === 'bars' || style === 'candles' || style === 'hollow') return data;
+    return data.map(item => ({ time: item.time, value: item.close, color: '#0f0f12' }));
 }
 
 function watermarkLines(
@@ -195,14 +342,16 @@ function watermarkLines(
     candle: ChartDataset['candles'][number] | undefined,
     valueMode: ChartValueMode,
     timeframe: ChartTimeframe | undefined,
-    fontFamily: string
+    fontFamily: string,
+    quote: ChartQuote,
+    quoteRate: number
 ) {
     const priceChange = candle && candle.open > 0 ? (candle.close - candle.open) / candle.open : 0;
     let value = 'Waiting for chart data';
     if (candle && valueMode === 'market_cap') {
-        value = `MCap ${formatCompact(candle.marketCapUsd)} · Price $${formatPrice(candle.close)}`;
+        value = `MCap ${formatQuoteValue(candle.marketCapUsd * quoteRate, quote)} · Price ${quote === 'sol' ? `${formatPrice(candle.close * quoteRate)} SOL` : `$${formatPrice(candle.close)}`}`;
     } else if (candle) {
-        value = `Price $${formatPrice(candle.close)} · MCap ${formatCompact(candle.marketCapUsd)}`;
+        value = `Price ${quote === 'sol' ? `${formatPrice(candle.close * quoteRate)} SOL` : `$${formatPrice(candle.close)}`} · MCap ${formatQuoteValue(candle.marketCapUsd * quoteRate, quote)}`;
     }
 
     return [
@@ -255,11 +404,14 @@ export default function LightweightTokenChart({
     targetMarketCap,
     compact = false,
     drawTools = false,
+    chartStyle = 'candles',
+    quote = 'usd',
+    solUsd,
 }: LightweightTokenChartProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const drawLayerRef = useRef<HTMLDivElement | null>(null);
     const chartRef = useRef<IChartApi | null>(null);
-    const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+    const candleSeriesRef = useRef<MainSeries | null>(null);
     const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
     const watermarkRef = useRef<ITextWatermarkPluginApi<Time> | null>(null);
     const replayIndexRef = useRef(0);
@@ -290,12 +442,12 @@ export default function LightweightTokenChart({
     const [textDraft, setTextDraft] = useState<TextDraft>();
     const [drawApi, setDrawApi] = useState<{
         chart: IChartApi;
-        series: ISeriesApi<'Candlestick'>;
+        series: MainSeries;
     }>();
     const [autoActive, setAutoActive] = useState(autoScale);
-    const [following, setFollowing] = useState(true);
     const [logActive, setLogActive] = useState(logScale);
     const valueMode = axis || internalMode;
+    const quoteRate = quote === 'sol' && solUsd && solUsd > 0 ? 1 / solUsd : 1;
     const setValueMode = (mode: ChartValueMode) => {
         if (axis === undefined) setInternalMode(mode);
         onAxisChange?.(mode);
@@ -304,7 +456,6 @@ export default function LightweightTokenChart({
         followRef.current = true;
         timeRangeRef.current = null;
         priceRangeRef.current = null;
-        setFollowing(true);
     }, [dataset.tokenAddress]);
 
     useEffect(() => {
@@ -333,16 +484,9 @@ export default function LightweightTokenChart({
     useEffect(() => {
         priceAutoRef.current = autoScale;
         setAutoActive(autoScale);
+        if (autoScale) priceRangeRef.current = null;
         candleSeriesRef.current?.priceScale().setAutoScale(autoScale);
-        if (autoScale && !followRef.current && chartRef.current) {
-            followRef.current = true;
-            timeRangeRef.current = null;
-            priceRangeRef.current = null;
-            setFollowing(true);
-            chartRef.current.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: true });
-            focusLatest(chartRef.current, datasetRef.current.candles.length, compact);
-        }
-    }, [autoScale, compact]);
+    }, [autoScale]);
 
     useEffect(() => {
         if (intervalRef.current === dataset.intervalSeconds) return;
@@ -353,7 +497,6 @@ export default function LightweightTokenChart({
         priceRangeRef.current = null;
         chartRef.current?.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: true });
         candleSeriesRef.current?.priceScale().setAutoScale(true);
-        setFollowing(true);
         setAutoActive(true);
         onAutoScaleRef.current?.(true);
     }, [dataset.intervalSeconds]);
@@ -444,19 +587,23 @@ export default function LightweightTokenChart({
             },
         });
 
-        const candleSeries = chart.addSeries(CandlestickSeries, {
-            upColor: buyColor,
-            downColor: sellColor,
-            borderUpColor: buyColor,
-            borderDownColor: sellColor,
-            wickUpColor: buyColor,
-            wickDownColor: sellColor,
-            priceFormat: {
-                type: 'custom',
-                minMove: valueMode === 'market_cap' ? 0.01 : 0.000000001,
-                formatter: (value: number) => formatAxisValue(Number(value), valueMode),
-            },
-        });
+        const initialCandles = current.candles.slice(0, currentCount);
+        const initialBase = toDisplayValue(
+            initialCandles[0]?.close ?? 0,
+            current.totalSupply,
+            valueMode,
+            quoteRate
+        );
+        const candleSeries = addMainSeries(
+            chart,
+            chartStyle,
+            buyColor,
+            sellColor,
+            valueMode,
+            quote,
+            initialBase,
+            !initialCandles.length
+        );
         const volumeSeries = chart.addSeries(HistogramSeries, {
             priceFormat: { type: 'volume' },
             priceScaleId: '',
@@ -468,15 +615,13 @@ export default function LightweightTokenChart({
             scaleMargins: { top: 0.78, bottom: 0 },
         });
 
-        const initialCandles = current.candles.slice(0, currentCount);
-        const initialGrid = initialCandles.length ? [] : emptyCandles(current.intervalSeconds, valueMode);
         candleSeries.setData(initialCandles.length
-            ? toCandleData(initialCandles, current.totalSupply, valueMode)
-            : initialGrid);
-        candleSeries.applyOptions(candleColors(buyColor, sellColor, !initialCandles.length));
-        volumeSeries.setData(toVolumeData(initialCandles));
+            ? toMainData(initialCandles, current.totalSupply, valueMode, quoteRate, chartStyle, buyColor, sellColor)
+            : emptyMainData(current.intervalSeconds, valueMode, chartStyle));
+        applyMainColors(candleSeries, chartStyle, buyColor, sellColor, !initialCandles.length);
+        volumeSeries.setData(toVolumeData(initialCandles, quoteRate));
         volumeSeries.applyOptions({ visible: volumeVisibleRef.current });
-        dataKeyRef.current = `${current.tokenAddress}:${current.intervalSeconds}:${valueMode}`;
+        dataKeyRef.current = `${current.tokenAddress}:${current.intervalSeconds}:${valueMode}:${quote}:${chartStyle}`;
         firstTimeRef.current = initialCandles[0]?.timestamp;
         lastTimeRef.current = initialCandles.at(-1)?.timestamp;
         dataCountRef.current = initialCandles.length;
@@ -484,7 +629,7 @@ export default function LightweightTokenChart({
 
         current.alertLines.forEach(line => {
             candleSeries.createPriceLine({
-                price: valueMode === 'market_cap' ? line.marketCapUsd : line.priceUsd,
+                price: (valueMode === 'market_cap' ? line.marketCapUsd : line.priceUsd) * quoteRate,
                 color: line.color,
                 lineWidth: 1,
                 lineStyle: LineStyle.Dashed,
@@ -500,7 +645,7 @@ export default function LightweightTokenChart({
             shape: marker.side === 'buy' ? 'arrowUp' : marker.side === 'sell' ? 'arrowDown' : 'circle',
             text: marker.label,
             size: marker.intensity === 'high' ? 1.6 : 1.2,
-            price: toDisplayValue(marker.price, current.totalSupply, valueMode),
+            price: toDisplayValue(marker.price, current.totalSupply, valueMode, quoteRate),
         }));
         createSeriesMarkers(candleSeries, markers);
 
@@ -512,7 +657,9 @@ export default function LightweightTokenChart({
                 initialCandles.at(-1),
                 valueMode,
                 undefined,
-                `${chartFontFamily}, system-ui, sans-serif`
+                `${chartFontFamily}, system-ui, sans-serif`,
+                quote,
+                quoteRate
             ),
         });
         watermarkRef.current = watermark;
@@ -551,7 +698,6 @@ export default function LightweightTokenChart({
         drawManager.attach(chart, candleSeries, container);
         setDrawApi({ chart, series: candleSeries });
         setAutoActive(priceAutoRef.current);
-        setFollowing(followRef.current);
         replayIndexRef.current = currentCount;
         setVisibleCount(initialCandles.length);
         setRenderMs(performance.now() - startedAt);
@@ -568,7 +714,6 @@ export default function LightweightTokenChart({
             if (followRef.current) {
                 followRef.current = false;
                 chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false });
-                setFollowing(false);
             }
             if (priceAutoRef.current) {
                 priceAutoRef.current = false;
@@ -625,14 +770,14 @@ export default function LightweightTokenChart({
             dataCountRef.current = 0;
             trimCountRef.current = 0;
         };
-    }, [compact, dataset.tokenAddress, dataset.totalSupply, replayMode, valueMode]);
+    }, [chartStyle, compact, dataset.tokenAddress, dataset.totalSupply, quote, quoteRate, replayMode, valueMode]);
 
     useEffect(() => {
         const series = drawApi?.series;
         if (!series || !Number.isFinite(targetMarketCap) || Number(targetMarketCap) <= 0) return;
         const target = valueMode === 'market_cap'
-            ? Number(targetMarketCap)
-            : Number(targetMarketCap) / dataset.totalSupply;
+            ? Number(targetMarketCap) * quoteRate
+            : Number(targetMarketCap) / dataset.totalSupply * quoteRate;
         if (!Number.isFinite(target) || target <= 0) return;
         const line = series.createPriceLine({
             price: target,
@@ -652,7 +797,7 @@ export default function LightweightTokenChart({
                 // The chart may already be disposing during a token or axis change.
             }
         };
-    }, [dataset.totalSupply, drawApi, targetMarketCap, valueMode]);
+    }, [dataset.totalSupply, drawApi, quoteRate, targetMarketCap, valueMode]);
 
     useEffect(() => {
         if (live) return;
@@ -662,13 +807,13 @@ export default function LightweightTokenChart({
         if (!candleSeries || !volumeSeries || !container) return;
         const gridData = dataset.candles.length
             ? []
-            : emptyCandles(dataset.intervalSeconds, valueMode);
+            : emptyMainData(dataset.intervalSeconds, valueMode, chartStyle);
         const styles = getComputedStyle(container);
         const buyColor = styles.getPropertyValue('--term-buy').trim() || '#5ddf6c';
         const sellColor = styles.getPropertyValue('--term-sell').trim() || '#f87171';
         const empty = dataset.candles.length === 0;
-        candleSeries.applyOptions(candleColors(buyColor, sellColor, empty));
-        const nextKey = `${dataset.tokenAddress}:${dataset.intervalSeconds}:${valueMode}`;
+        applyMainColors(candleSeries, chartStyle, buyColor, sellColor, empty);
+        const nextKey = `${dataset.tokenAddress}:${dataset.intervalSeconds}:${valueMode}:${quote}:${chartStyle}`;
         const firstTime = dataset.candles[0]?.timestamp;
         const lastTime = dataset.candles.at(-1)?.timestamp;
         const previousLast = lastTimeRef.current;
@@ -697,8 +842,8 @@ export default function LightweightTokenChart({
                 : 0;
             candleSeries.setData(empty
                 ? gridData
-                : toCandleData(dataset.candles, dataset.totalSupply, valueMode));
-            volumeSeries.setData(toVolumeData(dataset.candles));
+                : toMainData(dataset.candles, dataset.totalSupply, valueMode, quoteRate, chartStyle, buyColor, sellColor));
+            volumeSeries.setData(toVolumeData(dataset.candles, quoteRate));
             if (!priceAutoRef.current && priceRange) {
                 candleSeries.priceScale().setVisibleRange(priceRange);
                 priceRangeRef.current = priceRange;
@@ -716,8 +861,8 @@ export default function LightweightTokenChart({
                 ? 0
                 : Math.max(0, dataset.candles.findIndex((candle) => candle.timestamp >= previousLast));
             for (const candle of dataset.candles.slice(from)) {
-                candleSeries.update(toCandleData([candle], dataset.totalSupply, valueMode)[0]);
-                volumeSeries.update(toVolumeData([candle])[0]);
+                candleSeries.update(toMainData([candle], dataset.totalSupply, valueMode, quoteRate, chartStyle, buyColor, sellColor)[0]);
+                volumeSeries.update(toVolumeData([candle], quoteRate)[0]);
             }
             if (windowShift) trimCountRef.current += shiftedBars;
         }
@@ -736,7 +881,7 @@ export default function LightweightTokenChart({
         lastTimeRef.current = lastTime;
         dataCountRef.current = dataset.candles.length;
         setVisibleCount(dataset.candles.length);
-    }, [compact, dataset.candles, dataset.intervalSeconds, dataset.tokenAddress, dataset.totalSupply, live, valueMode]);
+    }, [chartStyle, compact, dataset.candles, dataset.intervalSeconds, dataset.tokenAddress, dataset.totalSupply, live, quote, quoteRate, valueMode]);
 
     useEffect(() => {
         if (!live) return;
@@ -754,14 +899,18 @@ export default function LightweightTokenChart({
                 return;
             }
 
-            candleSeries.update(toCandleData([next], dataset.totalSupply, valueMode)[0]);
-            volumeSeries.update(toVolumeData([next])[0]);
+            const container = containerRef.current;
+            const styles = container ? getComputedStyle(container) : undefined;
+            const buyColor = styles?.getPropertyValue('--term-buy').trim() || '#5ddf6c';
+            const sellColor = styles?.getPropertyValue('--term-sell').trim() || '#f87171';
+            candleSeries.update(toMainData([next], dataset.totalSupply, valueMode, quoteRate, chartStyle, buyColor, sellColor)[0]);
+            volumeSeries.update(toVolumeData([next], quoteRate)[0]);
             replayIndexRef.current += 1;
             setVisibleCount(replayIndexRef.current);
         }, speedMs);
 
         return () => window.clearInterval(interval);
-    }, [dataset.candles, dataset.totalSupply, live, speedMs, valueMode]);
+    }, [chartStyle, dataset.candles, dataset.totalSupply, live, quoteRate, speedMs, valueMode]);
 
     const pointFrom = (clientX: number, clientY: number) => {
         const layer = drawLayerRef.current;
@@ -1028,10 +1177,12 @@ export default function LightweightTokenChart({
                 latest,
                 valueMode,
                 timeframe,
-                `${fontFamily}, system-ui, sans-serif`
+                `${fontFamily}, system-ui, sans-serif`,
+                quote,
+                quoteRate
             ),
         });
-    }, [dataset, latest, timeframe, valueMode]);
+    }, [dataset, latest, quote, quoteRate, timeframe, valueMode]);
 
     const startReplay = () => {
         if (isReplayComplete && onReplayReset) {
@@ -1042,18 +1193,12 @@ export default function LightweightTokenChart({
     };
 
     const enableAutoScale = () => {
-        const chart = chartRef.current;
         const series = candleSeriesRef.current;
-        if (!chart || !series) return;
-        followRef.current = true;
+        if (!series) return;
         priceAutoRef.current = true;
-        timeRangeRef.current = null;
         priceRangeRef.current = null;
         series.priceScale().setAutoScale(true);
-        chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: true });
-        focusLatest(chart, dataset.candles.length, compact);
         setAutoActive(true);
-        setFollowing(true);
         onAutoScaleChange?.(true);
     };
 
@@ -1069,12 +1214,12 @@ export default function LightweightTokenChart({
     const priceChangePercent = latest.open > 0 ? ((latest.close - latest.open) / latest.open) * 100 : 0;
     const priceChangeClass = priceChangePercent >= 0 ? 'text-[var(--term-buy)]' : 'text-[var(--term-sell)]';
     const primaryValue = valueMode === 'market_cap'
-        ? formatCompact(latest.marketCapUsd)
-        : `$${formatPrice(latest.close)}`;
-    const openValue = toDisplayValue(latest.open, dataset.totalSupply, valueMode);
-    const highValue = toDisplayValue(latest.high, dataset.totalSupply, valueMode);
-    const lowValue = toDisplayValue(latest.low, dataset.totalSupply, valueMode);
-    const closeValue = toDisplayValue(latest.close, dataset.totalSupply, valueMode);
+        ? formatQuoteValue(latest.marketCapUsd * quoteRate, quote)
+        : quote === 'sol' ? `${formatPrice(latest.close * quoteRate)} SOL` : `$${formatPrice(latest.close)}`;
+    const openValue = toDisplayValue(latest.open, dataset.totalSupply, valueMode, quoteRate);
+    const highValue = toDisplayValue(latest.high, dataset.totalSupply, valueMode, quoteRate);
+    const lowValue = toDisplayValue(latest.low, dataset.totalSupply, valueMode, quoteRate);
+    const closeValue = toDisplayValue(latest.close, dataset.totalSupply, valueMode, quoteRate);
 
     return (
         <section className={`h-full overflow-hidden bg-[#0f0f12] text-slate-200 ${compact ? '' : 'min-h-[420px] border-y border-slate-800'}`}>
@@ -1104,7 +1249,7 @@ export default function LightweightTokenChart({
                     <span className="text-slate-600">·</span>
                     <span>{timeframe ? getTimeframeLabel(timeframe) : formatInterval(dataset.intervalSeconds)}</span>
                     <span className={priceChangeClass}>
-                        O {formatAxisValue(openValue, valueMode)} H {formatAxisValue(highValue, valueMode)} L {formatAxisValue(lowValue, valueMode)} C {formatAxisValue(closeValue, valueMode)} {priceChangePercent.toFixed(2)}%
+                        O {formatAxisValue(openValue, valueMode, quote)} H {formatAxisValue(highValue, valueMode, quote)} L {formatAxisValue(lowValue, valueMode, quote)} C {formatAxisValue(closeValue, valueMode, quote)} {priceChangePercent.toFixed(2)}%
                     </span>
                 </div>
                 <div className="ml-auto flex h-full items-center">
@@ -1157,7 +1302,7 @@ export default function LightweightTokenChart({
                         aria-label="Chart drawing tools"
                         data-drawing-count={drawingIds.length}
                     >
-                        {drawingTools.map(([tool, label, Icon]) => (
+                        {drawingTools.map(([tool, label]) => (
                             <button
                                 key={tool}
                                 type="button"
@@ -1168,7 +1313,7 @@ export default function LightweightTokenChart({
                                 aria-pressed={drawTool === tool}
                                 data-drawing-tool={tool}
                             >
-                                <Icon />
+                                <DrawGlyph tool={tool} />
                             </button>
                         ))}
                         <span className="my-1 w-4 border-t border-[var(--term-border)]" />
@@ -1231,9 +1376,9 @@ export default function LightweightTokenChart({
                         <button
                             type="button"
                             onClick={enableAutoScale}
-                            className={`px-2.5 transition-colors hover:bg-[var(--term-raised)] hover:text-white ${autoActive && following ? 'bg-[var(--term-raised)] text-[var(--term-accent)]' : 'text-white/80'}`}
-                            aria-pressed={autoActive && following}
-                            title="Follow the latest candle and restore automatic price scaling"
+                            className={`px-2.5 transition-colors hover:bg-[var(--term-raised)] hover:text-white ${autoActive ? 'bg-[var(--term-raised)] text-[#5874ff]' : 'text-white/80'}`}
+                            aria-pressed={autoActive}
+                            title="Automatically fit the visible price range"
                         >Auto</button>
                     </div>
                 </div>

@@ -15,6 +15,7 @@ import {
 import { SOL_MINT, USDC_MINT } from '../src/services/marketData/fxTape';
 import type { FxPoint } from '../src/services/marketData/fxTape';
 import { ReplayCoordinator } from '../src/services/replay/coordinator';
+import { CANDLE_INTERVALS } from '../src/services/marketData/candleEngine';
 
 const mint = 'YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf';
 const curveAddress = 'CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8';
@@ -282,7 +283,7 @@ describe('metric replay', () => {
             chartPriceUsd: 0.0000062,
             chartPriceSource: 'curve_spot',
         });
-        expect(replay.candles).toHaveLength(11);
+        expect(replay.candles).toHaveLength(Object.keys(CANDLE_INTERVALS).length);
         expect(replay.curve[0]).toMatchObject({
             solUsd: 200,
             priceUsd: 0.0000062,

@@ -3,7 +3,6 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { CSSProperties, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ArrowPathIcon,
     ArrowsPointingInIcon,
     ArrowsPointingOutIcon,
     ChartBarIcon,
@@ -17,8 +16,14 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../../contexts/AuthContext';
 import { apiService, TokenCandle, TokenData, TokenMetadata } from '../../services/api';
-import { ChartDataset, connectCandles } from '../../services/chartData';
+import {
+    type ChartDataset,
+    type ChartTimeframe,
+    connectCandles,
+    getTimeframeSeconds,
+} from '../../services/chartData';
 import LightweightTokenChart from '../charts/LightweightTokenChart';
+import ChartToolbar from '../charts/ChartToolbar';
 import TokenLogo from '../TokenLogo';
 import TradeTicket from './TradeTicket';
 import InstantTradePanel from './InstantTradePanel';
@@ -64,17 +69,7 @@ type MarketView = {
     sells5m?: number;
 };
 
-const intervals = ['1s', '5s', '15s', '30s', '1m', '5m', '1h'] as const;
-type ChartInterval = typeof intervals[number];
-const intervalSecs: Record<ChartInterval, number> = {
-    '1s': 1,
-    '5s': 5,
-    '15s': 15,
-    '30s': 30,
-    '1m': 60,
-    '5m': 300,
-    '1h': 3_600,
-};
+type ChartInterval = ChartTimeframe;
 const replayBuild = process.env.NEXT_PUBLIC_DATA_MODE === 'replay';
 const replaySymbol = process.env.NEXT_PUBLIC_REPLAY_SYMBOL || 'REPLAY';
 const replayName = process.env.NEXT_PUBLIC_REPLAY_NAME || 'Token';
@@ -201,7 +196,8 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     const [candles, setCandles] = useState<TokenCandle[]>([]);
     const [trades, setTrades] = useState<ActivityTrade[]>([]);
     const [interval, setIntervalName] = useState<ChartInterval>(replayMode ? '1s' : '1m');
-    const intervalSeconds = intervalSecs[interval];
+    const intervalSeconds = getTimeframeSeconds(interval);
+    const [solUsd, setSolUsd] = useState<number>();
     const [streamState, setStreamState] = useState<'connecting' | 'live' | 'offline'>('connecting');
     const [loading, setLoading] = useState(true);
     const [sessionKey, setSessionKey] = useState(0);
@@ -235,9 +231,30 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
         intervalRef.current = intervalSeconds;
     }, [intervalSeconds]);
 
+    useEffect(() => {
+        const controller = new AbortController();
+        const loadSol = async () => {
+            try {
+                const response = await fetch('/api/market/sol', { signal: controller.signal });
+                if (!response.ok) return;
+                const payload = await response.json() as { price?: number };
+                const price = Number(payload.price);
+                if (Number.isFinite(price) && price > 0) setSolUsd(price);
+            } catch {
+                // Keep the last valid price through transient provider failures.
+            }
+        };
+        void loadSol();
+        const timer = window.setInterval(loadSol, 30_000);
+        return () => {
+            controller.abort();
+            window.clearInterval(timer);
+        };
+    }, []);
+
     const changeInterval = (next: ChartInterval) => {
         if (next === interval) return;
-        const seconds = intervalSecs[next];
+        const seconds = getTimeframeSeconds(next);
         intervalRef.current = seconds;
         setIntervalName(next);
         setSettings((current) => current.chartAutoScale
@@ -813,17 +830,26 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
                     style={{ '--chart-top': `${chartShare}fr`, '--chart-bottom': `${100 - chartShare}fr` } as CSSProperties}
                 >
                     <div className="chart-panel flex min-h-0 flex-col overflow-hidden bg-[var(--term-bg)]">
-                        <div className="chart-tools relative z-20 flex shrink-0 items-center justify-start overflow-x-auto border-b border-[var(--term-border)] bg-[var(--term-bg)] text-[clamp(.68rem,.8vw,.78rem)] text-[var(--term-muted)]">
-                            {intervals.map((value) => <button type="button" key={value} data-active={interval === value} onClick={() => changeInterval(value)} className={`chart-tool timeframe-tool ${interval === value ? 'text-white' : 'hover:text-white'}`}>{value}</button>)}
-                            <span className="h-4 border-l border-[var(--term-border)]" />
-                            <button type="button" onClick={() => setSettings((value) => ({ ...value, chartAxis: 'price' }))} className={`chart-tool ${settings.chartAxis === 'price' ? 'text-[var(--term-accent)]' : 'hover:text-white'}`}>Price</button>
-                            <button type="button" onClick={() => setSettings((value) => ({ ...value, chartAxis: 'market_cap' }))} className={`chart-tool ${settings.chartAxis === 'market_cap' ? 'text-[var(--term-accent)]' : 'hover:text-white'}`}>MCap</button>
-                            <button type="button" onClick={() => setSettings((value) => ({ ...value, chartVolume: !value.chartVolume }))} className={`chart-tool ${settings.chartVolume ? 'text-white' : ''}`}>Vol</button>
-                            <button type="button" onClick={() => setChartKey((value) => value + 1)} className="chart-tool" title="Refresh chart"><ArrowPathIcon className="h-3.5 w-3.5" /></button>
-                            <button type="button" onClick={() => setChartFull((value) => !value)} className="chart-tool" title={chartFull ? 'Exit full chart' : 'Full chart'}>{chartFull ? <ArrowsPointingInIcon className="h-3.5 w-3.5" /> : <ArrowsPointingOutIcon className="h-3.5 w-3.5" />}</button>
-                        </div>
+                        <ChartToolbar
+                            timeframe={interval}
+                            pins={settings.chartPins}
+                            style={settings.chartStyle}
+                            quote={settings.chartQuote}
+                            axis={settings.chartAxis}
+                            volume={settings.chartVolume}
+                            solUsd={solUsd}
+                            full={chartFull}
+                            onTimeframe={changeInterval}
+                            onPins={(chartPins) => setSettings(value => ({ ...value, chartPins }))}
+                            onStyle={(chartStyle) => setSettings(value => ({ ...value, chartStyle }))}
+                            onQuote={(chartQuote) => setSettings(value => ({ ...value, chartQuote }))}
+                            onAxis={(chartAxis) => setSettings(value => ({ ...value, chartAxis }))}
+                            onVolume={() => setSettings(value => ({ ...value, chartVolume: !value.chartVolume }))}
+                            onRefresh={() => setChartKey(value => value + 1)}
+                            onFull={() => setChartFull(value => !value)}
+                        />
                         <div className="relative min-h-0 flex-1">
-                            <LightweightTokenChart dataset={chartDataset} height="100%" live={false} replayMode={false} axis={settings.chartAxis} onAxisChange={(chartAxis) => setSettings((value) => ({ ...value, chartAxis }))} autoScale={settings.chartAutoScale} onAutoScaleChange={(chartAutoScale) => setSettings((value) => ({ ...value, chartAutoScale }))} logScale={settings.chartLogScale} onLogScaleChange={(chartLogScale) => setSettings((value) => ({ ...value, chartLogScale }))} showVolume={settings.chartVolume} targetMarketCap={limitTarget} compact drawTools />
+                            <LightweightTokenChart dataset={chartDataset} height="100%" live={false} replayMode={false} axis={settings.chartAxis} onAxisChange={(chartAxis) => setSettings((value) => ({ ...value, chartAxis }))} autoScale={settings.chartAutoScale} onAutoScaleChange={(chartAutoScale) => setSettings((value) => ({ ...value, chartAutoScale }))} logScale={settings.chartLogScale} onLogScaleChange={(chartLogScale) => setSettings((value) => ({ ...value, chartLogScale }))} showVolume={settings.chartVolume} targetMarketCap={limitTarget} chartStyle={settings.chartStyle} quote={settings.chartQuote} solUsd={solUsd} compact drawTools />
                             {!candles.length && <div className="pointer-events-none absolute inset-0 grid place-items-center text-xs text-[var(--term-dim)]">{replayMode ? replay?.snapshot.cursor ? 'Loading replay history…' : 'Play the replay to populate the chart' : 'Waiting for market candles'}</div>}
                         </div>
                     </div>

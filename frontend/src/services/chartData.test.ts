@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { connectCandles, formatAxisValue, formatCompact, formatInterval, latestLogicalRange } from './chartData';
+import {
+    connectCandles,
+    formatAxisValue,
+    formatCompact,
+    formatInterval,
+    formatQuoteValue,
+    latestLogicalRange,
+    toDisplayValue,
+} from './chartData';
 
 describe('chart candle continuity', () => {
     it('joins each candle to the prior close without mutating source data', () => {
@@ -33,6 +41,14 @@ describe('chart axis labels', () => {
         expect(formatCompact(45_000)).toBe('$45.0K');
         expect(formatCompact(1_670_000)).toBe('$1.67M');
         expect(formatCompact(-1_670_000)).toBe('-$1.67M');
+    });
+
+    it('converts price and market cap axes into SOL without USD labels', () => {
+        const solRate = 1 / 200;
+        expect(toDisplayValue(0.02, 1_000_000, 'price', solRate)).toBe(0.0001);
+        expect(toDisplayValue(0.02, 1_000_000, 'market_cap', solRate)).toBe(100);
+        expect(formatAxisValue(0.0001, 'price', 'sol')).toBe('0.000100');
+        expect(formatQuoteValue(1_670, 'sol')).toBe('1.67K SOL');
     });
 });
 

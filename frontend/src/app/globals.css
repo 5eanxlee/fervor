@@ -623,17 +623,20 @@
 }
 
 .chart-tools {
-    height: clamp(2.35rem, 4vh, 2.5rem);
-    scrollbar-width: none;
+    height: clamp(2.6rem, 4.5vh, 2.85rem);
+    min-width: max-content;
 }
 
-.chart-tools::-webkit-scrollbar {
-    display: none;
+.chart-menu {
+    max-height: min(70vh, 42rem);
+    overflow-y: auto;
+    scrollbar-color: #565c68 #20242e;
+    scrollbar-width: thin;
 }
 
 .chart-tool {
     display: grid;
-    min-width: clamp(2.15rem, 2.8vw, 2.75rem);
+    min-width: clamp(2.45rem, 3vw, 3.1rem);
     height: 100%;
     place-items: center;
     padding-inline: clamp(.4rem, .65vw, .7rem);
@@ -877,7 +880,7 @@
 }
 
 .chart-drawbar {
-    width: clamp(2rem, 2.65vw, 2.25rem);
+    width: clamp(2.55rem, 3vw, 2.85rem);
     overflow-y: auto;
     scrollbar-width: none;
 }
@@ -888,8 +891,8 @@
 
 .chart-drawtool {
     display: grid;
-    width: clamp(1.75rem, 2.25vw, 2rem);
-    height: clamp(1.75rem, 2.9vh, 2rem);
+    width: clamp(2.35rem, 2.8vw, 2.65rem);
+    height: clamp(2.25rem, 4vh, 2.65rem);
     flex: 0 0 auto;
     place-items: center;
     border-radius: 0;
@@ -903,8 +906,9 @@
 }
 
 .chart-drawtool > svg {
-    width: .95rem;
-    height: .95rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    stroke-width: 1.5;
 }
 
 .chart-text-input {

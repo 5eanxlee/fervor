@@ -1,6 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import {
+    CHART_STYLE_OPTIONS,
+    CHART_TIMEFRAME_OPTIONS,
+    type ChartQuote,
+    type ChartStyle,
+    type ChartTimeframe,
+} from './chartData';
 
 export type TerminalColumn = 'new' | 'final' | 'migrated';
 export type TerminalDensity = 'compact' | 'spaced';
@@ -23,6 +30,9 @@ export interface TerminalSettings {
     chartAutoScale: boolean;
     chartLogScale: boolean;
     chartVolume: boolean;
+    chartQuote: ChartQuote;
+    chartStyle: ChartStyle;
+    chartPins: ChartTimeframe[];
     theme: TerminalTheme;
     font: TerminalFont;
     accent: TerminalAccent;
@@ -52,6 +62,9 @@ export const defaultTerminalSettings: TerminalSettings = {
     chartAutoScale: true,
     chartLogScale: false,
     chartVolume: true,
+    chartQuote: 'usd',
+    chartStyle: 'candles',
+    chartPins: ['1s', '5s', '15s', '1m', '5m', '6h'],
     theme: 'terminal',
     font: 'padre',
     accent: 'orange',
@@ -81,6 +94,11 @@ export const coerceTerminalSettings = (value: unknown): TerminalSettings => {
     const columns = raw.columns || defaultTerminalSettings.columns;
     const quickBuySol = Number(raw.quickBuySol);
     const slippageBps = Number(raw.slippageBps);
+    const chartStyles = CHART_STYLE_OPTIONS.map(item => item.id);
+    const chartFrames = CHART_TIMEFRAME_OPTIONS.map(item => item.id);
+    const chartPins = Array.isArray(raw.chartPins)
+        ? raw.chartPins.filter((item): item is ChartTimeframe => chartFrames.includes(item as ChartTimeframe)).slice(0, 7)
+        : defaultTerminalSettings.chartPins;
     return {
         columns: {
             new: columns.new !== false,
@@ -93,6 +111,11 @@ export const coerceTerminalSettings = (value: unknown): TerminalSettings => {
         chartAutoScale: raw.chartAutoScale !== false,
         chartLogScale: raw.chartLogScale === true,
         chartVolume: raw.chartVolume !== false,
+        chartQuote: raw.chartQuote === 'sol' ? 'sol' : 'usd',
+        chartStyle: chartStyles.includes(raw.chartStyle as ChartStyle)
+            ? raw.chartStyle as ChartStyle
+            : 'candles',
+        chartPins: chartPins.length ? chartPins : defaultTerminalSettings.chartPins,
         theme: raw.theme === 'dark' || raw.theme === 'noir' ? raw.theme : 'terminal',
         font: raw.font === 'geist' || raw.font === 'mono' ? raw.font : 'padre',
         accent: raw.accent === 'green' || raw.accent === 'blue' || raw.accent === 'purple' ? raw.accent : 'orange',

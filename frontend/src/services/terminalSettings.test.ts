@@ -53,4 +53,16 @@ describe('terminal settings', () => {
             visionUnhide: true,
         });
     });
+
+    it('restores valid chart chrome preferences and filters corrupt pins', () => {
+        expect(coerceTerminalSettings({
+            chartQuote: 'sol',
+            chartStyle: 'hlc-area',
+            chartPins: ['1s', 'bogus', '6h'],
+        })).toMatchObject({
+            chartQuote: 'sol',
+            chartStyle: 'hlc-area',
+            chartPins: ['1s', '6h'],
+        });
+    });
 });
