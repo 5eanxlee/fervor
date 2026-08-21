@@ -66,6 +66,18 @@ const signedMoney = (value?: number): string => value === undefined || !Number.i
     : `${value >= 0 ? '+' : '-'}${money(Math.abs(value))}`;
 
 const shortAddress = (value?: string): string => value ? `${value.slice(0, 5)}…${value.slice(-4)}` : '—';
+const whole = (value: number): string => new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value);
+
+function CandleMark({ className = '' }: { className?: string }) {
+    return (
+        <svg aria-hidden="true" viewBox="0 0 18 18" fill="none" className={className}>
+            <path d="M5 1.5v3m0 8v4m8-15v6m0 5v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <rect x="2.5" y="4.5" width="5" height="8" rx=".75" stroke="currentColor" strokeWidth="1.5" />
+            <rect x="10.5" y="7.5" width="5" height="5" rx=".75" stroke="currentColor" strokeWidth="1.5" />
+        </svg>
+    );
+}
+
 export const elapsedLabel = (seconds: number): string => {
     const value = Math.max(0, Math.floor(seconds));
     if (value < 60) return `${value}s`;
@@ -228,7 +240,7 @@ export default function TerminalActivity({
         { id: 'trades', label: 'Trades' },
         { id: 'positions', label: 'Positions' },
         { id: 'orders', label: 'Orders' },
-        { id: 'holders', label: `Holders${holderTotal === undefined ? '' : ` (${compact(holderTotal)})`}` },
+        { id: 'holders', label: `Holders${holderTotal === undefined ? '' : ` (${whole(holderTotal)})`}` },
         { id: 'top', label: 'Top Traders' },
         { id: 'dev', label: 'Dev Tokens' },
     ];
@@ -476,7 +488,7 @@ function ReplayParticipantTable({ mode, data, priceUsd }: {
                 <TableHead className="participant-head sticky top-0 z-10 bg-[var(--term-bg)]" columns={participantCols} cells={[
                     { label: '#', key: 'rank', dir: 'asc' },
                     { label: 'Wallet', key: 'wallet', dir: 'asc' },
-                    { label: 'SOL Flow (Last Active)', key: 'sol' },
+                    { label: 'SOL Volume (Last Active)', key: 'sol' },
                     { label: 'Bought (Avg Buy)', key: 'bought' },
                     { label: 'Sold (Avg Sell)', key: 'sold' },
                     { label: mode === 'holders' ? 'U. PnL' : 'R. PnL', key: 'pnl' },
@@ -520,7 +532,7 @@ function ReplayParticipantRow({ row, stats, rank, pnl }: {
                 <a href={walletUrl} target="_blank" rel="noreferrer" aria-label={`Open ${shortAddress(row.wallet)} on Solscan`} className="grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 border-[var(--term-muted)] text-[var(--term-text)] hover:border-white"><MagnifyingGlassIcon className="h-3.5 w-3.5 stroke-[2.5]" /></a>
                 <a href={walletUrl} target="_blank" rel="noreferrer" className="truncate font-medium text-[var(--term-text)] hover:text-white">{shortAddress(row.wallet)}</a>
                 <span className="shrink-0 rounded bg-[var(--term-raised)] px-1.5 py-0.5 text-[10px] text-[var(--term-muted)]">{row.tradeCount > 99 ? '99+' : row.tradeCount}</span>
-                <span className="flex shrink-0 items-center gap-0.5 text-[var(--term-sell)]" title={`${row.buyCount} buys · ${row.sellCount} sells`}><CubeTransparentIcon className="h-3.5 w-3.5" /><BoltIcon className="h-3 w-3" /></span>
+                <span className="flex shrink-0 items-center gap-0.5" title={`${row.buyCount} buys · ${row.sellCount} sells`}><CubeTransparentIcon className="h-3.5 w-3.5 text-[var(--term-sell)]" /><CandleMark className="h-3.5 w-3.5 text-[var(--term-muted)]" /></span>
             </span>
             <span className="flex items-center gap-1.5 text-[var(--term-text)]"><SolanaMark className="h-3.5 w-3.5 shrink-0" /><span>{compact(stats.solFlow)}</span><span className="text-[var(--term-dim)]">({elapsedLabel(stats.lastActiveSeconds)})</span></span>
             <TradeMetric value={money(row.boughtUsd)} average={money(stats.avgBuyMcapUsd)} amount={compact(stats.boughtTokens)} count={row.buyCount} tone="buy" />
