@@ -445,6 +445,7 @@ export default function LightweightTokenChart({
         series: MainSeries;
     }>();
     const [autoActive, setAutoActive] = useState(autoScale);
+    const [following, setFollowing] = useState(true);
     const [logActive, setLogActive] = useState(logScale);
     const valueMode = axis || internalMode;
     const quoteRate = quote === 'sol' && solUsd && solUsd > 0 ? 1 / solUsd : 1;
@@ -456,6 +457,7 @@ export default function LightweightTokenChart({
         followRef.current = true;
         timeRangeRef.current = null;
         priceRangeRef.current = null;
+        setFollowing(true);
     }, [dataset.tokenAddress]);
 
     useEffect(() => {
@@ -497,6 +499,7 @@ export default function LightweightTokenChart({
         priceRangeRef.current = null;
         chartRef.current?.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: true });
         candleSeriesRef.current?.priceScale().setAutoScale(true);
+        setFollowing(true);
         setAutoActive(true);
         onAutoScaleRef.current?.(true);
     }, [dataset.intervalSeconds]);
@@ -698,6 +701,7 @@ export default function LightweightTokenChart({
         drawManager.attach(chart, candleSeries, container);
         setDrawApi({ chart, series: candleSeries });
         setAutoActive(priceAutoRef.current);
+        setFollowing(followRef.current);
         replayIndexRef.current = currentCount;
         setVisibleCount(initialCandles.length);
         setRenderMs(performance.now() - startedAt);
@@ -714,6 +718,7 @@ export default function LightweightTokenChart({
             if (followRef.current) {
                 followRef.current = false;
                 chart.timeScale().applyOptions({ shiftVisibleRangeOnNewBar: false });
+                setFollowing(false);
             }
             if (priceAutoRef.current) {
                 priceAutoRef.current = false;
@@ -1222,7 +1227,11 @@ export default function LightweightTokenChart({
     const closeValue = toDisplayValue(latest.close, dataset.totalSupply, valueMode, quoteRate);
 
     return (
-        <section className={`h-full overflow-hidden bg-[#0f0f12] text-slate-200 ${compact ? '' : 'min-h-[420px] border-y border-slate-800'}`}>
+        <section
+            className={`h-full overflow-hidden bg-[#0f0f12] text-slate-200 ${compact ? '' : 'min-h-[420px] border-y border-slate-800'}`}
+            data-chart-following={following}
+            data-price-auto={autoActive}
+        >
             {!compact && <div className="flex min-h-14 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-slate-800/90 px-4 py-2">
                 <div className="flex min-w-0 flex-wrap items-baseline gap-x-6 gap-y-1">
                     <div className="text-2xl font-normal tracking-tight text-white">{primaryValue}</div>
