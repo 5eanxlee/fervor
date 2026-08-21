@@ -232,6 +232,10 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     }, [intervalSeconds]);
 
     useEffect(() => {
+        if (replayMode && replay?.solUsd) setSolUsd(replay.solUsd);
+    }, [replay?.solUsd, replayMode]);
+
+    useEffect(() => {
         const controller = new AbortController();
         const loadSol = async () => {
             try {

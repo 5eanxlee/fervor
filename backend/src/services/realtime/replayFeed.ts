@@ -27,6 +27,7 @@ const sessionSchema = z.object({
 }).passthrough();
 const replayStateSchema = z.object({
     tokenMint: address,
+    solUsd: z.number().positive().nullable().default(null),
     busy: z.boolean(),
     mutating: z.boolean(),
     failure: z.string().nullable(),
@@ -137,6 +138,7 @@ const stateCursor = (state: ReplayState): string => `r:${createHash('sha256')
         mutating: state.mutating,
         failure: state.failure,
         snapshot: state.snapshot,
+        solUsd: state.solUsd,
         paper: state.paper,
         alerts: state.alerts,
     }))
@@ -359,6 +361,7 @@ export class ReplayFeed {
 
         this.pushState('market', cursorOf(next.cursor), next.now, next.state.projection);
         this.pushState('replay', stateCursor(next.state), next.now, {
+            solUsd: next.state.solUsd,
             busy: next.state.busy,
             mutating: next.state.mutating,
             failure: next.state.failure,
@@ -469,6 +472,7 @@ export class ReplayFeed {
                 ...(selected.has('trade') ? { trade: cut.state.snapshot } : {}),
                 ...(selected.has('market') ? { market: cut.state.projection } : {}),
                 ...(selected.has('replay') ? { replay: {
+                    solUsd: cut.state.solUsd,
                     busy: cut.state.busy,
                     mutating: cut.state.mutating,
                     failure: cut.state.failure,

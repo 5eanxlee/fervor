@@ -75,6 +75,7 @@ const deniedEnv = [
 
 export interface ReplayState {
     readonly tokenMint: string;
+    readonly solUsd: number | null;
     readonly busy: boolean;
     readonly mutating: boolean;
     readonly failure: string | null;
@@ -162,12 +163,14 @@ export class ReplayRuntime {
     }
 
     state(): ReplayState {
+        const replayNow = this.coordinator.snapshot();
         return {
             tokenMint: this.coordinator.tokenMint,
+            solUsd: this.solUsd(replayNow.now),
             busy: this.active !== null,
             mutating: this.mutating,
             failure: this.failure,
-            snapshot: this.coordinator.snapshot(),
+            snapshot: replayNow,
             projection: this.projection.view(),
             paper: {
                 modelSha256: this.paper.modelSha256(),
@@ -179,6 +182,20 @@ export class ReplayRuntime {
                 definitionCount: this.alertModel.alerts.length,
             },
         };
+    }
+
+    private solUsd(now: string | null): number | null {
+        const points = Array.isArray(this.replay.curve) ? this.replay.curve : [];
+        if (now === null) return points.find(point => point.solUsd !== undefined)?.solUsd ?? null;
+        const nowMs = Date.parse(now);
+        let value: number | undefined;
+        for (const point of points) {
+            if (Date.parse(point.observedAt) > nowMs) break;
+            if (point.solUsd !== undefined && Number.isFinite(point.solUsd) && point.solUsd > 0) {
+                value = point.solUsd;
+            }
+        }
+        return value ?? points.find(point => point.solUsd !== undefined)?.solUsd ?? null;
     }
 
     play(speed: unknown): Promise<ReplayState> {

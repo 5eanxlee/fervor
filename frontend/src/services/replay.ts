@@ -35,6 +35,7 @@ export interface ReplayProjection {
 
 export interface ReplayState {
     tokenMint: string;
+    solUsd: number | null;
     busy: boolean;
     mutating: boolean;
     failure: string | null;
@@ -199,6 +200,7 @@ export const isReplayState = (value: unknown): value is ReplayState => {
         || !object(value.paper) || !object(value.alerts)) return false;
     const snapshot = value.snapshot;
     return typeof value.tokenMint === 'string' && address.test(value.tokenMint)
+        && (value.solUsd === null || (finite(value.solUsd) && value.solUsd > 0))
         && typeof value.busy === 'boolean'
         && typeof value.mutating === 'boolean'
         && (value.failure === null || typeof value.failure === 'string')
