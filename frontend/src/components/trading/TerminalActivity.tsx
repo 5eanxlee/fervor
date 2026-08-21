@@ -144,6 +144,7 @@ function TerminalActivity({
     replayParticipants,
     replayMode = false,
     priceUsd,
+    onWalletTrades,
 }: {
     tokenMint: string;
     tokenDecimals: number;
@@ -154,6 +155,7 @@ function TerminalActivity({
     replayParticipants?: ReplayParticipants;
     replayMode?: boolean;
     priceUsd?: number;
+    onWalletTrades?: (wallet: string) => ActivityTrade[];
 }) {
     const [tab, setTab] = useState<ActivityTab>(initialTab);
     const [positions, setPositions] = useState<PositionRow[]>([]);
@@ -163,6 +165,8 @@ function TerminalActivity({
     const [orderState, setOrderState] = useState<LoadState>('idle');
     const [holderState, setHolderState] = useState<LoadState>('idle');
     const [orderView, setOrderView] = useState<'open' | 'history'>('open');
+    const [walletFilter, setWalletFilter] = useState<string>();
+    const [walletHistory, setWalletHistory] = useState<ActivityTrade[]>([]);
 
     const loadPositions = useCallback(async () => {
         setPositionState('loading');
@@ -230,6 +234,32 @@ function TerminalActivity({
         window.history.replaceState(null, '', url);
     };
 
+    const filterWallet = (wallet: string) => {
+        setWalletFilter(wallet);
+        setWalletHistory(onWalletTrades?.(wallet) ?? trades.filter((trade) => trade.maker === wallet));
+        chooseTab('trades');
+        const url = new URL(window.location.href);
+        url.searchParams.set('wallet', wallet);
+        window.history.replaceState(null, '', url);
+    };
+
+    const clearWallet = () => {
+        setWalletFilter(undefined);
+        setWalletHistory([]);
+        const url = new URL(window.location.href);
+        url.searchParams.delete('wallet');
+        window.history.replaceState(null, '', url);
+    };
+
+    const filteredTrades = useMemo(() => {
+        if (!walletFilter) return trades;
+        const values = new Map(walletHistory.map((trade) => [trade.id, trade]));
+        for (const trade of trades) {
+            if (trade.maker === walletFilter) values.set(trade.id, trade);
+        }
+        return Array.from(values.values());
+    }, [trades, walletFilter, walletHistory]);
+
     const refresh = () => {
         if (tab === 'positions') void loadPositions();
         if (tab === 'orders') void loadOrders();
@@ -267,7 +297,7 @@ function TerminalActivity({
                 </div>
             </div>
 
-            {tab === 'trades' && <TradeTable trades={trades} now={now} />}
+            {tab === 'trades' && <TradeTable trades={filteredTrades} now={now} wallet={walletFilter} onClear={clearWallet} />}
             {tab === 'positions' && <PositionTable rows={positions} state={positionState} />}
             {tab === 'orders' && (
                 <OrderTable
@@ -281,17 +311,22 @@ function TerminalActivity({
                 />
             )}
             {tab === 'holders' && (replayMode
-                ? <ReplayHolderTable data={replayParticipants} priceUsd={priceUsd} />
+                ? <ReplayHolderTable data={replayParticipants} priceUsd={priceUsd} onFilter={filterWallet} />
                 : <HolderTable data={holders} state={holderState} />)}
             {tab === 'top' && (replayMode
-                ? <ReplayTopTable data={replayParticipants} priceUsd={priceUsd} />
+                ? <ReplayTopTable data={replayParticipants} priceUsd={priceUsd} onFilter={filterWallet} />
                 : <TopTable trades={trades} />)}
             {tab === 'dev' && <DevTable tokenMint={tokenMint} />}
         </div>
     );
 }
 
-function TradeTable({ trades, now }: { trades: ActivityTrade[]; now?: string | null }) {
+function TradeTable({ trades, now, wallet, onClear }: {
+    trades: ActivityTrade[];
+    now?: string | null;
+    wallet?: string;
+    onClear: () => void;
+}) {
     const clock = now ? new Date(now).getTime() : Date.now();
     type Key = 'time' | 'side' | 'mcap' | 'amount' | 'usd' | 'maker';
     const [sort, setSort] = useState<SortState<Key>>({ key: 'time', dir: 'desc' });
@@ -305,6 +340,13 @@ function TradeTable({ trades, now }: { trades: ActivityTrade[]; now?: string | n
     });
     return (
         <>
+            {wallet && (
+                <div className="flex h-8 shrink-0 items-center border-b border-[var(--term-border)] px-3 text-[10px] text-[var(--term-muted)]">
+                    <FunnelIcon className="mr-1.5 h-3.5 w-3.5 text-[var(--term-accent)]" />
+                    Trades by <span className="ml-1 text-[var(--term-text)]">{shortAddress(wallet)}</span>
+                    <button type="button" onClick={onClear} className="ml-2 text-[var(--term-accent)] hover:text-white">Clear</button>
+                </div>
+            )}
             <TableHead columns="grid-cols-[80px_80px_1fr_1fr_1fr_150px]" cells={[
                 { label: 'Age', key: 'time', align: 'center' },
                 { label: 'Side', key: 'side', align: 'center', dir: 'asc' },
@@ -331,7 +373,7 @@ function TradeTable({ trades, now }: { trades: ActivityTrade[]; now?: string | n
                         </span>
                     </div>
                 ))}
-                {!trades.length && <Empty text="Waiting for live trades" />}
+                {!trades.length && <Empty text={wallet ? 'No trades from this wallet at the current replay cut' : 'Waiting for live trades'} />}
             </div>
         </>
     );
@@ -444,18 +486,27 @@ type ParticipantRow = { row: ReplayParticipant; stats: ReplayParticipantStats };
 
 const participantCols = 'grid-cols-[36px_minmax(190px,1.4fr)_minmax(125px,.85fr)_minmax(165px,1.05fr)_minmax(165px,1.05fr)_minmax(110px,.72fr)_minmax(160px,1fr)_minmax(135px,.85fr)_65px_38px]';
 
-function ReplayHolderTable({ data, priceUsd }: { data?: ReplayParticipants; priceUsd?: number }) {
-    return <ReplayParticipantTable mode="holders" data={data} priceUsd={priceUsd} />;
+function ReplayHolderTable({ data, priceUsd, onFilter }: {
+    data?: ReplayParticipants;
+    priceUsd?: number;
+    onFilter: (wallet: string) => void;
+}) {
+    return <ReplayParticipantTable mode="holders" data={data} priceUsd={priceUsd} onFilter={onFilter} />;
 }
 
-function ReplayTopTable({ data, priceUsd }: { data?: ReplayParticipants; priceUsd?: number }) {
-    return <ReplayParticipantTable mode="top" data={data} priceUsd={priceUsd} />;
+function ReplayTopTable({ data, priceUsd, onFilter }: {
+    data?: ReplayParticipants;
+    priceUsd?: number;
+    onFilter: (wallet: string) => void;
+}) {
+    return <ReplayParticipantTable mode="top" data={data} priceUsd={priceUsd} onFilter={onFilter} />;
 }
 
-function ReplayParticipantTable({ mode, data, priceUsd }: {
+function ReplayParticipantTable({ mode, data, priceUsd, onFilter }: {
     mode: ParticipantMode;
     data?: ReplayParticipants;
     priceUsd?: number;
+    onFilter: (wallet: string) => void;
 }) {
     const [sort, setSort] = useState<SortState<ParticipantKey>>({ key: 'rank', dir: 'asc' });
     if (!data) return <Empty text={mode === 'holders' ? 'Building the replay holder ledger…' : 'Building the replay trader rankings…'} />;
@@ -505,6 +556,7 @@ function ReplayParticipantTable({ mode, data, priceUsd }: {
                             stats={stats}
                             rank={ranks.get(row.wallet) || 0}
                             pnl={mode === 'holders' ? stats.unrealizedPnlUsd : stats.realizedPnlUsd}
+                            onFilter={onFilter}
                         />
                     ))}
                     {!rows.length && <Empty text={mode === 'holders' ? 'No positive replay balances at this point' : 'Top traders will appear with replay activity'} />}
@@ -514,11 +566,12 @@ function ReplayParticipantTable({ mode, data, priceUsd }: {
     );
 }
 
-function ReplayParticipantRow({ row, stats, rank, pnl }: {
+function ReplayParticipantRow({ row, stats, rank, pnl, onFilter }: {
     row: ReplayParticipant;
     stats: ReplayParticipantStats;
     rank: number;
     pnl?: number;
+    onFilter: (wallet: string) => void;
 }) {
     const walletUrl = `https://solscan.io/account/${row.wallet}`;
     const percent = stats.remainingPercent === 0
@@ -528,8 +581,8 @@ function ReplayParticipantRow({ row, stats, rank, pnl }: {
         <div className={`activity-row participant-row grid ${participantCols} items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums`}>
             <span className="text-[var(--term-dim)]">{rank}</span>
             <span className="flex min-w-0 items-center gap-1.5">
-                <a href={`${walletUrl}#transfers`} target="_blank" rel="noreferrer" aria-label={`View ${shortAddress(row.wallet)} transfers`} className="text-[var(--term-muted)] hover:text-white"><FunnelIcon className="h-3.5 w-3.5" /></a>
-                <a href={walletUrl} target="_blank" rel="noreferrer" aria-label={`Open ${shortAddress(row.wallet)} on Solscan`} className="grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 border-[var(--term-muted)] text-[var(--term-text)] hover:border-white"><MagnifyingGlassIcon className="h-3.5 w-3.5 stroke-[2.5]" /></a>
+                <button type="button" onClick={() => onFilter(row.wallet)} aria-label={`Filter trades by ${shortAddress(row.wallet)}`} className="text-[var(--term-muted)] hover:text-white"><FunnelIcon className="h-3.5 w-3.5" /></button>
+                <button type="button" onClick={() => onFilter(row.wallet)} aria-label={`Inspect ${shortAddress(row.wallet)} trades`} className="grid h-6 w-6 shrink-0 place-items-center text-[var(--term-text)] hover:text-white"><MagnifyingGlassIcon className="h-3.5 w-3.5 stroke-[2.5]" /></button>
                 <a href={walletUrl} target="_blank" rel="noreferrer" className="truncate font-medium text-[var(--term-text)] hover:text-white">{shortAddress(row.wallet)}</a>
                 <span className="shrink-0 rounded bg-[var(--term-raised)] px-1.5 py-0.5 text-[10px] text-[var(--term-muted)]">{row.tradeCount > 99 ? '99+' : row.tradeCount}</span>
                 <span className="flex shrink-0 items-center gap-0.5" title={`${row.buyCount} buys · ${row.sellCount} sells`}><CubeTransparentIcon className="h-3.5 w-3.5 text-[var(--term-sell)]" /><CandleMark className="h-3.5 w-3.5 text-[var(--term-muted)]" /></span>
@@ -544,7 +597,7 @@ function ReplayParticipantRow({ row, stats, rank, pnl }: {
             </span>
             <span className="flex min-w-0 items-center gap-2 text-[var(--term-muted)]" title="Funding source is not included in the verified replay tape"><ArrowUpIcon className="h-4 w-4 shrink-0" /><span className="min-w-0"><span className="block">—</span><span className="block truncate text-[9px] text-[var(--term-dim)]">Not observed</span></span></span>
             <span className="text-[#6482ff]">{elapsedLabel(stats.heldSeconds)}</span>
-            <a href={walletUrl} target="_blank" rel="noreferrer" className="grid h-7 w-7 place-items-center rounded-md border border-[var(--term-border)] hover:border-[var(--term-border-strong)]" aria-label={`Open ${shortAddress(row.wallet)} on Solscan`}><Image src="/solscan.svg" alt="" width={14} height={14} /></a>
+            <a href={walletUrl} target="_blank" rel="noreferrer" className="grid h-7 w-7 place-items-center opacity-75 hover:opacity-100" aria-label={`Open ${shortAddress(row.wallet)} on Solscan`}><Image src="/solscan.svg" alt="" width={14} height={14} /></a>
         </div>
     );
 }

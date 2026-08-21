@@ -129,13 +129,13 @@
     flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    border: 1px solid transparent;
+    border: 0;
     border-radius: .55rem;
     padding-inline: clamp(.6rem, .75vw, .75rem);
     color: var(--term-text);
     line-height: 1;
     white-space: nowrap;
-    transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease;
+    transition: color 140ms ease, background-color 140ms ease;
 }
 
 .terminal-nav-link:hover {
@@ -144,9 +144,12 @@
 }
 
 .terminal-nav-link[data-active="true"] {
-    border-color: color-mix(in srgb, var(--term-accent) 24%, transparent);
-    background: color-mix(in srgb, var(--term-accent) 11%, transparent);
+    background: transparent;
     color: var(--term-accent-strong);
+}
+
+.terminal-nav-link[data-active="true"]:hover {
+    background: var(--term-raised);
 }
 
 .terminal-pill,
@@ -664,7 +667,7 @@
     flex: 0 1 auto;
     align-items: center;
     gap: .55rem;
-    overflow: hidden;
+    overflow: visible;
     border-left: 1px solid var(--term-border);
     padding-left: .55rem;
     margin-left: .25rem;
@@ -676,8 +679,7 @@
     display: none;
 }
 
-.replay-transport,
-.replay-speed-options {
+.replay-transport {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
@@ -722,7 +724,7 @@
 
 .replay-primary:disabled,
 .replay-action:disabled,
-.replay-speed-options button:disabled {
+.replay-speed-trigger:disabled {
     cursor: not-allowed;
     opacity: .42;
 }
@@ -747,29 +749,114 @@
     text-transform: uppercase;
 }
 
-.replay-speed-options button {
-    min-width: 2.05rem;
+.replay-speed-menu {
+    position: relative;
+}
+
+.replay-speed-trigger {
+    display: flex;
+    min-width: 3.25rem;
     height: 1.95rem;
+    align-items: center;
+    justify-content: center;
+    gap: .25rem;
     border: 0;
     border-radius: 0;
-    padding-inline: .3rem;
-    color: var(--term-muted);
+    padding-inline: .4rem;
+    color: var(--term-accent-strong);
     font-size: .65rem;
     transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
 }
 
-.replay-speed-options button:last-child {
-    border-right: 0;
+.replay-speed-trigger svg {
+    width: .7rem;
+    height: .7rem;
 }
 
-.replay-speed-options button:hover:not(:disabled) {
-    background: transparent;
+.replay-range-trigger {
+    min-width: 5.25rem;
+}
+
+.replay-range-trigger svg:first-child {
+    width: .8rem;
+    height: .8rem;
+    color: var(--term-muted);
+}
+
+.replay-speed-trigger:hover:not(:disabled) {
+    background: var(--term-raised);
     color: var(--term-text);
 }
 
-.replay-speed-options button[aria-pressed="true"] {
-    background: transparent;
+.replay-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 54;
+    cursor: default;
+}
+
+.replay-menu {
+    position: absolute;
+    z-index: 55;
+    top: calc(100% + .35rem);
+    right: 0;
+    width: 6.5rem;
+    overflow: hidden;
+    border: 1px solid var(--term-border-strong);
+    border-radius: .45rem;
+    background: var(--term-panel);
+    padding-block: .2rem;
+    box-shadow: 0 16px 40px rgb(0 0 0 / 45%);
+}
+
+.replay-menu button {
+    display: flex;
+    width: 100%;
+    height: 1.85rem;
+    align-items: center;
+    justify-content: space-between;
+    padding-inline: .65rem;
+    color: var(--term-muted);
+    font-size: .67rem;
+}
+
+.replay-menu button:hover,
+.replay-menu button[aria-selected="true"] {
+    background: var(--term-raised);
+    color: var(--term-text);
+}
+
+.replay-menu button:disabled {
+    cursor: not-allowed;
+    opacity: .4;
+}
+
+.replay-menu button svg {
+    width: .75rem;
+    height: .75rem;
     color: var(--term-accent-strong);
+}
+
+.replay-range-menu {
+    width: 10.5rem;
+}
+
+.replay-range-menu button {
+    height: 2.7rem;
+}
+
+.replay-range-menu strong,
+.replay-range-menu small {
+    display: block;
+    text-align: left;
+    font-weight: 500;
+}
+
+.replay-range-menu small {
+    margin-top: .1rem;
+    color: var(--term-dim);
+    font-size: .58rem;
+    font-weight: 400;
 }
 
 .replay-progress {

@@ -40,7 +40,7 @@ import TerminalActivity, { ActivityTab, ActivityTrade } from './TerminalActivity
 import { TerminalDock, TerminalHeader } from './TerminalChrome';
 import TerminalSettingsModal from './TerminalSettingsModal';
 import type { SettingsSection } from './TerminalSettingsModal';
-import ReplayControls from './ReplayControls';
+import ReplayControls, { replayPreviewTrades, type ReplayRange } from './ReplayControls';
 import { terminalSkin, useTerminalSettings } from '../../services/terminalSettings';
 import { hasStar, onShelf, rememberToken, toggleStar } from '../../services/tokenShelf';
 import { useRealtime } from '../../hooks/useRealtime';
@@ -245,6 +245,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     const [replayNow, setReplayNow] = useState<string>();
     const [participants, setParticipants] = useState<ReplayParticipants>();
     const [replaySpeed, setReplaySpeed] = useState<ReplaySpeed>(1);
+    const [replayRange, setReplayRange] = useState<ReplayRange>('preview');
     const [replaySupply, setReplaySupply] = useState<number | undefined>(configuredSupply);
     const [replayError, setReplayError] = useState<string>();
     const [controlBusy, setControlBusy] = useState(false);
@@ -269,6 +270,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     const participantView = useRef<ReplayParticipants | undefined>(undefined);
     const replayCut = useRef<{ epoch: number; cursor: number } | undefined>(undefined);
     const replayResync = useRef(false);
+    const replayRangeRef = useRef<ReplayRange>('preview');
     const supplyRef = useRef<number | undefined>(configuredSupply);
     const intervalRef = useRef(intervalSeconds);
     const hydrateSeq = useRef(0);
@@ -277,6 +279,10 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
     useEffect(() => {
         intervalRef.current = intervalSeconds;
     }, [intervalSeconds]);
+
+    useEffect(() => {
+        replayRangeRef.current = replayRange;
+    }, [replayRange]);
 
     useEffect(() => {
         if (replayMode && replay?.solUsd) setSolUsd(replay.solUsd);
@@ -736,6 +742,9 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
             if (replayCut.current && current.epoch !== replayCut.current.epoch) continue;
             if (current.stream === 'trade' && isReplayTrade(current.data)) {
                 const cursor = Number(current.cursor) - 1;
+                if (replayRangeRef.current === 'preview' && cursor >= replayPreviewTrades) {
+                    continue;
+                }
                 batch.push({
                     ...current.data,
                     ...(Number.isSafeInteger(cursor) && cursor >= 0 ? { replayCursor: cursor } : {}),
@@ -827,6 +836,11 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
         sells: market.sells5m,
     }), [market.buys5m, market.sells5m, market.volume5m]);
     const openInstant = useCallback(() => setInstantOpen(true), []);
+    const walletTrades = useCallback((wallet: string) => replayTrades.current
+        .filter((item) => item.maker === wallet)
+        .slice(-500)
+        .reverse()
+        .map((item) => activityTrade(item, supplyRef.current)), []);
 
     const controlReplay = useCallback(async (command: ReplayOp) => {
         const currentReplay = replayRef.current ?? replay;
@@ -870,6 +884,24 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
             setControlBusy(false);
         }
     }, [applyReplay, controlBusy, hydrateParticipants, hydrateReplayHistory, replay]);
+
+    const changeReplayRange = useCallback((next: ReplayRange) => {
+        if (next === replayRange) return;
+        replayRangeRef.current = next;
+        setReplayRange(next);
+        if ((replayRef.current?.snapshot.cursor ?? 0) > 0) {
+            void controlReplay({ op: 'seek', target: 0 });
+        }
+    }, [controlReplay, replayRange]);
+
+    useEffect(() => {
+        const snapshot = replay?.snapshot;
+        if (replayRange !== 'preview' || !snapshot || snapshot.status !== 'running'
+            || snapshot.cursor < replayPreviewTrades) return;
+        void controlReplay(snapshot.cursor === replayPreviewTrades
+            ? { op: 'pause' }
+            : { op: 'seek', target: replayPreviewTrades });
+    }, [controlReplay, replay?.snapshot, replayRange]);
 
     useEffect(() => {
         if (!replayMode && !token && !metadata) return;
@@ -942,7 +974,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
                             </div>
                         </div>
 
-                        <div className="ml-auto flex min-w-0 flex-1 items-center justify-end overflow-hidden">
+                        <div className="ml-auto flex min-w-0 flex-1 items-center justify-end overflow-visible">
                             <div className="token-main-stat shrink-0 px-[clamp(.7rem,1.35vw,1.2rem)] text-[clamp(1rem,1.55vw,1.28rem)] font-[500] tabular-nums">{money(market.marketCap ?? token?.market_cap)}</div>
                             {[
                                 ['Price', money(market.price ?? token?.price)],
@@ -960,9 +992,11 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
                                     replay={replay}
                                     now={replayNow}
                                     speed={replaySpeed}
+                                    range={replayRange}
                                     busy={controlBusy}
                                     notice={replayNotice}
                                     onSpeed={setReplaySpeed}
+                                    onRange={changeReplayRange}
                                     onControl={(command) => void controlReplay(command)}
                                 />
                             )}
@@ -1037,7 +1071,7 @@ export default function TradingTerminal({ tokenMint, replayView = false }: { tok
                             <span className="pointer-events-none absolute left-1/2 top-1/2 h-[2px] w-12 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/30 transition group-hover:bg-white/65 group-focus:bg-[var(--term-accent)]" />
                         </div>
                     )}
-                    {!chartFull && <div className="activity-panel min-h-0 overflow-hidden"><TerminalActivity key={tokenMint} tokenMint={tokenMint} tokenDecimals={tokenDecimals} trades={trades} replayParticipants={participants} replayMode={replayMode} priceUsd={replayMode ? activityPrice : market.price} initialTab={activityTab} onInstantTrade={openInstant} now={replayMode ? replayNow : undefined} /></div>}
+                    {!chartFull && <div className="activity-panel min-h-0 overflow-hidden"><TerminalActivity key={tokenMint} tokenMint={tokenMint} tokenDecimals={tokenDecimals} trades={trades} replayParticipants={participants} replayMode={replayMode} priceUsd={replayMode ? activityPrice : market.price} initialTab={activityTab} onInstantTrade={openInstant} onWalletTrades={walletTrades} now={replayMode ? replayNow : undefined} /></div>}
                 </section>
                 {!chartFull && <aside className="ticket-panel hidden min-h-0 overflow-hidden border-l border-[var(--term-border)] lg:block"><TradeTicket tokenMint={tokenMint} tokenSymbol={symbol} tokenDecimals={tokenDecimals} defaultAmount={ticketAmount} defaultSlippage={ticketSlippage} clearOnSuccess={settings.clearOnSuccess} currentMarketCap={market.marketCap ?? token?.market_cap} currentPrice={market.price ?? token?.price} totalSupply={totalSupply} flow={ticketFlow} participants={participants} replayMode={replayMode} onLimitChange={syncLimitTarget} /></aside>}
             </div>
