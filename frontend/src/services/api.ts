@@ -203,6 +203,7 @@ export interface DiscoveryToken {
     logo?: string;
     socials?: Record<string, string>;
     creator?: string;
+    creatorHandle?: string;
     launchpad?: string;
     lifecycle: string;
     priceUsd?: number;
@@ -211,6 +212,19 @@ export interface DiscoveryToken {
     volume5mUsd: number;
     buyCount5m: number;
     sellCount5m: number;
+    holderCount?: number;
+    replyCount?: number;
+    recentVisitors?: number;
+    top10Pct?: number;
+    devHoldPct?: number;
+    sniperPct?: number;
+    insiderPct?: number;
+    bundlePct?: number;
+    proTraderCount?: number;
+    devMigrationCount?: number;
+    devPairCount?: number;
+    curvePct?: number;
+    globalFeesSol?: number;
     createdAt: string;
     observedAt?: string;
 }
