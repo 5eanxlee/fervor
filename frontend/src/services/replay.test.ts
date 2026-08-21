@@ -6,6 +6,7 @@ import {
     mergeCandles,
     isReplayParticipants,
     replayClockAt,
+    replayParticipantStats,
     stabilizeReplayPrices,
     supplyOf,
     volumePrice,
@@ -183,11 +184,30 @@ describe('historical replay projection', () => {
                 tradeCount: 2,
             }],
         });
+        expect(next).toBeDefined();
+        if (!next) throw new Error('Expected replay participants');
         expect(advanceReplayParticipants(base, [trade({
             maker,
             tokenAmountRaw: '1',
             tokenDecimals: 0,
             replayCursor: 2,
         })])).toBeUndefined();
+
+        const stats = replayParticipantStats(next.items[0], next, 3);
+        expect(stats).toMatchObject({
+            boughtTokens: 100,
+            soldTokens: 40,
+            remainingTokens: 60,
+            avgBuyPriceUsd: 0.2,
+            avgSellPriceUsd: 0.3,
+            avgBuyMcapUsd: 200,
+            avgSellMcapUsd: 300,
+            currentValueUsd: 180,
+            unrealizedPnlUsd: 168,
+            realizedPnlUsd: 4,
+            remainingPercent: 6,
+            heldSeconds: 0,
+            lastActiveSeconds: 0,
+        });
     });
 });

@@ -946,6 +946,14 @@
     min-height: clamp(2.75rem, 5vh, 3.1rem);
 }
 
+.participant-head {
+    height: clamp(2.35rem, 4.2vh, 2.75rem);
+}
+
+.participant-row {
+    min-height: clamp(3.25rem, 6.3vh, 3.75rem);
+}
+
 .activity-row:nth-child(even) {
     background: color-mix(in srgb, var(--term-panel) 55%, var(--term-bg));
 }

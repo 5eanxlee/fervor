@@ -127,6 +127,23 @@ export interface ReplayParticipants {
     items: ReplayParticipant[];
 }
 
+export interface ReplayParticipantStats {
+    boughtTokens: number;
+    soldTokens: number;
+    remainingTokens: number;
+    solFlow: number;
+    avgBuyPriceUsd?: number;
+    avgSellPriceUsd?: number;
+    avgBuyMcapUsd?: number;
+    avgSellMcapUsd?: number;
+    currentValueUsd?: number;
+    unrealizedPnlUsd?: number;
+    realizedPnlUsd: number;
+    remainingPercent: number;
+    lastActiveSeconds: number;
+    heldSeconds: number;
+}
+
 export type ReplayOp =
     | { op: 'play'; speed: ReplaySpeed }
     | { op: 'pause' }
@@ -283,6 +300,50 @@ export const isReplayParticipants = (value: unknown): value is ReplayParticipant
         && count(value.coverage.priceCoverageBps) && value.coverage.priceCoverageBps <= 10_000
         && value.items.length === value.traderCount
         && value.items.every(isReplayParticipant);
+};
+
+const tokenAmount = (raw: string, decimals: number): number =>
+    Number(raw) / 10 ** decimals;
+
+export const replayParticipantStats = (
+    row: ReplayParticipant,
+    data: ReplayParticipants,
+    priceUsd?: number
+): ReplayParticipantStats => {
+    const boughtTokens = tokenAmount(row.boughtRaw, data.tokenDecimals);
+    const soldTokens = tokenAmount(row.soldRaw, data.tokenDecimals);
+    const remainingRaw = BigInt(row.balanceRaw) > BigInt(0) ? BigInt(row.balanceRaw) : BigInt(0);
+    const remainingTokens = tokenAmount(remainingRaw.toString(), data.tokenDecimals);
+    const pricedBuyTokens = tokenAmount(row.pricedBuyRaw, data.tokenDecimals);
+    const pricedSellTokens = tokenAmount(row.pricedSellRaw, data.tokenDecimals);
+    const supplyTokens = tokenAmount(data.supplyRaw, data.tokenDecimals);
+    const avgBuyPriceUsd = pricedBuyTokens > 0 ? row.boughtUsd / pricedBuyTokens : undefined;
+    const avgSellPriceUsd = pricedSellTokens > 0 ? row.soldUsd / pricedSellTokens : undefined;
+    const currentValueUsd = priceUsd === undefined ? undefined : remainingTokens * priceUsd;
+    const remainingCostUsd = avgBuyPriceUsd === undefined ? undefined : remainingTokens * avgBuyPriceUsd;
+    const costSoldUsd = avgBuyPriceUsd === undefined
+        ? 0
+        : Math.min(pricedSellTokens, boughtTokens) * avgBuyPriceUsd;
+    const cutMs = data.cutAt ? Date.parse(data.cutAt) : Date.parse(row.lastTradeAt);
+
+    return {
+        boughtTokens,
+        soldTokens,
+        remainingTokens,
+        solFlow: row.boughtSol + row.soldSol,
+        avgBuyPriceUsd,
+        avgSellPriceUsd,
+        avgBuyMcapUsd: avgBuyPriceUsd === undefined ? undefined : avgBuyPriceUsd * supplyTokens,
+        avgSellMcapUsd: avgSellPriceUsd === undefined ? undefined : avgSellPriceUsd * supplyTokens,
+        currentValueUsd,
+        unrealizedPnlUsd: currentValueUsd === undefined || remainingCostUsd === undefined
+            ? undefined
+            : currentValueUsd - remainingCostUsd,
+        realizedPnlUsd: row.soldUsd - costSoldUsd,
+        remainingPercent: supplyTokens > 0 ? remainingTokens / supplyTokens * 100 : 0,
+        lastActiveSeconds: Math.max(0, Math.floor((cutMs - Date.parse(row.lastTradeAt)) / 1_000)),
+        heldSeconds: Math.max(0, Math.floor((cutMs - Date.parse(row.firstTradeAt)) / 1_000)),
+    };
 };
 
 const top10Percent = (items: ReplayParticipant[], supplyRaw: string): number => {

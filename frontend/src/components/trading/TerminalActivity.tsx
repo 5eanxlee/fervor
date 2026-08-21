@@ -3,11 +3,13 @@
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
+    ArrowUpIcon,
     ArrowPathIcon,
     BoltIcon,
     ChevronDownIcon,
     ChevronUpDownIcon,
     ChevronUpIcon,
+    CubeTransparentIcon,
     FunnelIcon,
     MagnifyingGlassIcon,
     UserGroupIcon,
@@ -19,7 +21,13 @@ import {
     TrackedWallet,
     WalletPosition,
 } from '../../services/api';
-import type { ReplayParticipant, ReplayParticipants } from '../../services/replay';
+import {
+    replayParticipantStats,
+    type ReplayParticipant,
+    type ReplayParticipantStats,
+    type ReplayParticipants,
+} from '../../services/replay';
+import { SolanaMark } from './BrandMarks';
 
 export type ActivityTab = 'trades' | 'positions' | 'orders' | 'holders' | 'top' | 'dev';
 
@@ -47,9 +55,15 @@ const compact = (value?: number): string => {
     return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(value);
 };
 
-const money = (value?: number): string => value === undefined || !Number.isFinite(value)
+const money = (value?: number): string => {
+    if (value === undefined || !Number.isFinite(value)) return '—';
+    if (value === 0) return '$0';
+    return Math.abs(value) >= 1 ? `$${compact(value)}` : `$${value.toPrecision(5)}`;
+};
+
+const signedMoney = (value?: number): string => value === undefined || !Number.isFinite(value)
     ? '—'
-    : value >= 1 ? `$${compact(value)}` : `$${value.toPrecision(5)}`;
+    : `${value >= 0 ? '+' : '-'}${money(Math.abs(value))}`;
 
 const shortAddress = (value?: string): string => value ? `${value.slice(0, 5)}…${value.slice(-4)}` : '—';
 export const elapsedLabel = (seconds: number): string => {
@@ -412,145 +426,126 @@ function OrderTable({ rows, state, tokenMint, tokenDecimals, view, setView, open
     );
 }
 
-const rawAmount = (value: string, decimals: number): number =>
-    Number(value) / 10 ** decimals;
+type ParticipantMode = 'holders' | 'top';
+type ParticipantKey = 'rank' | 'wallet' | 'sol' | 'bought' | 'sold' | 'pnl' | 'remaining' | 'held';
+type ParticipantRow = { row: ReplayParticipant; stats: ReplayParticipantStats };
 
-const rawSort = (
-    left: ReplayParticipant,
-    right: ReplayParticipant,
-    value: (row: ReplayParticipant) => bigint
-): number => {
-    const a = value(left);
-    const b = value(right);
-    return a === b ? left.wallet.localeCompare(right.wallet) : a > b ? -1 : 1;
-};
+const participantCols = 'grid-cols-[36px_minmax(190px,1.4fr)_minmax(125px,.85fr)_minmax(165px,1.05fr)_minmax(165px,1.05fr)_minmax(110px,.72fr)_minmax(160px,1fr)_minmax(135px,.85fr)_65px_38px]';
 
-function ReplayHolderTable({ data, priceUsd }: {
+function ReplayHolderTable({ data, priceUsd }: { data?: ReplayParticipants; priceUsd?: number }) {
+    return <ReplayParticipantTable mode="holders" data={data} priceUsd={priceUsd} />;
+}
+
+function ReplayTopTable({ data, priceUsd }: { data?: ReplayParticipants; priceUsd?: number }) {
+    return <ReplayParticipantTable mode="top" data={data} priceUsd={priceUsd} />;
+}
+
+function ReplayParticipantTable({ mode, data, priceUsd }: {
+    mode: ParticipantMode;
     data?: ReplayParticipants;
     priceUsd?: number;
 }) {
-    type Key = 'rank' | 'wallet' | 'balance' | 'supply' | 'value' | 'bought' | 'sold' | 'trades' | 'time';
-    const [sort, setSort] = useState<SortState<Key>>({ key: 'balance', dir: 'desc' });
-    if (!data) return <Empty text="Building the replay holder ledger…" />;
-    const supply = BigInt(data.supplyRaw);
-    const ranked = data.items.filter((row) => BigInt(row.balanceRaw) > BigInt(0))
-        .sort((left, right) => rawSort(left, right, (row) => BigInt(row.balanceRaw)));
-    const ranks = new Map(ranked.map((row, index) => [row.wallet, index + 1]));
-    const rows = sorted(ranked, sort, (row, key) => {
-        const balance = BigInt(row.balanceRaw);
+    const [sort, setSort] = useState<SortState<ParticipantKey>>({ key: 'rank', dir: 'asc' });
+    if (!data) return <Empty text={mode === 'holders' ? 'Building the replay holder ledger…' : 'Building the replay trader rankings…'} />;
+
+    const values: ParticipantRow[] = data.items.map((row) => ({
+        row,
+        stats: replayParticipantStats(row, data, priceUsd),
+    })).filter(({ stats }) => mode === 'top' || stats.remainingTokens > 0);
+    const ranked = [...values].sort((left, right) => {
+        const value = mode === 'holders'
+            ? right.stats.remainingTokens - left.stats.remainingTokens
+            : right.stats.realizedPnlUsd - left.stats.realizedPnlUsd;
+        return value || left.row.wallet.localeCompare(right.row.wallet);
+    });
+    const ranks = new Map(ranked.map(({ row }, index) => [row.wallet, index + 1]));
+    const rows = sorted(ranked, sort, ({ row, stats }, key) => {
         if (key === 'rank') return ranks.get(row.wallet);
         if (key === 'wallet') return row.wallet;
-        if (key === 'balance' || key === 'supply' || key === 'value') return balance;
-        if (key === 'bought') return BigInt(row.boughtRaw);
-        if (key === 'sold') return BigInt(row.soldRaw);
-        if (key === 'trades') return row.tradeCount;
-        return Date.parse(row.lastTradeAt);
+        if (key === 'sol') return stats.solFlow;
+        if (key === 'bought') return row.boughtUsd;
+        if (key === 'sold') return row.soldUsd;
+        if (key === 'pnl') return mode === 'holders' ? stats.unrealizedPnlUsd : stats.realizedPnlUsd;
+        if (key === 'remaining') return stats.currentValueUsd ?? stats.remainingTokens;
+        return stats.heldSeconds;
     }).slice(0, 100);
+
     return (
-        <>
-            <div className="flex h-8 items-center border-b border-[var(--term-border)] px-3 text-[10px] text-[var(--term-muted)]">
-                <span>Verified replay trade ledger · transfers excluded</span>
-                <span className="ml-auto">Top 10: <span className="text-white">{data.top10Percent.toFixed(2)}%</span></span>
+        <div className="min-h-0 flex-1 overflow-auto">
+            <div className="min-w-[1180px]">
+                <TableHead className="participant-head sticky top-0 z-10 bg-[var(--term-bg)]" columns={participantCols} cells={[
+                    { label: '#', key: 'rank', dir: 'asc' },
+                    { label: 'Wallet', key: 'wallet', dir: 'asc' },
+                    { label: 'SOL Flow (Last Active)', key: 'sol' },
+                    { label: 'Bought (Avg Buy)', key: 'bought' },
+                    { label: 'Sold (Avg Sell)', key: 'sold' },
+                    { label: mode === 'holders' ? 'U. PnL' : 'R. PnL', key: 'pnl' },
+                    { label: 'Remaining', key: 'remaining' },
+                    { label: 'Funding' },
+                    { label: 'Held', key: 'held' },
+                    { label: '' },
+                ]} sort={sort} onSort={(key, dir) => chooseSort(setSort, key, dir)} />
+                <div>
+                    {rows.map(({ row, stats }) => (
+                        <ReplayParticipantRow
+                            key={row.wallet}
+                            row={row}
+                            stats={stats}
+                            rank={ranks.get(row.wallet) || 0}
+                            pnl={mode === 'holders' ? stats.unrealizedPnlUsd : stats.realizedPnlUsd}
+                        />
+                    ))}
+                    {!rows.length && <Empty text={mode === 'holders' ? 'No positive replay balances at this point' : 'Top traders will appear with replay activity'} />}
+                </div>
             </div>
-            <TableHead columns="grid-cols-[52px_1.2fr_1fr_.8fr_1fr_1fr_1fr_70px_95px]" cells={[
-                { label: 'Rank', key: 'rank' }, { label: 'Address', key: 'wallet', dir: 'asc' },
-                { label: 'Balance', key: 'balance' }, { label: 'Supply', key: 'supply' },
-                { label: 'Value', key: 'value' }, { label: 'Bought', key: 'bought' },
-                { label: 'Sold', key: 'sold' }, { label: 'Trades', key: 'trades' },
-                { label: 'Last trade', key: 'time', align: 'right' },
-            ]} sort={sort} onSort={(key, dir) => chooseSort(setSort, key, dir)} />
-            <div className="min-h-0 flex-1 overflow-y-auto">
-                {rows.map((row) => {
-                    const balanceRaw = BigInt(row.balanceRaw);
-                    const balance = rawAmount(row.balanceRaw, data.tokenDecimals);
-                    const percent = supply === BigInt(0)
-                        ? 0
-                        : Number(balanceRaw * BigInt(1_000_000) / supply) / 10_000;
-                    return (
-                        <div key={row.wallet} className="activity-row grid grid-cols-[52px_1.2fr_1fr_.8fr_1fr_1fr_1fr_70px_95px] items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums">
-                            <span className="text-[var(--term-dim)]">{ranks.get(row.wallet)}</span>
-                            <span>{shortAddress(row.wallet)}</span>
-                            <span>{compact(balance)}</span>
-                            <span>{percent.toFixed(3)}%</span>
-                            <span>{money(priceUsd === undefined ? undefined : balance * priceUsd)}</span>
-                            <span className="text-[var(--term-buy)]">{compact(rawAmount(row.boughtRaw, data.tokenDecimals))}</span>
-                            <span className="text-[var(--term-sell)]">{compact(rawAmount(row.soldRaw, data.tokenDecimals))}</span>
-                            <span>{row.tradeCount}</span>
-                            <span className="text-right text-[var(--term-dim)]">{new Date(row.lastTradeAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                        </div>
-                    );
-                })}
-                {!rows.length && <Empty text="No positive replay balances at this point" />}
-            </div>
-        </>
+        </div>
     );
 }
 
-function ReplayTopTable({ data, priceUsd }: {
-    data?: ReplayParticipants;
-    priceUsd?: number;
+function ReplayParticipantRow({ row, stats, rank, pnl }: {
+    row: ReplayParticipant;
+    stats: ReplayParticipantStats;
+    rank: number;
+    pnl?: number;
 }) {
-    type Key = 'rank' | 'wallet' | 'sol' | 'bought' | 'sold' | 'net' | 'remaining' | 'held';
-    const [sort, setSort] = useState<SortState<Key>>({ key: 'rank', dir: 'asc' });
-    if (!data) return <Empty text="Building the replay trader rankings…" />;
-    const ranked = [...data.items].sort((left, right) => rawSort(left, right, (row) =>
-        BigInt(row.boughtRaw) + BigInt(row.soldRaw)));
-    const ranks = new Map(ranked.map((row, index) => [row.wallet, index + 1]));
-    const rows = sorted(ranked, sort, (row, key) => {
-        if (key === 'rank') return ranks.get(row.wallet);
-        if (key === 'wallet') return row.wallet;
-        if (key === 'sol') return row.boughtSol + row.soldSol;
-        if (key === 'bought') return row.boughtUsd;
-        if (key === 'sold') return row.soldUsd;
-        if (key === 'net') return row.soldUsd - row.boughtUsd;
-        if (key === 'remaining') return BigInt(row.balanceRaw);
-        return Date.parse(row.lastTradeAt) - Date.parse(row.firstTradeAt);
-    }).slice(0, 100);
-    const cutMs = data.cutAt ? Date.parse(data.cutAt) : 0;
+    const walletUrl = `https://solscan.io/account/${row.wallet}`;
+    const percent = stats.remainingPercent === 0
+        ? '0%'
+        : `${stats.remainingPercent.toFixed(stats.remainingPercent < 10 ? 3 : 2)}%`;
     return (
-        <>
-            <div className="flex h-8 items-center border-b border-[var(--term-border)] bg-black/20 px-3 text-[10px] text-[var(--term-muted)]">
-                <span>Observed trade ledger through #{data.cutCursor.toLocaleString()} · opening balances and transfers excluded</span>
-                <span className="ml-auto">{data.traderCount.toLocaleString()} traders</span>
-            </div>
-            <TableHead columns="grid-cols-[44px_1.15fr_.95fr_1.1fr_1.1fr_.85fr_1fr_82px]" cells={[
-                { label: '#', key: 'rank', dir: 'asc' }, { label: 'Wallet', key: 'wallet', dir: 'asc' },
-                { label: 'SOL Flow · Last active', key: 'sol' },
-                { label: 'Bought · Avg buy', key: 'bought' },
-                { label: 'Sold · Avg sell', key: 'sold' },
-                { label: 'Net USD', key: 'net' }, { label: 'Remaining', key: 'remaining' },
-                { label: 'Held', key: 'held', align: 'right' },
-            ]} sort={sort} onSort={(key, dir) => chooseSort(setSort, key, dir)} />
-            <div className="min-h-0 flex-1 overflow-y-auto">
-                {rows.map((row) => {
-                    const bought = BigInt(row.boughtRaw);
-                    const sold = BigInt(row.soldRaw);
-                    const balanceRaw = bought > sold ? bought - sold : BigInt(0);
-                    const balance = rawAmount(balanceRaw.toString(), data.tokenDecimals);
-                    const pricedBuy = rawAmount(row.pricedBuyRaw, data.tokenDecimals);
-                    const pricedSell = rawAmount(row.pricedSellRaw, data.tokenDecimals);
-                    const avgBuy = pricedBuy > 0 ? row.boughtUsd / pricedBuy : undefined;
-                    const avgSell = pricedSell > 0 ? row.soldUsd / pricedSell : undefined;
-                    const net = row.soldUsd - row.boughtUsd;
-                    const lastAgo = Math.max(0, Math.floor((cutMs - Date.parse(row.lastTradeAt)) / 1_000));
-                    const held = Math.max(0, Math.floor((cutMs - Date.parse(row.firstTradeAt)) / 1_000));
-                    return (
-                        <div key={row.wallet} className="activity-row top-trader-row grid grid-cols-[44px_1.15fr_.95fr_1.1fr_1.1fr_.85fr_1fr_82px] items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums">
-                            <span className="text-[var(--term-dim)]">{ranks.get(row.wallet)}</span>
-                            <span className="flex min-w-0 items-center gap-2"><MagnifyingGlassIcon className="h-4 w-4 shrink-0 text-[var(--term-muted)]" /><span className="truncate text-[var(--term-text)]">{shortAddress(row.wallet)}</span></span>
-                            <MetricCell value={`${compact(row.boughtSol + row.soldSol)} SOL`} detail={`${elapsedLabel(lastAgo)} ago`} />
-                            <MetricCell tone="buy" value={money(row.boughtUsd)} detail={`${money(avgBuy)} · ${row.buyCount} buys`} />
-                            <MetricCell tone="sell" value={money(row.soldUsd)} detail={`${money(avgSell)} · ${row.sellCount} sells`} />
-                            <MetricCell tone={net >= 0 ? 'buy' : 'sell'} value={money(net)} detail={`${row.tradeCount} trades`} />
-                            <MetricCell value={compact(balance)} detail={money(priceUsd === undefined ? undefined : balance * priceUsd)} />
-                            <span className="text-right"><span className="block text-[var(--term-text)]">{balanceRaw > BigInt(0) ? elapsedLabel(held) : 'Exited'}</span><span className="mt-0.5 block text-[9px] text-[var(--term-dim)]">{balanceRaw > BigInt(0) ? 'held' : `${elapsedLabel(lastAgo)} ago`}</span></span>
-                        </div>
-                    );
-                })}
-                {!rows.length && <Empty text="Top traders will appear with replay activity" />}
-            </div>
-        </>
+        <div className={`activity-row participant-row grid ${participantCols} items-center border-b border-[var(--term-border)] px-3 text-[11px] tabular-nums`}>
+            <span className="text-[var(--term-dim)]">{rank}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+                <a href={`${walletUrl}#transfers`} target="_blank" rel="noreferrer" aria-label={`View ${shortAddress(row.wallet)} transfers`} className="text-[var(--term-muted)] hover:text-white"><FunnelIcon className="h-3.5 w-3.5" /></a>
+                <a href={walletUrl} target="_blank" rel="noreferrer" aria-label={`Open ${shortAddress(row.wallet)} on Solscan`} className="grid h-6 w-6 shrink-0 place-items-center rounded-full border-2 border-[var(--term-muted)] text-[var(--term-text)] hover:border-white"><MagnifyingGlassIcon className="h-3.5 w-3.5 stroke-[2.5]" /></a>
+                <a href={walletUrl} target="_blank" rel="noreferrer" className="truncate font-medium text-[var(--term-text)] hover:text-white">{shortAddress(row.wallet)}</a>
+                <span className="shrink-0 rounded bg-[var(--term-raised)] px-1.5 py-0.5 text-[10px] text-[var(--term-muted)]">{row.tradeCount > 99 ? '99+' : row.tradeCount}</span>
+                <span className="flex shrink-0 items-center gap-0.5 text-[var(--term-sell)]" title={`${row.buyCount} buys · ${row.sellCount} sells`}><CubeTransparentIcon className="h-3.5 w-3.5" /><BoltIcon className="h-3 w-3" /></span>
+            </span>
+            <span className="flex items-center gap-1.5 text-[var(--term-text)]"><SolanaMark className="h-3.5 w-3.5 shrink-0" /><span>{compact(stats.solFlow)}</span><span className="text-[var(--term-dim)]">({elapsedLabel(stats.lastActiveSeconds)})</span></span>
+            <TradeMetric value={money(row.boughtUsd)} average={money(stats.avgBuyMcapUsd)} amount={compact(stats.boughtTokens)} count={row.buyCount} tone="buy" />
+            <TradeMetric value={money(row.soldUsd)} average={money(stats.avgSellMcapUsd)} amount={compact(stats.soldTokens)} count={row.sellCount} tone="sell" />
+            <span className={pnl === undefined || pnl >= 0 ? 'text-[var(--term-buy)]' : 'text-[var(--term-sell)]'}>{signedMoney(pnl)}</span>
+            <span className="min-w-0 pr-3">
+                <span className="flex items-center gap-2"><span>{money(stats.currentValueUsd)}</span><span className="rounded bg-[var(--term-raised)] px-1.5 py-0.5 text-[10px] text-[var(--term-text)]">{percent}</span></span>
+                <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-[var(--term-raised)]"><span className="block h-full rounded-full bg-[#526fff]" style={{ width: `${Math.min(100, Math.max(0, stats.remainingPercent))}%` }} /></span>
+            </span>
+            <span className="flex min-w-0 items-center gap-2 text-[var(--term-muted)]" title="Funding source is not included in the verified replay tape"><ArrowUpIcon className="h-4 w-4 shrink-0" /><span className="min-w-0"><span className="block">—</span><span className="block truncate text-[9px] text-[var(--term-dim)]">Not observed</span></span></span>
+            <span className="text-[#6482ff]">{elapsedLabel(stats.heldSeconds)}</span>
+            <a href={walletUrl} target="_blank" rel="noreferrer" className="grid h-7 w-7 place-items-center rounded-md border border-[var(--term-border)] hover:border-[var(--term-border-strong)]" aria-label={`Open ${shortAddress(row.wallet)} on Solscan`}><Image src="/solscan.svg" alt="" width={14} height={14} /></a>
+        </div>
     );
+}
+
+function TradeMetric({ value, average, amount: tokenAmount, count, tone }: {
+    value: string;
+    average: string;
+    amount: string;
+    count: number;
+    tone: 'buy' | 'sell';
+}) {
+    const color = tone === 'buy' ? 'text-[var(--term-buy)]' : 'text-[var(--term-sell)]';
+    return <span className="min-w-0"><span className={`flex items-center gap-2 ${color}`}><span>{value}</span><span className="truncate opacity-80">({average})</span></span><span className="mt-0.5 block text-[9px] text-[var(--term-dim)]">{tokenAmount} / {count}</span></span>;
 }
 
 function HolderTable({ data, state }: { data?: TokenHolders; state: LoadState }) {
@@ -661,25 +656,15 @@ function DevTable({ tokenMint }: { tokenMint: string }) {
     );
 }
 
-function MetricCell({ value, detail, tone }: {
-    value: string;
-    detail: string;
-    tone?: 'buy' | 'sell';
-}) {
-    const color = tone === 'buy'
-        ? 'text-[var(--term-buy)]'
-        : tone === 'sell' ? 'text-[var(--term-sell)]' : 'text-[var(--term-text)]';
-    return <span className="min-w-0"><span className={`block truncate ${color}`}>{value}</span><span className="mt-0.5 block truncate text-[9px] text-[var(--term-dim)]">{detail}</span></span>;
-}
-
-function TableHead<Key extends string>({ columns, cells, sort, onSort }: {
+function TableHead<Key extends string>({ columns, cells, sort, onSort, className = '' }: {
     columns: string;
     cells: HeadCell<Key>[];
     sort: SortState<Key>;
     onSort: (key: Key, dir: SortDir) => void;
+    className?: string;
 }) {
     return (
-        <div role="row" className={`activity-head grid ${columns} shrink-0 items-center border-b border-[var(--term-border)] px-3 text-[10px] text-[var(--term-dim)]`}>
+        <div role="row" className={`activity-head grid ${columns} shrink-0 items-center border-b border-[var(--term-border)] px-3 text-[10px] text-[var(--term-dim)] ${className}`}>
             {cells.map((cell, index) => {
                 const active = cell.key !== undefined && sort.key === cell.key;
                 const Icon = active
