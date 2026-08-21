@@ -87,7 +87,7 @@ export default function VisionSettingsPanel({
                 </Panel>}
 
                 {tab === 'layout' && layoutTab === 'order' && <Panel>
-                    {([['new', 'New'], ['final', 'Soon'], ['migrated', 'Migrated']] as Array<[TerminalColumn, string]>).map(([column, label]) => <Toggle key={column} label={label} checked={settings.columns[column]} onChange={() => patch({ columns: { ...settings.columns, [column]: !settings.columns[column] } })} />)}
+                    {([['new', 'New'], ['final', 'Homestretch'], ['migrated', 'Migrated']] as Array<[TerminalColumn, string]>).map(([column, label]) => <Toggle key={column} label={label} checked={settings.columns[column]} onChange={() => patch({ columns: { ...settings.columns, [column]: !settings.columns[column] } })} />)}
                 </Panel>}
 
                 {tab === 'colors' && <Panel>

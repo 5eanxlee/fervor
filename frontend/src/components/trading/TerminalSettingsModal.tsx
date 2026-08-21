@@ -117,7 +117,7 @@ export default function TerminalSettingsModal({
                     </div>}
 
                     {section === 'layout' && <div className="space-y-4">
-                        <Setting label="Visible Vision columns"><div className="flex flex-wrap gap-2">{([['new', 'New'], ['final', 'Soon'], ['migrated', 'Migrated']] as const).map(([key, label]) => <button key={key} onClick={() => patch({ columns: { ...settings.columns, [key]: !settings.columns[key] } })} className={`h-8 px-3 ${toggleClass(settings.columns[key])}`}>{label}</button>)}</div></Setting>
+                        <Setting label="Visible Vision columns"><div className="flex flex-wrap gap-2">{([['new', 'New'], ['final', 'Homestretch'], ['migrated', 'Migrated']] as const).map(([key, label]) => <button key={key} onClick={() => patch({ columns: { ...settings.columns, [key]: !settings.columns[key] } })} className={`h-8 px-3 ${toggleClass(settings.columns[key])}`}>{label}</button>)}</div></Setting>
                         <Setting label="Discovery spacing"><Choice value={settings.density} options={[["compact", 'Compact'], ['spaced', 'Spaced']]} onChange={(density) => patch({ density })} /></Setting>
                         <Setting label="Trade panel"><Choice value={settings.ticketSide} options={[["right", 'Right'], ['left', 'Left']]} onChange={(ticketSide) => patch({ ticketSide })} /></Setting>
                         <Check label="Pause Vision updates while hovered" checked={settings.pauseOnHover} onChange={(pauseOnHover) => patch({ pauseOnHover })} />

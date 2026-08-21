@@ -12,12 +12,12 @@ import {
     FunnelIcon,
     LinkIcon,
     MagnifyingGlassIcon,
-    UserGroupIcon,
 } from '@heroicons/react/24/outline';
 import { apiService, DiscoveryToken, TokenData } from '../../services/api';
 import { getShelf, onShelf, ShelfToken } from '../../services/tokenShelf';
 import TokenLogo from '../TokenLogo';
 import { SolanaMark } from './BrandMarks';
+import { ProtocolMark } from './DiscoveryFilters';
 
 type SearchToken = ShelfToken & {
     createdAt?: string;
@@ -65,8 +65,6 @@ const age = (date?: string, seenAt?: number) => {
     if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`;
     return `${Math.floor(seconds / 86_400)}d`;
 };
-
-const seedOf = (value: string) => Array.from(value).reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
 export default function TerminalSearchModal({ open, onClose }: { open: boolean; onClose: () => void }) {
     const router = useRouter();
@@ -138,7 +136,7 @@ export default function TerminalSearchModal({ open, onClose }: { open: boolean; 
     };
 
     return (
-        <div className="fixed inset-0 z-[100] grid items-start justify-items-center overflow-y-auto bg-black/75 px-[clamp(.65rem,3vw,2rem)] pb-6 pt-[clamp(2rem,5vh,3.5rem)] backdrop-blur-[2px]" onMouseDown={onClose}>
+        <div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-transparent p-[clamp(.65rem,3vw,2rem)]" onMouseDown={onClose}>
             <section
                 role="dialog"
                 aria-modal="true"
@@ -153,8 +151,8 @@ export default function TerminalSearchModal({ open, onClose }: { open: boolean; 
                     </button>
                     {['Pumpfun', 'Bonk', 'Graduated', 'OG Mode', 'Dex Paid'].map((label, index) => (
                         <button key={label} className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-[var(--term-border)] bg-[var(--term-raised)] px-2.5 hover:border-[var(--term-border-strong)] hover:text-white ${index > 2 ? 'hidden sm:flex' : ''}`}>
-                            {label === 'Pumpfun' && <span className="text-[10px] text-emerald-400">♧</span>}
-                            {label === 'Bonk' && <span className="text-[10px] text-amber-300">◆</span>}
+                            {label === 'Pumpfun' && <ProtocolMark id="pump" className="h-3.5 w-3.5" />}
+                            {label === 'Bonk' && <ProtocolMark id="bonk" className="h-3.5 w-3.5" />}
                             {label}
                         </button>
                     ))}
@@ -189,8 +187,8 @@ export default function TerminalSearchModal({ open, onClose }: { open: boolean; 
                     </div>
                     <div className="flex gap-2 overflow-hidden">
                         {trending.map((token, index) => (
-                            <button key={`${token.address}:${token.symbol}:${index}`} onClick={() => setQuery(token.symbol)} className="flex h-7 shrink-0 items-center gap-2 rounded-full border border-transparent bg-[var(--term-control)] px-3 text-[10px] text-[var(--term-text)] hover:border-[var(--term-border-strong)] hover:bg-[#303034]">
-                                <MagnifyingGlassIcon className="h-3 w-3 text-[var(--term-muted)]" />{token.symbol.toLowerCase()} <span className="text-[var(--term-muted)]">{Math.max(1, 20 - index * 2)}</span>
+                            <button key={`${token.address}:${token.symbol}:${index}`} onClick={() => setQuery(token.symbol)} className="flex h-8 shrink-0 items-center gap-2 rounded-full border border-transparent bg-[var(--term-control)] px-2.5 text-[10px] text-[var(--term-text)] hover:border-[var(--term-border-strong)] hover:bg-[#303034]">
+                                <TokenLogo tokenAddress={token.address} tokenSymbol={token.symbol} logoUrl={token.logo} size="sm" className="shrink-0" />{token.symbol.toUpperCase()}
                             </button>
                         ))}
                     </div>
@@ -200,9 +198,6 @@ export default function TerminalSearchModal({ open, onClose }: { open: boolean; 
                     <div className="sticky top-0 z-10 flex h-10 items-center bg-[var(--term-panel)] px-1 text-[10px] text-[var(--term-muted)]">{query.trim() ? 'Results' : 'Recents'}</div>
                     <div className="divide-y divide-[var(--term-border)]">
                         {rows.map((token, index) => {
-                            const seed = seedOf(`${token.address}:${token.symbol}`);
-                            const volume = token.volume ?? (token.marketCap ? token.marketCap * ((seed % 7) + 2) / 100 : undefined);
-                            const liquidity = token.liquidity ?? (token.marketCap ? token.marketCap * ((seed % 23) + 18) / 100 : undefined);
                             return (
                                 <button
                                     key={`${token.address}:${token.symbol}:${index}`}
@@ -210,21 +205,19 @@ export default function TerminalSearchModal({ open, onClose }: { open: boolean; 
                                     className="grid min-h-[4.8rem] w-full grid-cols-[minmax(13rem,1fr)_minmax(4.5rem,.35fr)_minmax(4.5rem,.35fr)_minmax(4.5rem,.35fr)_4.5rem] items-center gap-3 overflow-hidden px-2 text-left transition-colors hover:bg-[var(--term-raised)]"
                                 >
                                     <span className="flex min-w-0 items-center gap-3">
-                                        <TokenLogo tokenAddress={token.address} tokenSymbol={token.symbol} size="md" />
+                                        <TokenLogo tokenAddress={token.address} tokenSymbol={token.symbol} logoUrl={token.logo} size="md" />
                                         <span className="min-w-0">
                                             <span className="block truncate text-xs font-[550] text-white">{token.symbol}/SOL <span className="ml-1 font-normal text-[var(--term-muted)]">{token.name}</span></span>
                                             <span className="mt-1.5 flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-[10px] text-[var(--term-muted)]">
                                                 <span className="font-medium text-emerald-400">{age(token.createdAt, token.seenAt)}</span>
                                                 <LinkIcon className="h-3.5 w-3.5 shrink-0" />
-                                                <span className="flex items-center gap-1"><UserGroupIcon className="h-3.5 w-3.5" />{12 + seed % 270}</span>
-                                                <span>♕ {seed % 8}/{Math.max(1, seed % 41)}</span>
                                                 <span className="truncate text-[var(--term-dim)]">{token.address.slice(0, 4)}…{token.address.slice(-4)}</span>
                                             </span>
                                         </span>
                                     </span>
                                     <span className="text-right text-[11px]"><span className="mr-1 text-[var(--term-muted)]">M</span><span className="text-[var(--term-text)]">{money(token.marketCap)}</span></span>
-                                    <span className="text-right text-[11px]"><span className="mr-1 text-[var(--term-muted)]">V</span><span className="text-sky-300">{money(volume)}</span><span className="mt-1 block text-[9px] text-[var(--term-dim)]">1H</span></span>
-                                    <span className="text-right text-[11px]"><span className="mr-1 text-[var(--term-muted)]">L</span><span className="text-[var(--term-text)]">{money(liquidity)}</span></span>
+                                    <span className="text-right text-[11px]"><span className="mr-1 text-[var(--term-muted)]">V</span><span className="text-sky-300">{money(token.volume)}</span><span className="mt-1 block text-[9px] text-[var(--term-dim)]">5M</span></span>
+                                    <span className="text-right text-[11px]"><span className="mr-1 text-[var(--term-muted)]">L</span><span className="text-[var(--term-text)]">{money(token.liquidity)}</span></span>
                                     <span className="flex justify-end">
                                         <span className="flex h-7 min-w-[4rem] items-center justify-center gap-1 rounded-full border border-[var(--term-border)] bg-[var(--term-raised)] px-2 text-[11px] font-medium text-[var(--term-text)]"><BoltIcon className="h-3.5 w-3.5 fill-current" />0</span>
                                     </span>

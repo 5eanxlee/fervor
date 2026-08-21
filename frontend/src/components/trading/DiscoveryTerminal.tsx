@@ -32,15 +32,18 @@ import { useAuth } from '../../contexts/AuthContext';
 import { apiService, DiscoveryCategory, DiscoveryToken } from '../../services/api';
 import { terminalSkin, TerminalSettings, useTerminalSettings } from '../../services/terminalSettings';
 import { SolanaMark } from './BrandMarks';
+import DiscoveryFilters, {
+    discoveryCols,
+    emptyFilters,
+    filterCount,
+    loadFilters,
+    matchesFilters,
+    saveFilters,
+    type FilterMap,
+} from './DiscoveryFilters';
 import { TerminalDock, TerminalHeader } from './TerminalChrome';
 import TerminalSettingsModal from './TerminalSettingsModal';
 import type { SettingsSection } from './TerminalSettingsModal';
-
-const cols: Array<{ key: DiscoveryCategory; label: string }> = [
-    { key: 'new', label: 'New' },
-    { key: 'final', label: 'Soon' },
-    { key: 'migrated', label: 'Migrated' },
-];
 
 const compact = (value?: number, digits = 2) => value === undefined || !Number.isFinite(value)
     ? '—'
@@ -69,6 +72,8 @@ export default function DiscoveryTerminal() {
     const [tokens, setTokens] = useState<DiscoveryToken[]>([]);
     const [query, setQuery] = useState<Record<DiscoveryCategory, string>>({ new: '', final: '', migrated: '' });
     const [muted, setMuted] = useState<Record<DiscoveryCategory, boolean>>({ new: false, final: false, migrated: false });
+    const [filters, setFilters] = useState<FilterMap>(() => emptyFilters());
+    const [filterOpen, setFilterOpen] = useState<DiscoveryCategory>();
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [settingsSection, setSettingsSection] = useState<SettingsSection>('appearance');
     const [settingsSearch, setSettingsSearch] = useState('');
@@ -85,6 +90,8 @@ export default function DiscoveryTerminal() {
     useEffect(() => {
         if (!isLoading && !isAuthenticated) router.replace('/');
     }, [isAuthenticated, isLoading, router]);
+
+    useEffect(() => setFilters(loadFilters()), []);
 
     useEffect(() => {
         if (!isAuthenticated) return;
@@ -120,11 +127,13 @@ export default function DiscoveryTerminal() {
         };
     }, [isAuthenticated, settings.pauseOnHover]);
 
-    const visible = cols.filter((column) => settings.columns[column.key]);
-    const groups = useMemo(() => Object.fromEntries(cols.map((column) => {
+    const visible = discoveryCols.filter((column) => settings.columns[column.key]);
+    const groups = useMemo(() => Object.fromEntries(discoveryCols.map((column) => {
         const term = query[column.key].trim().toLowerCase();
-        return [column.key, tokens.filter((token) => token.category === column.key && (!term || `${token.name} ${token.symbol} ${token.address}`.toLowerCase().includes(term)))];
-    })) as Record<DiscoveryCategory, DiscoveryToken[]>, [query, tokens]);
+        return [column.key, tokens.filter((token) => token.category === column.key
+            && (!term || `${token.name} ${token.symbol} ${token.address}`.toLowerCase().includes(term))
+            && matchesFilters(token, filters[column.key]))];
+    })) as Record<DiscoveryCategory, DiscoveryToken[]>, [filters, query, tokens]);
 
     if (isLoading || !isAuthenticated) return <main className="grid h-screen place-items-center bg-[#0f0f12]"><div className="spinner" /></main>;
 
@@ -163,7 +172,7 @@ export default function DiscoveryTerminal() {
                                 <div className="trench-quick flex shrink-0 items-center gap-1 px-2"><BoltIcon className="h-3.5 w-3.5 fill-current" /><span>{settings.quickBuySol}</span><SolanaMark className="h-3 w-3" /></div>
                                 <button className="trench-preset shrink-0">P1</button>
                                 <button onClick={() => setMuted((value) => ({ ...value, [column.key]: !value[column.key] }))} className="trench-head-icon hidden xl:grid" aria-label={`${muted[column.key] ? 'Unmute' : 'Mute'} ${column.label}`}>{muted[column.key] ? <SpeakerXMarkIcon /> : <SpeakerWaveIcon />}</button>
-                                <button className="trench-head-icon hidden xl:grid" aria-label={`Filter ${column.label}`}><FunnelIcon /></button>
+                                <FilterButton column={column.key} label={column.label} count={filterCount(filters[column.key])} onOpen={setFilterOpen} />
                             </div>
                         </header>
                         <div className="trench-feed min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -177,8 +186,31 @@ export default function DiscoveryTerminal() {
             </section>
 
             {settings.showDock && <TerminalDock live={live} onSettings={() => openSettings()} />}
+            <DiscoveryFilters
+                openFor={filterOpen}
+                value={filters}
+                onClose={() => setFilterOpen(undefined)}
+                onApply={(next) => {
+                    setFilters(next);
+                    saveFilters(next);
+                }}
+            />
             <TerminalSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} settings={settings} setSettings={setSettings} initialSection={settingsSection} initialSearch={settingsSearch} />
         </main>
+    );
+}
+
+function FilterButton({ column, label, count, onOpen }: {
+    column: DiscoveryCategory;
+    label: string;
+    count: number;
+    onOpen: (column: DiscoveryCategory) => void;
+}) {
+    return (
+        <button onClick={() => onOpen(column)} className={`trench-head-icon relative grid shrink-0 ${count ? 'text-[var(--term-accent)]' : ''}`} aria-label={`Filter ${label}`}>
+            <FunnelIcon />
+            {count > 0 && <span className="absolute right-0 top-0 grid h-3.5 min-w-3.5 place-items-center rounded-full bg-[var(--term-accent)] px-0.5 text-[7px] font-[700] text-[#111114]">{count}</span>}
+        </button>
     );
 }
 
